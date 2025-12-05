@@ -16,12 +16,14 @@ import (
 
 // Server represents the CLASP proxy server.
 type Server struct {
-	cfg         *config.Config
-	handler     *Handler
-	server      *http.Server
-	rateLimiter *RateLimiter
-	cache       *RequestCache
-	authConfig  *AuthConfig
+	cfg            *config.Config
+	handler        *Handler
+	server         *http.Server
+	rateLimiter    *RateLimiter
+	cache          *RequestCache
+	authConfig     *AuthConfig
+	queue          *RequestQueue
+	circuitBreaker *CircuitBreaker
 }
 
 // NewServer creates a new proxy server.
@@ -63,6 +65,29 @@ func NewServer(cfg *config.Config) (*Server, error) {
 		}
 	}
 
+	// Initialize request queue if enabled
+	if cfg.QueueEnabled {
+		queueConfig := &QueueConfig{
+			Enabled:    true,
+			MaxSize:    cfg.QueueMaxSize,
+			MaxWait:    time.Duration(cfg.QueueMaxWaitSeconds) * time.Second,
+			RetryDelay: time.Duration(cfg.QueueRetryDelayMs) * time.Millisecond,
+			MaxRetries: cfg.QueueMaxRetries,
+		}
+		s.queue = NewRequestQueue(queueConfig)
+		s.handler.SetQueue(s.queue)
+	}
+
+	// Initialize circuit breaker if enabled
+	if cfg.CircuitBreakerEnabled {
+		s.circuitBreaker = NewCircuitBreaker(
+			cfg.CircuitBreakerThreshold,
+			cfg.CircuitBreakerRecovery,
+			time.Duration(cfg.CircuitBreakerTimeoutSec)*time.Second,
+		)
+		s.handler.SetCircuitBreaker(s.circuitBreaker)
+	}
+
 	return s, nil
 }
 
@@ -92,6 +117,18 @@ func (s *Server) Start() error {
 	if s.cache != nil {
 		log.Printf("[CLASP] Response caching enabled: max %d entries, TTL %d seconds",
 			s.cfg.CacheMaxSize, s.cfg.CacheTTL)
+	}
+
+	// Log queue status
+	if s.queue != nil {
+		log.Printf("[CLASP] Request queue enabled: max %d requests, timeout %d seconds",
+			s.cfg.QueueMaxSize, s.cfg.QueueMaxWaitSeconds)
+	}
+
+	// Log circuit breaker status
+	if s.circuitBreaker != nil {
+		log.Printf("[CLASP] Circuit breaker enabled: threshold %d failures, recovery %d successes, timeout %d seconds",
+			s.cfg.CircuitBreakerThreshold, s.cfg.CircuitBreakerRecovery, s.cfg.CircuitBreakerTimeoutSec)
 	}
 
 	// Apply authentication middleware if enabled
