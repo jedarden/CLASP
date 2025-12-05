@@ -30,6 +30,8 @@ type Handler struct {
 	metrics          *Metrics
 	rateLimiter      *RateLimiter
 	cache            *RequestCache
+	queue            *RequestQueue
+	circuitBreaker   *CircuitBreaker
 	tierProviders    map[config.ModelTier]provider.Provider
 	tierFallbacks    map[config.ModelTier]provider.Provider
 }
@@ -151,6 +153,16 @@ func (h *Handler) SetCache(cache *RequestCache) {
 	h.cache = cache
 }
 
+// SetQueue sets the request queue.
+func (h *Handler) SetQueue(queue *RequestQueue) {
+	h.queue = queue
+}
+
+// SetCircuitBreaker sets the circuit breaker.
+func (h *Handler) SetCircuitBreaker(cb *CircuitBreaker) {
+	h.circuitBreaker = cb
+}
+
 // createProvider creates the appropriate provider based on config.
 func createProvider(cfg *config.Config) (provider.Provider, error) {
 	switch cfg.Provider {
@@ -270,6 +282,15 @@ func (h *Handler) HandleMessages(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("[CLASP] Request: %s -> %s (streaming: %v, provider: %s)", anthropicReq.Model, targetModel, anthropicReq.Stream, selectedProvider.Name())
 
+	// Check circuit breaker
+	if h.circuitBreaker != nil && !h.circuitBreaker.Allow() {
+		atomic.AddInt64(&h.metrics.ErrorRequests, 1)
+		log.Printf("[CLASP] Circuit breaker open - rejecting request")
+		w.Header().Set("X-CLASP-Circuit-Breaker", "open")
+		h.writeErrorResponse(w, http.StatusServiceUnavailable, "overloaded_error", "Service temporarily unavailable - circuit breaker open")
+		return
+	}
+
 	// Transform request to OpenAI format
 	openAIReq, err := translator.TransformRequest(&anthropicReq, targetModel)
 	if err != nil {
@@ -329,6 +350,9 @@ func (h *Handler) HandleMessages(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		atomic.AddInt64(&h.metrics.ErrorRequests, 1)
+		if h.circuitBreaker != nil {
+			h.circuitBreaker.RecordFailure()
+		}
 		log.Printf("[CLASP] Error making upstream request: %v", err)
 		h.writeErrorResponse(w, http.StatusBadGateway, "api_error", "Error connecting to upstream provider")
 		return
@@ -338,12 +362,21 @@ func (h *Handler) HandleMessages(w http.ResponseWriter, r *http.Request) {
 	// Check for upstream errors
 	if resp.StatusCode >= 400 {
 		atomic.AddInt64(&h.metrics.ErrorRequests, 1)
+		// Record failure for 5xx errors (not 4xx client errors)
+		if h.circuitBreaker != nil && resp.StatusCode >= 500 {
+			h.circuitBreaker.RecordFailure()
+		}
 		body, _ := io.ReadAll(resp.Body)
 		log.Printf("[CLASP] Upstream error (%d): %s", resp.StatusCode, string(body))
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(resp.StatusCode)
 		w.Write(body)
 		return
+	}
+
+	// Record success for circuit breaker
+	if h.circuitBreaker != nil {
+		h.circuitBreaker.RecordSuccess()
 	}
 
 	atomic.AddInt64(&h.metrics.SuccessRequests, 1)
@@ -670,6 +703,29 @@ func (h *Handler) HandleMetrics(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Add queue stats if enabled
+	if h.queue != nil {
+		queued, dequeued, dropped, retried, expired, length, paused := h.queue.Stats()
+		response["queue"] = map[string]interface{}{
+			"enabled":  true,
+			"queued":   queued,
+			"dequeued": dequeued,
+			"dropped":  dropped,
+			"retried":  retried,
+			"expired":  expired,
+			"length":   length,
+			"paused":   paused,
+		}
+	}
+
+	// Add circuit breaker stats if enabled
+	if h.circuitBreaker != nil {
+		response["circuit_breaker"] = map[string]interface{}{
+			"enabled": true,
+			"state":   h.circuitBreaker.State(),
+		}
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
 }
@@ -779,6 +835,61 @@ func (h *Handler) HandleMetricsPrometheus(w http.ResponseWriter, r *http.Request
 		fmt.Fprintf(w, "# TYPE clasp_fallback_successes counter\n")
 		fmt.Fprintf(w, "clasp_fallback_successes{provider=\"%s\"} %d\n", providerName, fbSuccesses)
 	}
+
+	// Queue metrics
+	if h.queue != nil {
+		queued, dequeued, dropped, retried, expired, length, _ := h.queue.Stats()
+
+		fmt.Fprintf(w, "# HELP clasp_queue_total Total requests queued\n")
+		fmt.Fprintf(w, "# TYPE clasp_queue_total counter\n")
+		fmt.Fprintf(w, "clasp_queue_total{provider=\"%s\"} %d\n", providerName, queued)
+
+		fmt.Fprintf(w, "# HELP clasp_queue_dequeued Total requests dequeued\n")
+		fmt.Fprintf(w, "# TYPE clasp_queue_dequeued counter\n")
+		fmt.Fprintf(w, "clasp_queue_dequeued{provider=\"%s\"} %d\n", providerName, dequeued)
+
+		fmt.Fprintf(w, "# HELP clasp_queue_dropped Total requests dropped (queue full)\n")
+		fmt.Fprintf(w, "# TYPE clasp_queue_dropped counter\n")
+		fmt.Fprintf(w, "clasp_queue_dropped{provider=\"%s\"} %d\n", providerName, dropped)
+
+		fmt.Fprintf(w, "# HELP clasp_queue_retried Total requests retried\n")
+		fmt.Fprintf(w, "# TYPE clasp_queue_retried counter\n")
+		fmt.Fprintf(w, "clasp_queue_retried{provider=\"%s\"} %d\n", providerName, retried)
+
+		fmt.Fprintf(w, "# HELP clasp_queue_expired Total requests expired in queue\n")
+		fmt.Fprintf(w, "# TYPE clasp_queue_expired counter\n")
+		fmt.Fprintf(w, "clasp_queue_expired{provider=\"%s\"} %d\n", providerName, expired)
+
+		fmt.Fprintf(w, "# HELP clasp_queue_length Current queue length\n")
+		fmt.Fprintf(w, "# TYPE clasp_queue_length gauge\n")
+		fmt.Fprintf(w, "clasp_queue_length{provider=\"%s\"} %d\n", providerName, length)
+	}
+
+	// Circuit breaker metrics
+	if h.circuitBreaker != nil {
+		state := h.circuitBreaker.State()
+		var stateValue int
+		switch state {
+		case "closed":
+			stateValue = 0
+		case "half-open":
+			stateValue = 1
+		case "open":
+			stateValue = 2
+		}
+
+		fmt.Fprintf(w, "# HELP clasp_circuit_breaker_state Circuit breaker state (0=closed, 1=half-open, 2=open)\n")
+		fmt.Fprintf(w, "# TYPE clasp_circuit_breaker_state gauge\n")
+		fmt.Fprintf(w, "clasp_circuit_breaker_state{provider=\"%s\"} %d\n", providerName, stateValue)
+
+		fmt.Fprintf(w, "# HELP clasp_circuit_breaker_open Whether circuit breaker is open (1) or not (0)\n")
+		fmt.Fprintf(w, "# TYPE clasp_circuit_breaker_open gauge\n")
+		isOpen := 0
+		if h.circuitBreaker.IsOpen() {
+			isOpen = 1
+		}
+		fmt.Fprintf(w, "clasp_circuit_breaker_open{provider=\"%s\"} %d\n", providerName, isOpen)
+	}
 }
 
 // HandleRoot handles root path requests.
@@ -786,7 +897,7 @@ func (h *Handler) HandleRoot(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	response := map[string]interface{}{
 		"name":     "CLASP",
-		"version":  "0.3.2",
+		"version":  "0.4.0",
 		"provider": h.provider.Name(),
 		"status":   "running",
 		"endpoints": map[string]string{

@@ -95,6 +95,19 @@ type Config struct {
 	AuthAPIKey               string
 	AuthAllowAnonymousHealth  bool
 	AuthAllowAnonymousMetrics bool
+
+	// Queue settings
+	QueueEnabled           bool
+	QueueMaxSize           int   // Maximum requests to queue
+	QueueMaxWaitSeconds    int   // Maximum time a request can wait
+	QueueRetryDelayMs      int   // Delay between retries in milliseconds
+	QueueMaxRetries        int   // Maximum retries per request
+
+	// Circuit breaker settings
+	CircuitBreakerEnabled      bool
+	CircuitBreakerThreshold    int   // Failures before opening
+	CircuitBreakerRecovery     int   // Successes to close
+	CircuitBreakerTimeoutSec   int   // Timeout before half-open
 }
 
 // DefaultConfig returns the default configuration.
@@ -117,6 +130,17 @@ func DefaultConfig() *Config {
 		AuthEnabled:              false,
 		AuthAllowAnonymousHealth:  true, // Allow health checks without auth by default
 		AuthAllowAnonymousMetrics: false,
+		// Queue defaults
+		QueueEnabled:           false,
+		QueueMaxSize:           100,
+		QueueMaxWaitSeconds:    30,
+		QueueRetryDelayMs:      1000,
+		QueueMaxRetries:        3,
+		// Circuit breaker defaults
+		CircuitBreakerEnabled:    false,
+		CircuitBreakerThreshold:  5,  // Open after 5 failures
+		CircuitBreakerRecovery:   2,  // Close after 2 successes
+		CircuitBreakerTimeoutSec: 30, // Try again after 30 seconds
 	}
 }
 
@@ -224,6 +248,61 @@ func LoadFromEnv() (*Config, error) {
 	}
 	if os.Getenv("CLASP_AUTH_ALLOW_ANONYMOUS_METRICS") == "true" || os.Getenv("CLASP_AUTH_ALLOW_ANONYMOUS_METRICS") == "1" {
 		cfg.AuthAllowAnonymousMetrics = true
+	}
+
+	// Queue settings
+	cfg.QueueEnabled = os.Getenv("CLASP_QUEUE") == "true" || os.Getenv("CLASP_QUEUE") == "1"
+	if maxSize := os.Getenv("CLASP_QUEUE_MAX_SIZE"); maxSize != "" {
+		m, err := strconv.Atoi(maxSize)
+		if err != nil {
+			return nil, fmt.Errorf("invalid CLASP_QUEUE_MAX_SIZE: %w", err)
+		}
+		cfg.QueueMaxSize = m
+	}
+	if maxWait := os.Getenv("CLASP_QUEUE_MAX_WAIT"); maxWait != "" {
+		m, err := strconv.Atoi(maxWait)
+		if err != nil {
+			return nil, fmt.Errorf("invalid CLASP_QUEUE_MAX_WAIT: %w", err)
+		}
+		cfg.QueueMaxWaitSeconds = m
+	}
+	if retryDelay := os.Getenv("CLASP_QUEUE_RETRY_DELAY"); retryDelay != "" {
+		r, err := strconv.Atoi(retryDelay)
+		if err != nil {
+			return nil, fmt.Errorf("invalid CLASP_QUEUE_RETRY_DELAY: %w", err)
+		}
+		cfg.QueueRetryDelayMs = r
+	}
+	if maxRetries := os.Getenv("CLASP_QUEUE_MAX_RETRIES"); maxRetries != "" {
+		m, err := strconv.Atoi(maxRetries)
+		if err != nil {
+			return nil, fmt.Errorf("invalid CLASP_QUEUE_MAX_RETRIES: %w", err)
+		}
+		cfg.QueueMaxRetries = m
+	}
+
+	// Circuit breaker settings
+	cfg.CircuitBreakerEnabled = os.Getenv("CLASP_CIRCUIT_BREAKER") == "true" || os.Getenv("CLASP_CIRCUIT_BREAKER") == "1"
+	if threshold := os.Getenv("CLASP_CIRCUIT_BREAKER_THRESHOLD"); threshold != "" {
+		t, err := strconv.Atoi(threshold)
+		if err != nil {
+			return nil, fmt.Errorf("invalid CLASP_CIRCUIT_BREAKER_THRESHOLD: %w", err)
+		}
+		cfg.CircuitBreakerThreshold = t
+	}
+	if recovery := os.Getenv("CLASP_CIRCUIT_BREAKER_RECOVERY"); recovery != "" {
+		r, err := strconv.Atoi(recovery)
+		if err != nil {
+			return nil, fmt.Errorf("invalid CLASP_CIRCUIT_BREAKER_RECOVERY: %w", err)
+		}
+		cfg.CircuitBreakerRecovery = r
+	}
+	if timeout := os.Getenv("CLASP_CIRCUIT_BREAKER_TIMEOUT"); timeout != "" {
+		t, err := strconv.Atoi(timeout)
+		if err != nil {
+			return nil, fmt.Errorf("invalid CLASP_CIRCUIT_BREAKER_TIMEOUT: %w", err)
+		}
+		cfg.CircuitBreakerTimeoutSec = t
 	}
 
 	// Multi-provider routing settings
