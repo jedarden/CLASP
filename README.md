@@ -439,6 +439,74 @@ OPENAI_API_KEY=sk-... clasp -auth -auth-api-key "proxy-key"
 ANTHROPIC_BASE_URL=http://localhost:8080 ANTHROPIC_API_KEY=proxy-key claude
 ```
 
+## Request Queuing
+
+Queue requests during provider outages for automatic retry:
+
+```bash
+# Enable request queuing
+clasp -queue
+
+# Custom queue settings
+clasp -queue -queue-max-size 200 -queue-max-wait 60
+
+# Via environment
+CLASP_QUEUE=true CLASP_QUEUE_MAX_SIZE=200 clasp
+```
+
+### Queue Options
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `CLASP_QUEUE` | Enable request queuing | `false` |
+| `CLASP_QUEUE_MAX_SIZE` | Maximum queued requests | `100` |
+| `CLASP_QUEUE_MAX_WAIT` | Queue timeout in seconds | `30` |
+| `CLASP_QUEUE_RETRY_DELAY` | Retry delay in milliseconds | `1000` |
+| `CLASP_QUEUE_MAX_RETRIES` | Maximum retries per request | `3` |
+
+## Circuit Breaker
+
+Prevent cascade failures with circuit breaker pattern:
+
+```bash
+# Enable circuit breaker
+clasp -circuit-breaker
+
+# Custom circuit breaker settings
+clasp -circuit-breaker -cb-threshold 10 -cb-recovery 3 -cb-timeout 60
+
+# Via environment
+CLASP_CIRCUIT_BREAKER=true clasp
+```
+
+### Circuit Breaker Options
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `CLASP_CIRCUIT_BREAKER` | Enable circuit breaker | `false` |
+| `CLASP_CIRCUIT_BREAKER_THRESHOLD` | Failures before opening circuit | `5` |
+| `CLASP_CIRCUIT_BREAKER_RECOVERY` | Successes to close circuit | `2` |
+| `CLASP_CIRCUIT_BREAKER_TIMEOUT` | Timeout in seconds before retry | `30` |
+
+### Circuit Breaker States
+
+- **Closed**: Normal operation, requests pass through
+- **Open**: Circuit tripped, requests fail fast with 503
+- **Half-Open**: Testing if service recovered, limited requests allowed
+
+### Maximum Resilience Configuration
+
+For production deployments requiring maximum resilience:
+
+```bash
+# Enable queue + circuit breaker + fallback
+OPENAI_API_KEY=sk-xxx OPENROUTER_API_KEY=sk-or-xxx \
+  clasp -queue -circuit-breaker -fallback \
+    -queue-max-size 200 \
+    -cb-threshold 5 \
+    -cb-timeout 30
+```
+
 ## License
 
 MIT License - see [LICENSE](LICENSE) for details.
