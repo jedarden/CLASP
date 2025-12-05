@@ -47,6 +47,11 @@ type Config struct {
 	// Server settings
 	Port     int
 	LogLevel string
+
+	// Debug settings
+	Debug          bool
+	DebugRequests  bool
+	DebugResponses bool
 }
 
 // DefaultConfig returns the default configuration.
@@ -111,6 +116,11 @@ func LoadFromEnv() (*Config, error) {
 	if logLevel := os.Getenv("CLASP_LOG_LEVEL"); logLevel != "" {
 		cfg.LogLevel = logLevel
 	}
+
+	// Debug settings
+	cfg.Debug = os.Getenv("CLASP_DEBUG") == "true" || os.Getenv("CLASP_DEBUG") == "1"
+	cfg.DebugRequests = cfg.Debug || os.Getenv("CLASP_DEBUG_REQUESTS") == "true"
+	cfg.DebugResponses = cfg.Debug || os.Getenv("CLASP_DEBUG_RESPONSES") == "true"
 
 	// Auto-detect provider from available API keys if not explicitly set
 	if os.Getenv("PROVIDER") == "" {

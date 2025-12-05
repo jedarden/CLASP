@@ -1,0 +1,35 @@
+# Git
+.git
+.gitignore
+
+# Build artifacts
+bin/
+dist/
+*.tgz
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Test files
+coverage.out
+*.test
+
+# Documentation (not needed in image)
+*.md
+!README.md
+
+# NPM artifacts
+node_modules/
+package-lock.json
+
+# Environment files (should be passed via env vars)
+.env
+.env.local
+.env.*.local
+
+# Claude-flow artifacts
+.claude-flow/
+.swarm/
