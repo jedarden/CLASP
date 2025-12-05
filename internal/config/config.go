@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 )
 
 // ProviderType represents the type of LLM provider.
@@ -108,6 +109,9 @@ type Config struct {
 	CircuitBreakerThreshold    int   // Failures before opening
 	CircuitBreakerRecovery     int   // Successes to close
 	CircuitBreakerTimeoutSec   int   // Timeout before half-open
+
+	// Model aliasing - map custom model names to provider models
+	ModelAliases map[string]string
 }
 
 // DefaultConfig returns the default configuration.
@@ -141,6 +145,8 @@ func DefaultConfig() *Config {
 		CircuitBreakerThreshold:  5,  // Open after 5 failures
 		CircuitBreakerRecovery:   2,  // Close after 2 successes
 		CircuitBreakerTimeoutSec: 30, // Try again after 30 seconds
+		// Model aliases (empty by default)
+		ModelAliases: make(map[string]string),
 	}
 }
 
@@ -280,6 +286,11 @@ func LoadFromEnv() (*Config, error) {
 		}
 		cfg.QueueMaxRetries = m
 	}
+
+	// Model aliasing - load aliases from environment
+	// Pattern: CLASP_ALIAS_<alias>=<target_model>
+	// Also supports: CLASP_MODEL_ALIASES=alias1:model1,alias2:model2
+	cfg.ModelAliases = loadModelAliases()
 
 	// Circuit breaker settings
 	cfg.CircuitBreakerEnabled = os.Getenv("CLASP_CIRCUIT_BREAKER") == "true" || os.Getenv("CLASP_CIRCUIT_BREAKER") == "1"
@@ -648,4 +659,71 @@ func containsMiddle(s, substr string) bool {
 		}
 	}
 	return false
+}
+
+// loadModelAliases loads model aliases from environment variables.
+// Supports two patterns:
+// 1. CLASP_ALIAS_<alias>=<target_model> (e.g., CLASP_ALIAS_FAST=gpt-4o-mini)
+// 2. CLASP_MODEL_ALIASES=alias1:model1,alias2:model2 (comma-separated list)
+func loadModelAliases() map[string]string {
+	aliases := make(map[string]string)
+
+	// Load from CLASP_ALIAS_* environment variables
+	const aliasPrefix = "CLASP_ALIAS_"
+	for _, env := range os.Environ() {
+		if strings.HasPrefix(env, aliasPrefix) {
+			parts := strings.SplitN(env, "=", 2)
+			if len(parts) == 2 {
+				aliasName := strings.ToLower(strings.TrimPrefix(parts[0], aliasPrefix))
+				targetModel := parts[1]
+				if aliasName != "" && targetModel != "" {
+					aliases[aliasName] = targetModel
+				}
+			}
+		}
+	}
+
+	// Load from CLASP_MODEL_ALIASES (comma-separated list)
+	if aliasesStr := os.Getenv("CLASP_MODEL_ALIASES"); aliasesStr != "" {
+		for _, pair := range strings.Split(aliasesStr, ",") {
+			parts := strings.SplitN(strings.TrimSpace(pair), ":", 2)
+			if len(parts) == 2 {
+				aliasName := strings.ToLower(strings.TrimSpace(parts[0]))
+				targetModel := strings.TrimSpace(parts[1])
+				if aliasName != "" && targetModel != "" {
+					aliases[aliasName] = targetModel
+				}
+			}
+		}
+	}
+
+	return aliases
+}
+
+// ResolveAlias resolves a model alias to its target model.
+// If the model is not an alias, returns the original model unchanged.
+func (c *Config) ResolveAlias(model string) string {
+	// Check if this model is an alias (case-insensitive lookup)
+	modelLower := strings.ToLower(model)
+	if target, ok := c.ModelAliases[modelLower]; ok {
+		return target
+	}
+	return model
+}
+
+// AddAlias adds a model alias at runtime.
+func (c *Config) AddAlias(alias, targetModel string) {
+	if c.ModelAliases == nil {
+		c.ModelAliases = make(map[string]string)
+	}
+	c.ModelAliases[strings.ToLower(alias)] = targetModel
+}
+
+// GetAliases returns all configured model aliases.
+func (c *Config) GetAliases() map[string]string {
+	result := make(map[string]string, len(c.ModelAliases))
+	for k, v := range c.ModelAliases {
+		result[k] = v
+	}
+	return result
 }
