@@ -19,10 +19,10 @@ A high-performance Go proxy that translates Claude/Anthropic API calls to OpenAI
 
 ```bash
 # Install globally
-npm install -g clasp-proxy
+npm install -g clasp-ai
 
 # Or run directly with npx
-npx clasp-proxy
+npx clasp-ai
 ```
 
 ### Via Go
@@ -45,7 +45,7 @@ make build
 # Run with Docker
 docker run -d -p 8080:8080 \
   -e OPENAI_API_KEY=sk-... \
-  ghcr.io/jedarden/clasp-proxy:latest
+  ghcr.io/jedarden/clasp-ai:latest
 
 # Or with docker-compose
 docker-compose up -d
