@@ -3,12 +3,17 @@ package proxy
 
 import (
 	"bytes"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"strings"
+	"sync/atomic"
+	"time"
 
 	"github.com/jedarden/clasp/internal/config"
 	"github.com/jedarden/clasp/internal/provider"
@@ -21,19 +26,50 @@ type Handler struct {
 	cfg      *config.Config
 	provider provider.Provider
 	client   *http.Client
+	metrics  *Metrics
 }
 
-// NewHandler creates a new request handler.
+// Metrics tracks request statistics.
+type Metrics struct {
+	TotalRequests    int64
+	SuccessRequests  int64
+	ErrorRequests    int64
+	StreamRequests   int64
+	ToolCallRequests int64
+	TotalLatencyMs   int64
+	StartTime        time.Time
+}
+
+// NewHandler creates a new request handler with optimized HTTP client.
 func NewHandler(cfg *config.Config) (*Handler, error) {
 	p, err := createProvider(cfg)
 	if err != nil {
 		return nil, err
 	}
 
+	// Create optimized HTTP transport with connection pooling
+	transport := &http.Transport{
+		DialContext: (&net.Dialer{
+			Timeout:   30 * time.Second,
+			KeepAlive: 30 * time.Second,
+		}).DialContext,
+		MaxIdleConns:        100,
+		MaxIdleConnsPerHost: 100,
+		IdleConnTimeout:     90 * time.Second,
+		TLSHandshakeTimeout: 10 * time.Second,
+		DisableCompression:  false,
+	}
+
+	client := &http.Client{
+		Transport: transport,
+		Timeout:   120 * time.Second, // Long timeout for streaming
+	}
+
 	return &Handler{
 		cfg:      cfg,
 		provider: p,
-		client:   &http.Client{},
+		client:   client,
+		metrics:  &Metrics{StartTime: time.Now()},
 	}, nil
 }
 
@@ -55,8 +91,12 @@ func createProvider(cfg *config.Config) (provider.Provider, error) {
 
 // HandleMessages handles POST /v1/messages requests.
 func (h *Handler) HandleMessages(w http.ResponseWriter, r *http.Request) {
+	start := time.Now()
+	atomic.AddInt64(&h.metrics.TotalRequests, 1)
+
 	// Only accept POST
 	if r.Method != http.MethodPost {
+		atomic.AddInt64(&h.metrics.ErrorRequests, 1)
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
@@ -64,11 +104,20 @@ func (h *Handler) HandleMessages(w http.ResponseWriter, r *http.Request) {
 	// Parse request body
 	var anthropicReq models.AnthropicRequest
 	if err := json.NewDecoder(r.Body).Decode(&anthropicReq); err != nil {
+		atomic.AddInt64(&h.metrics.ErrorRequests, 1)
 		log.Printf("[CLASP] Error parsing request: %v", err)
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		h.writeErrorResponse(w, http.StatusBadRequest, "invalid_request_error", "Invalid request body")
 		return
 	}
 	defer r.Body.Close()
+
+	// Track request types
+	if anthropicReq.Stream {
+		atomic.AddInt64(&h.metrics.StreamRequests, 1)
+	}
+	if len(anthropicReq.Tools) > 0 {
+		atomic.AddInt64(&h.metrics.ToolCallRequests, 1)
+	}
 
 	// Map the model
 	targetModel := h.cfg.MapModel(anthropicReq.Model)
@@ -79,50 +128,44 @@ func (h *Handler) HandleMessages(w http.ResponseWriter, r *http.Request) {
 	// Transform request to OpenAI format
 	openAIReq, err := translator.TransformRequest(&anthropicReq, targetModel)
 	if err != nil {
+		atomic.AddInt64(&h.metrics.ErrorRequests, 1)
 		log.Printf("[CLASP] Error transforming request: %v", err)
-		http.Error(w, "Error transforming request", http.StatusInternalServerError)
+		h.writeErrorResponse(w, http.StatusInternalServerError, "api_error", "Error transforming request")
 		return
 	}
 
 	// Make upstream request
 	reqBody, err := json.Marshal(openAIReq)
 	if err != nil {
+		atomic.AddInt64(&h.metrics.ErrorRequests, 1)
 		log.Printf("[CLASP] Error marshaling request: %v", err)
-		http.Error(w, "Error preparing request", http.StatusInternalServerError)
+		h.writeErrorResponse(w, http.StatusInternalServerError, "api_error", "Error preparing request")
 		return
 	}
 
-	upstreamReq, err := http.NewRequestWithContext(r.Context(), http.MethodPost, h.provider.GetEndpointURL(), bytes.NewReader(reqBody))
+	// Execute request with retry logic
+	resp, err := h.doRequestWithRetry(r.Context(), reqBody)
 	if err != nil {
-		log.Printf("[CLASP] Error creating upstream request: %v", err)
-		http.Error(w, "Error creating upstream request", http.StatusInternalServerError)
-		return
-	}
-
-	// Set headers
-	for key, values := range h.provider.GetHeaders(h.cfg.GetAPIKey()) {
-		for _, v := range values {
-			upstreamReq.Header.Add(key, v)
-		}
-	}
-
-	// Make request
-	resp, err := h.client.Do(upstreamReq)
-	if err != nil {
+		atomic.AddInt64(&h.metrics.ErrorRequests, 1)
 		log.Printf("[CLASP] Error making upstream request: %v", err)
-		http.Error(w, "Error connecting to upstream", http.StatusBadGateway)
+		h.writeErrorResponse(w, http.StatusBadGateway, "api_error", "Error connecting to upstream provider")
 		return
 	}
 	defer resp.Body.Close()
 
 	// Check for upstream errors
 	if resp.StatusCode >= 400 {
+		atomic.AddInt64(&h.metrics.ErrorRequests, 1)
 		body, _ := io.ReadAll(resp.Body)
 		log.Printf("[CLASP] Upstream error (%d): %s", resp.StatusCode, string(body))
+		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(resp.StatusCode)
 		w.Write(body)
 		return
 	}
+
+	atomic.AddInt64(&h.metrics.SuccessRequests, 1)
+	atomic.AddInt64(&h.metrics.TotalLatencyMs, time.Since(start).Milliseconds())
 
 	// Handle streaming vs non-streaming
 	if anthropicReq.Stream {
@@ -130,6 +173,68 @@ func (h *Handler) HandleMessages(w http.ResponseWriter, r *http.Request) {
 	} else {
 		h.handleNonStreamingResponse(w, resp, targetModel)
 	}
+}
+
+// doRequestWithRetry executes the upstream request with exponential backoff retry.
+func (h *Handler) doRequestWithRetry(ctx interface{ Done() <-chan struct{} }, reqBody []byte) (*http.Response, error) {
+	maxRetries := 3
+	baseDelay := 500 * time.Millisecond
+
+	var lastErr error
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		// Create fresh request for each attempt
+		upstreamReq, err := http.NewRequest(http.MethodPost, h.provider.GetEndpointURL(), bytes.NewReader(reqBody))
+		if err != nil {
+			return nil, fmt.Errorf("creating request: %w", err)
+		}
+
+		// Set headers
+		for key, values := range h.provider.GetHeaders(h.cfg.GetAPIKey()) {
+			for _, v := range values {
+				upstreamReq.Header.Add(key, v)
+			}
+		}
+
+		resp, err := h.client.Do(upstreamReq)
+		if err == nil {
+			// Check if we should retry based on status code
+			if resp.StatusCode < 500 || resp.StatusCode == 529 { // Don't retry 5xx except overload
+				return resp, nil
+			}
+			// Close response for retry
+			resp.Body.Close()
+			lastErr = fmt.Errorf("upstream returned %d", resp.StatusCode)
+		} else {
+			lastErr = err
+		}
+
+		// Don't retry on last attempt
+		if attempt < maxRetries-1 {
+			delay := baseDelay * time.Duration(1<<attempt) // Exponential backoff
+			log.Printf("[CLASP] Retry %d/%d after %v: %v", attempt+1, maxRetries, delay, lastErr)
+
+			select {
+			case <-ctx.Done():
+				return nil, fmt.Errorf("context cancelled")
+			case <-time.After(delay):
+			}
+		}
+	}
+
+	return nil, fmt.Errorf("max retries exceeded: %w", lastErr)
+}
+
+// writeErrorResponse writes an Anthropic-formatted error response.
+func (h *Handler) writeErrorResponse(w http.ResponseWriter, status int, errType, message string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"type": "error",
+		"error": map[string]string{
+			"type":    errType,
+			"message": message,
+		},
+	})
 }
 
 // handleStreamingResponse handles SSE streaming responses.
@@ -247,8 +352,53 @@ func (h *Handler) handleNonStreamingResponse(w http.ResponseWriter, resp *http.R
 // HandleHealth handles health check requests.
 func (h *Handler) HandleHealth(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{
+	json.NewEncoder(w).Encode(map[string]interface{}{
 		"status":   "healthy",
+		"provider": h.provider.Name(),
+		"uptime":   time.Since(h.metrics.StartTime).String(),
+	})
+}
+
+// HandleMetrics handles metrics endpoint requests.
+func (h *Handler) HandleMetrics(w http.ResponseWriter, r *http.Request) {
+	total := atomic.LoadInt64(&h.metrics.TotalRequests)
+	success := atomic.LoadInt64(&h.metrics.SuccessRequests)
+	errors := atomic.LoadInt64(&h.metrics.ErrorRequests)
+	streams := atomic.LoadInt64(&h.metrics.StreamRequests)
+	toolCalls := atomic.LoadInt64(&h.metrics.ToolCallRequests)
+	totalLatency := atomic.LoadInt64(&h.metrics.TotalLatencyMs)
+
+	var avgLatency float64
+	if success > 0 {
+		avgLatency = float64(totalLatency) / float64(success)
+	}
+
+	uptime := time.Since(h.metrics.StartTime)
+	var requestsPerSec float64
+	if uptime.Seconds() > 0 {
+		requestsPerSec = float64(total) / uptime.Seconds()
+	}
+
+	var successRate float64
+	if total > 0 {
+		successRate = float64(success) / float64(total) * 100
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"requests": map[string]interface{}{
+			"total":       total,
+			"successful":  success,
+			"errors":      errors,
+			"streaming":   streams,
+			"tool_calls":  toolCalls,
+			"success_rate": fmt.Sprintf("%.2f%%", successRate),
+		},
+		"performance": map[string]interface{}{
+			"avg_latency_ms":  fmt.Sprintf("%.2f", avgLatency),
+			"requests_per_sec": fmt.Sprintf("%.2f", requestsPerSec),
+		},
+		"uptime": uptime.String(),
 		"provider": h.provider.Name(),
 	})
 }
@@ -258,9 +408,14 @@ func (h *Handler) HandleRoot(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"name":     "CLASP",
-		"version":  "0.1.0",
+		"version":  "0.2.0",
 		"provider": h.provider.Name(),
 		"status":   "running",
+		"endpoints": map[string]string{
+			"messages": "/v1/messages",
+			"health":   "/health",
+			"metrics":  "/metrics",
+		},
 	})
 }
 
@@ -280,13 +435,17 @@ func (fw *flushWriter) Write(p []byte) (int, error) {
 
 // generateMessageID generates a unique message ID.
 func generateMessageID() string {
-	return fmt.Sprintf("msg_%d", randomID())
+	return fmt.Sprintf("msg_%s", randomHex(12))
 }
 
-// randomID generates a random ID component.
-func randomID() int64 {
-	// Simple incrementing ID for now
-	return int64(1234567890)
+// randomHex generates a random hex string of the specified length.
+func randomHex(n int) string {
+	bytes := make([]byte, n)
+	if _, err := rand.Read(bytes); err != nil {
+		// Fallback to timestamp-based ID
+		return fmt.Sprintf("%d", time.Now().UnixNano())
+	}
+	return hex.EncodeToString(bytes)
 }
 
 // mapFinishReason maps OpenAI finish_reason to Anthropic stop_reason.
