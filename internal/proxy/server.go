@@ -16,9 +16,10 @@ import (
 
 // Server represents the CLASP proxy server.
 type Server struct {
-	cfg     *config.Config
-	handler *Handler
-	server  *http.Server
+	cfg         *config.Config
+	handler     *Handler
+	server      *http.Server
+	rateLimiter *RateLimiter
 }
 
 // NewServer creates a new proxy server.
@@ -28,10 +29,23 @@ func NewServer(cfg *config.Config) (*Server, error) {
 		return nil, fmt.Errorf("creating handler: %w", err)
 	}
 
-	return &Server{
+	s := &Server{
 		cfg:     cfg,
 		handler: handler,
-	}, nil
+	}
+
+	// Initialize rate limiter if enabled
+	if cfg.RateLimitEnabled {
+		s.rateLimiter = NewRateLimiter(
+			cfg.RateLimitRequests,
+			cfg.RateLimitWindow,
+			cfg.RateLimitBurst,
+		)
+		// Set rate limiter on handler for metrics
+		s.handler.SetRateLimiter(s.rateLimiter)
+	}
+
+	return s, nil
 }
 
 // Start starts the proxy server.
@@ -46,10 +60,23 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/metrics/prometheus", s.handler.HandleMetricsPrometheus)
 	mux.HandleFunc("/v1/messages", s.handler.HandleMessages)
 
+	// Build middleware chain
+	var handler http.Handler = mux
+
+	// Apply rate limiting middleware if enabled
+	if s.rateLimiter != nil {
+		handler = RateLimitMiddleware(s.rateLimiter)(handler)
+		log.Printf("[CLASP] Rate limiting enabled: %d requests per %d seconds (burst: %d)",
+			s.cfg.RateLimitRequests, s.cfg.RateLimitWindow, s.cfg.RateLimitBurst)
+	}
+
+	// Apply logging middleware
+	handler = loggingMiddleware(handler)
+
 	// Create server
 	s.server = &http.Server{
 		Addr:         fmt.Sprintf(":%d", s.cfg.Port),
-		Handler:      loggingMiddleware(mux),
+		Handler:      handler,
 		ReadTimeout:  30 * time.Second,
 		WriteTimeout: 120 * time.Second, // Long timeout for streaming
 		IdleTimeout:  120 * time.Second,

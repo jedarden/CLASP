@@ -23,10 +23,11 @@ import (
 
 // Handler handles incoming Anthropic API requests.
 type Handler struct {
-	cfg      *config.Config
-	provider provider.Provider
-	client   *http.Client
-	metrics  *Metrics
+	cfg         *config.Config
+	provider    provider.Provider
+	client      *http.Client
+	metrics     *Metrics
+	rateLimiter *RateLimiter
 }
 
 // Metrics tracks request statistics.
@@ -71,6 +72,11 @@ func NewHandler(cfg *config.Config) (*Handler, error) {
 		client:   client,
 		metrics:  &Metrics{StartTime: time.Now()},
 	}, nil
+}
+
+// SetRateLimiter sets the rate limiter for metrics reporting.
+func (h *Handler) SetRateLimiter(rl *RateLimiter) {
+	h.rateLimiter = rl
 }
 
 // createProvider creates the appropriate provider based on config.
@@ -407,23 +413,38 @@ func (h *Handler) HandleMetrics(w http.ResponseWriter, r *http.Request) {
 		successRate = float64(success) / float64(total) * 100
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	response := map[string]interface{}{
 		"requests": map[string]interface{}{
-			"total":       total,
-			"successful":  success,
-			"errors":      errors,
-			"streaming":   streams,
-			"tool_calls":  toolCalls,
+			"total":        total,
+			"successful":   success,
+			"errors":       errors,
+			"streaming":    streams,
+			"tool_calls":   toolCalls,
 			"success_rate": fmt.Sprintf("%.2f%%", successRate),
 		},
 		"performance": map[string]interface{}{
-			"avg_latency_ms":  fmt.Sprintf("%.2f", avgLatency),
+			"avg_latency_ms":   fmt.Sprintf("%.2f", avgLatency),
 			"requests_per_sec": fmt.Sprintf("%.2f", requestsPerSec),
 		},
-		"uptime": uptime.String(),
+		"uptime":   uptime.String(),
 		"provider": h.provider.Name(),
-	})
+	}
+
+	// Add rate limit stats if enabled
+	if h.rateLimiter != nil {
+		allowed, denied := h.rateLimiter.Stats()
+		response["rate_limit"] = map[string]interface{}{
+			"enabled":  true,
+			"allowed":  allowed,
+			"denied":   denied,
+			"requests": h.cfg.RateLimitRequests,
+			"window":   h.cfg.RateLimitWindow,
+			"burst":    h.cfg.RateLimitBurst,
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
 }
 
 // HandleMetricsPrometheus handles Prometheus metrics endpoint requests.
@@ -485,6 +506,18 @@ func (h *Handler) HandleMetricsPrometheus(w http.ResponseWriter, r *http.Request
 	fmt.Fprintf(w, "# HELP clasp_requests_per_second Current request rate per second\n")
 	fmt.Fprintf(w, "# TYPE clasp_requests_per_second gauge\n")
 	fmt.Fprintf(w, "clasp_requests_per_second{provider=\"%s\"} %.4f\n", providerName, requestsPerSec)
+
+	// Rate limit metrics
+	if h.rateLimiter != nil {
+		allowed, denied := h.rateLimiter.Stats()
+		fmt.Fprintf(w, "# HELP clasp_rate_limit_allowed Total requests allowed by rate limiter\n")
+		fmt.Fprintf(w, "# TYPE clasp_rate_limit_allowed counter\n")
+		fmt.Fprintf(w, "clasp_rate_limit_allowed{provider=\"%s\"} %d\n", providerName, allowed)
+
+		fmt.Fprintf(w, "# HELP clasp_rate_limit_denied Total requests denied by rate limiter\n")
+		fmt.Fprintf(w, "# TYPE clasp_rate_limit_denied counter\n")
+		fmt.Fprintf(w, "clasp_rate_limit_denied{provider=\"%s\"} %d\n", providerName, denied)
+	}
 }
 
 // HandleRoot handles root path requests.
@@ -492,7 +525,7 @@ func (h *Handler) HandleRoot(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"name":     "CLASP",
-		"version":  "0.2.3",
+		"version":  "0.2.4",
 		"provider": h.provider.Name(),
 		"status":   "running",
 		"endpoints": map[string]string{
