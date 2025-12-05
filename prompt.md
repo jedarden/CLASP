@@ -183,6 +183,13 @@ CLASP/
 └── prompt.md
 ```
 
+## npm Package Name
+
+**CRITICAL**: The npm package name MUST be `clasp-ai`. Do NOT change the package name in package.json.
+- Trusted publisher is configured for `clasp-ai` only
+- If you see `clasp-proxy` or any other name, change it back to `clasp-ai`
+- The binary command is still `clasp`, only the npm package name is `clasp-ai`
+
 ## Remember
 
 - Focus on one goal at a time
@@ -190,3 +197,4 @@ CLASP/
 - Test with real Claude Code sessions
 - Keep the proxy fast and reliable
 - Document as you build
+- **Never rename the npm package from `clasp-ai`**
