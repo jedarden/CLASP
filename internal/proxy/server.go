@@ -21,6 +21,7 @@ type Server struct {
 	server      *http.Server
 	rateLimiter *RateLimiter
 	cache       *RequestCache
+	authConfig  *AuthConfig
 }
 
 // NewServer creates a new proxy server.
@@ -52,6 +53,16 @@ func NewServer(cfg *config.Config) (*Server, error) {
 		s.handler.SetCache(s.cache)
 	}
 
+	// Initialize authentication if enabled
+	if cfg.AuthEnabled {
+		s.authConfig = &AuthConfig{
+			Enabled:               true,
+			APIKey:                cfg.AuthAPIKey,
+			AllowAnonymousHealth:  cfg.AuthAllowAnonymousHealth,
+			AllowAnonymousMetrics: cfg.AuthAllowAnonymousMetrics,
+		}
+	}
+
 	return s, nil
 }
 
@@ -81,6 +92,13 @@ func (s *Server) Start() error {
 	if s.cache != nil {
 		log.Printf("[CLASP] Response caching enabled: max %d entries, TTL %d seconds",
 			s.cfg.CacheMaxSize, s.cfg.CacheTTL)
+	}
+
+	// Apply authentication middleware if enabled
+	if s.authConfig != nil && s.authConfig.Enabled {
+		handler = AuthMiddleware(s.authConfig)(handler)
+		log.Printf("[CLASP] Authentication enabled (anonymous health: %v, anonymous metrics: %v)",
+			s.authConfig.AllowAnonymousHealth, s.authConfig.AllowAnonymousMetrics)
 	}
 
 	// Apply logging middleware

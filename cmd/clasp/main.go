@@ -15,7 +15,7 @@ import (
 )
 
 var (
-	version = "v0.3.1"
+	version = "v0.3.2"
 )
 
 func main() {
@@ -33,6 +33,8 @@ func main() {
 	cacheTTL := flag.Int("cache-ttl", 0, "Cache TTL in seconds (default: 3600)")
 	multiProvider := flag.Bool("multi-provider", false, "Enable multi-provider tier routing")
 	fallback := flag.Bool("fallback", false, "Enable fallback routing")
+	auth := flag.Bool("auth", false, "Enable API key authentication")
+	authAPIKey := flag.String("auth-api-key", "", "API key for authentication (required with -auth)")
 	showVersion := flag.Bool("version", false, "Show version information")
 	help := flag.Bool("help", false, "Show help message")
 
@@ -109,6 +111,17 @@ func main() {
 	if *fallback {
 		cfg.FallbackEnabled = true
 	}
+	if *auth {
+		cfg.AuthEnabled = true
+	}
+	if *authAPIKey != "" {
+		cfg.AuthAPIKey = *authAPIKey
+	}
+
+	// Validate authentication configuration
+	if cfg.AuthEnabled && cfg.AuthAPIKey == "" {
+		log.Fatalf("[CLASP] Authentication enabled but no API key provided. Set CLASP_AUTH_API_KEY or use -auth-api-key flag.")
+	}
 
 	// Create and start server
 	server, err := proxy.NewServer(cfg)
@@ -150,6 +163,8 @@ Options:
   -cache-ttl <n>            Cache TTL in seconds (default: 3600)
   -multi-provider           Enable multi-provider tier routing
   -fallback                 Enable fallback routing for auto-failover
+  -auth                     Enable API key authentication for proxy access
+  -auth-api-key <key>       API key for authentication (required with -auth)
   -version                  Show version information
   -help                     Show this help message
 
@@ -214,6 +229,12 @@ Environment Variables:
     CLASP_CACHE_MAX_SIZE     Maximum cache entries (default: 1000)
     CLASP_CACHE_TTL          Cache TTL in seconds (default: 3600)
 
+  Authentication (secure the proxy with an API key):
+    CLASP_AUTH                         Enable authentication (true/1)
+    CLASP_AUTH_API_KEY                 API key required for access
+    CLASP_AUTH_ALLOW_ANONYMOUS_HEALTH  Allow /health without auth (default: true)
+    CLASP_AUTH_ALLOW_ANONYMOUS_METRICS Allow /metrics without auth (default: false)
+
   Fallback Routing (auto-failover to backup provider):
     CLASP_FALLBACK           Enable global fallback routing (true/1)
     CLASP_FALLBACK_PROVIDER  Fallback provider (openai/openrouter/custom)
@@ -254,6 +275,12 @@ Examples:
     CLASP_FALLBACK_PROVIDER=openrouter \
     CLASP_FALLBACK_MODEL=openai/gpt-4o \
     clasp -fallback
+
+  # Secure proxy with API key authentication
+  OPENAI_API_KEY=sk-xxx clasp -auth -auth-api-key "my-secret-key"
+
+  # Then use with x-api-key header:
+  curl -H "x-api-key: my-secret-key" http://localhost:8080/v1/messages ...
 
 Claude Code Integration:
   Set ANTHROPIC_BASE_URL to point to CLASP:
