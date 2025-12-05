@@ -24,6 +24,11 @@ type TierConfig struct {
 	Model    string
 	APIKey   string
 	BaseURL  string
+	// Fallback configuration
+	FallbackProvider ProviderType
+	FallbackModel    string
+	FallbackAPIKey   string
+	FallbackBaseURL  string
 }
 
 // Config holds the CLASP configuration.
@@ -57,6 +62,13 @@ type Config struct {
 	TierOpus             *TierConfig
 	TierSonnet           *TierConfig
 	TierHaiku            *TierConfig
+
+	// Fallback routing (global fallback provider)
+	FallbackEnabled  bool
+	FallbackProvider ProviderType
+	FallbackModel    string
+	FallbackAPIKey   string
+	FallbackBaseURL  string
 
 	// Server settings
 	Port     int
@@ -201,6 +213,29 @@ func LoadFromEnv() (*Config, error) {
 	cfg.TierSonnet = loadTierConfig("SONNET", cfg)
 	cfg.TierHaiku = loadTierConfig("HAIKU", cfg)
 
+	// Fallback routing settings
+	cfg.FallbackEnabled = os.Getenv("CLASP_FALLBACK") == "true" || os.Getenv("CLASP_FALLBACK") == "1"
+	if fallbackProvider := os.Getenv("CLASP_FALLBACK_PROVIDER"); fallbackProvider != "" {
+		cfg.FallbackProvider = ProviderType(fallbackProvider)
+	}
+	cfg.FallbackModel = os.Getenv("CLASP_FALLBACK_MODEL")
+	cfg.FallbackAPIKey = os.Getenv("CLASP_FALLBACK_API_KEY")
+	cfg.FallbackBaseURL = os.Getenv("CLASP_FALLBACK_BASE_URL")
+
+	// Inherit API key from main config if not specified
+	if cfg.FallbackEnabled && cfg.FallbackAPIKey == "" {
+		switch cfg.FallbackProvider {
+		case ProviderOpenAI:
+			cfg.FallbackAPIKey = cfg.OpenAIAPIKey
+		case ProviderOpenRouter:
+			cfg.FallbackAPIKey = cfg.OpenRouterAPIKey
+		case ProviderAzure:
+			cfg.FallbackAPIKey = cfg.AzureAPIKey
+		case ProviderCustom:
+			cfg.FallbackAPIKey = cfg.CustomAPIKey
+		}
+	}
+
 	// Auto-detect provider from available API keys if not explicitly set
 	if os.Getenv("PROVIDER") == "" {
 		cfg.Provider = detectProvider(cfg)
@@ -236,6 +271,7 @@ func detectProvider(cfg *Config) ProviderType {
 
 // loadTierConfig loads tier-specific configuration from environment variables.
 // Pattern: CLASP_<TIER>_PROVIDER, CLASP_<TIER>_MODEL, CLASP_<TIER>_API_KEY, CLASP_<TIER>_BASE_URL
+// Fallback: CLASP_<TIER>_FALLBACK_PROVIDER, CLASP_<TIER>_FALLBACK_MODEL, etc.
 func loadTierConfig(tier string, cfg *Config) *TierConfig {
 	provider := os.Getenv("CLASP_" + tier + "_PROVIDER")
 	model := os.Getenv("CLASP_" + tier + "_MODEL")
@@ -277,6 +313,29 @@ func loadTierConfig(tier string, cfg *Config) *TierConfig {
 			tierCfg.BaseURL = cfg.OpenRouterBaseURL
 		case ProviderCustom:
 			tierCfg.BaseURL = cfg.CustomBaseURL
+		}
+	}
+
+	// Load tier-specific fallback configuration
+	fallbackProvider := os.Getenv("CLASP_" + tier + "_FALLBACK_PROVIDER")
+	if fallbackProvider != "" {
+		tierCfg.FallbackProvider = ProviderType(fallbackProvider)
+		tierCfg.FallbackModel = os.Getenv("CLASP_" + tier + "_FALLBACK_MODEL")
+		tierCfg.FallbackAPIKey = os.Getenv("CLASP_" + tier + "_FALLBACK_API_KEY")
+		tierCfg.FallbackBaseURL = os.Getenv("CLASP_" + tier + "_FALLBACK_BASE_URL")
+
+		// Inherit fallback API key if not specified
+		if tierCfg.FallbackAPIKey == "" {
+			switch tierCfg.FallbackProvider {
+			case ProviderOpenAI:
+				tierCfg.FallbackAPIKey = cfg.OpenAIAPIKey
+			case ProviderOpenRouter:
+				tierCfg.FallbackAPIKey = cfg.OpenRouterAPIKey
+			case ProviderAzure:
+				tierCfg.FallbackAPIKey = cfg.AzureAPIKey
+			case ProviderCustom:
+				tierCfg.FallbackAPIKey = cfg.CustomAPIKey
+			}
 		}
 	}
 
@@ -402,6 +461,53 @@ func (c *Config) GetTierConfig(requestedModel string) *TierConfig {
 	}
 
 	return nil
+}
+
+// HasFallback checks if the tier config has a fallback provider configured.
+func (tc *TierConfig) HasFallback() bool {
+	return tc != nil && tc.FallbackProvider != ""
+}
+
+// GetFallbackConfig returns a new TierConfig representing the fallback.
+func (tc *TierConfig) GetFallbackConfig() *TierConfig {
+	if tc == nil || tc.FallbackProvider == "" {
+		return nil
+	}
+	return &TierConfig{
+		Provider: tc.FallbackProvider,
+		Model:    tc.FallbackModel,
+		APIKey:   tc.FallbackAPIKey,
+		BaseURL:  tc.FallbackBaseURL,
+	}
+}
+
+// HasGlobalFallback checks if global fallback is configured.
+func (c *Config) HasGlobalFallback() bool {
+	return c.FallbackEnabled && c.FallbackProvider != ""
+}
+
+// GetGlobalFallbackConfig returns a TierConfig for the global fallback.
+func (c *Config) GetGlobalFallbackConfig() *TierConfig {
+	if !c.HasGlobalFallback() {
+		return nil
+	}
+	baseURL := c.FallbackBaseURL
+	if baseURL == "" {
+		switch c.FallbackProvider {
+		case ProviderOpenAI:
+			baseURL = c.OpenAIBaseURL
+		case ProviderOpenRouter:
+			baseURL = c.OpenRouterBaseURL
+		case ProviderCustom:
+			baseURL = c.CustomBaseURL
+		}
+	}
+	return &TierConfig{
+		Provider: c.FallbackProvider,
+		Model:    c.FallbackModel,
+		APIKey:   c.FallbackAPIKey,
+		BaseURL:  baseURL,
+	}
 }
 
 // ModelTier represents a Claude model tier.
