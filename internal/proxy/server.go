@@ -101,6 +101,7 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/health", s.handler.HandleHealth)
 	mux.HandleFunc("/metrics", s.handler.HandleMetrics)
 	mux.HandleFunc("/metrics/prometheus", s.handler.HandleMetricsPrometheus)
+	mux.HandleFunc("/costs", s.handler.HandleCosts)
 	mux.HandleFunc("/v1/messages", s.handler.HandleMessages)
 
 	// Build middleware chain

@@ -15,7 +15,7 @@ import (
 )
 
 var (
-	version = "v0.5.1"
+	version = "v0.6.0"
 )
 
 func main() {
@@ -304,6 +304,19 @@ Environment Variables:
   Model Aliasing (create custom model names):
     CLASP_ALIAS_<name>=<model>     Define a model alias (e.g., CLASP_ALIAS_FAST=gpt-4o-mini)
     CLASP_MODEL_ALIASES            Comma-separated aliases (e.g., fast:gpt-4o-mini,smart:gpt-4o)
+
+Endpoints:
+  /v1/messages         - Anthropic Messages API endpoint (main proxy)
+  /health              - Health check endpoint
+  /metrics             - JSON metrics endpoint
+  /metrics/prometheus  - Prometheus format metrics
+  /costs               - Cost tracking summary (GET=summary, POST?action=reset=reset)
+
+Cost Tracking:
+  CLASP automatically tracks API costs based on token usage.
+  View costs at /costs endpoint or in /metrics and /metrics/prometheus.
+  Pricing is based on public rates for supported models.
+  Costs are tracked per-provider and per-model.
 
 Examples:
   # Use OpenAI with GPT-4o
