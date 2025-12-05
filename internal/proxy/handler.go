@@ -172,6 +172,8 @@ func createProvider(cfg *config.Config) (provider.Provider, error) {
 		return provider.NewOpenRouterProvider(cfg.OpenRouterBaseURL), nil
 	case config.ProviderAzure:
 		return provider.NewAzureProvider(cfg.AzureEndpoint, cfg.AzureDeploymentName, cfg.AzureAPIVersion), nil
+	case config.ProviderAnthropic:
+		return provider.NewAnthropicProvider(""), nil
 	case config.ProviderCustom:
 		return provider.NewCustomProvider(cfg.CustomBaseURL), nil
 	default:
@@ -193,6 +195,11 @@ func createTierProvider(tierCfg *config.TierConfig) (provider.Provider, error) {
 			baseURL = "https://openrouter.ai/api/v1"
 		}
 		return provider.NewOpenRouterProviderWithKey(baseURL, tierCfg.APIKey), nil
+	case config.ProviderAnthropic:
+		if baseURL == "" {
+			baseURL = "https://api.anthropic.com"
+		}
+		return provider.NewAnthropicProviderWithKey(baseURL, tierCfg.APIKey), nil
 	case config.ProviderCustom:
 		return provider.NewCustomProviderWithKey(baseURL, tierCfg.APIKey), nil
 	default:
@@ -287,7 +294,7 @@ func (h *Handler) HandleMessages(w http.ResponseWriter, r *http.Request) {
 		targetModel = selectedProvider.TransformModelID(targetModel)
 	}
 
-	log.Printf("[CLASP] Request: %s -> %s (streaming: %v, provider: %s)", anthropicReq.Model, targetModel, anthropicReq.Stream, selectedProvider.Name())
+	log.Printf("[CLASP] Request: %s -> %s (streaming: %v, provider: %s, passthrough: %v)", anthropicReq.Model, targetModel, anthropicReq.Stream, selectedProvider.Name(), !selectedProvider.RequiresTransformation())
 
 	// Check circuit breaker
 	if h.circuitBreaker != nil && !h.circuitBreaker.Allow() {
@@ -295,6 +302,13 @@ func (h *Handler) HandleMessages(w http.ResponseWriter, r *http.Request) {
 		log.Printf("[CLASP] Circuit breaker open - rejecting request")
 		w.Header().Set("X-CLASP-Circuit-Breaker", "open")
 		h.writeErrorResponse(w, http.StatusServiceUnavailable, "overloaded_error", "Service temporarily unavailable - circuit breaker open")
+		return
+	}
+
+	// Check if this provider requires transformation (passthrough mode for Anthropic)
+	if !selectedProvider.RequiresTransformation() {
+		// Passthrough mode - forward request directly to Anthropic API
+		h.handlePassthroughRequest(w, r, &anthropicReq, selectedProvider, start, cacheKey, cacheable)
 		return
 	}
 
@@ -400,6 +414,135 @@ func (h *Handler) HandleMessages(w http.ResponseWriter, r *http.Request) {
 	} else {
 		h.handleNonStreamingResponse(w, resp, targetModel, cacheKey, cacheable)
 	}
+}
+
+// handlePassthroughRequest handles requests that don't require transformation.
+// This is used for direct Anthropic API passthrough where the request is already
+// in the correct format.
+func (h *Handler) handlePassthroughRequest(w http.ResponseWriter, r *http.Request, anthropicReq *models.AnthropicRequest, p provider.Provider, start time.Time, cacheKey string, cacheable bool) {
+	// Marshal the original Anthropic request
+	reqBody, err := json.Marshal(anthropicReq)
+	if err != nil {
+		atomic.AddInt64(&h.metrics.ErrorRequests, 1)
+		log.Printf("[CLASP] Error marshaling passthrough request: %v", err)
+		h.writeErrorResponse(w, http.StatusInternalServerError, "api_error", "Error preparing request")
+		return
+	}
+
+	// Debug logging for passthrough request
+	if h.cfg.DebugRequests {
+		log.Printf("[CLASP DEBUG] Passthrough to Anthropic API:\n%s", string(reqBody))
+	}
+
+	// Execute request with retry logic
+	resp, err := h.doRequestWithRetry(r.Context(), reqBody, p)
+	if err != nil {
+		atomic.AddInt64(&h.metrics.ErrorRequests, 1)
+		if h.circuitBreaker != nil {
+			h.circuitBreaker.RecordFailure()
+		}
+		log.Printf("[CLASP] Error in passthrough request: %v", err)
+		h.writeErrorResponse(w, http.StatusBadGateway, "api_error", "Error connecting to Anthropic API")
+		return
+	}
+	defer resp.Body.Close()
+
+	// Check for upstream errors
+	if resp.StatusCode >= 400 {
+		atomic.AddInt64(&h.metrics.ErrorRequests, 1)
+		if h.circuitBreaker != nil && resp.StatusCode >= 500 {
+			h.circuitBreaker.RecordFailure()
+		}
+		body, _ := io.ReadAll(resp.Body)
+		log.Printf("[CLASP] Anthropic API error (%d): %s", resp.StatusCode, string(body))
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(resp.StatusCode)
+		w.Write(body)
+		return
+	}
+
+	// Record success for circuit breaker
+	if h.circuitBreaker != nil {
+		h.circuitBreaker.RecordSuccess()
+	}
+
+	atomic.AddInt64(&h.metrics.SuccessRequests, 1)
+	atomic.AddInt64(&h.metrics.TotalLatencyMs, time.Since(start).Milliseconds())
+
+	// Add passthrough indicator header
+	w.Header().Set("X-CLASP-Passthrough", "true")
+
+	// Handle streaming vs non-streaming passthrough
+	if anthropicReq.Stream {
+		h.handlePassthroughStreaming(w, resp)
+	} else {
+		h.handlePassthroughNonStreaming(w, resp, cacheKey, cacheable)
+	}
+}
+
+// handlePassthroughStreaming streams the Anthropic response directly.
+func (h *Handler) handlePassthroughStreaming(w http.ResponseWriter, resp *http.Response) {
+	// Set SSE headers
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
+
+	// Flush headers
+	if f, ok := w.(http.Flusher); ok {
+		f.Flush()
+	}
+
+	// Stream response directly
+	buf := make([]byte, 4096)
+	for {
+		n, err := resp.Body.Read(buf)
+		if n > 0 {
+			if _, writeErr := w.Write(buf[:n]); writeErr != nil {
+				log.Printf("[CLASP] Error writing passthrough stream: %v", writeErr)
+				return
+			}
+			if f, ok := w.(http.Flusher); ok {
+				f.Flush()
+			}
+		}
+		if err != nil {
+			if err != io.EOF {
+				log.Printf("[CLASP] Error reading passthrough stream: %v", err)
+			}
+			return
+		}
+	}
+}
+
+// handlePassthroughNonStreaming handles non-streaming passthrough responses.
+func (h *Handler) handlePassthroughNonStreaming(w http.ResponseWriter, resp *http.Response, cacheKey string, cacheable bool) {
+	// Read response body
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		log.Printf("[CLASP] Error reading passthrough response: %v", err)
+		h.writeErrorResponse(w, http.StatusBadGateway, "api_error", "Error reading upstream response")
+		return
+	}
+
+	// Debug logging
+	if h.cfg.DebugResponses {
+		log.Printf("[CLASP DEBUG] Passthrough response:\n%s", string(body))
+	}
+
+	// Parse response for caching
+	if h.cache != nil && cacheable && cacheKey != "" {
+		var anthropicResp models.AnthropicResponse
+		if err := json.Unmarshal(body, &anthropicResp); err == nil {
+			h.cache.Set(cacheKey, &anthropicResp)
+			log.Printf("[CLASP] Passthrough response cached (key: %s...)", cacheKey[:16])
+		}
+	}
+
+	// Write response
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-CLASP-Cache", "MISS")
+	w.Write(body)
 }
 
 // doRequestWithRetry executes the upstream request with exponential backoff retry.
@@ -904,7 +1047,7 @@ func (h *Handler) HandleRoot(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	response := map[string]interface{}{
 		"name":     "CLASP",
-		"version":  "0.4.1",
+		"version":  "0.5.0",
 		"provider": h.provider.Name(),
 		"status":   "running",
 		"endpoints": map[string]string{
