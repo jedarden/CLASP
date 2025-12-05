@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -242,7 +243,7 @@ func QueueMiddleware(queue *RequestQueue) func(http.Handler) http.Handler {
 func writeQueueError(w http.ResponseWriter, status int, message string, retryAfter int) {
 	w.Header().Set("Content-Type", "application/json")
 	if retryAfter > 0 {
-		w.Header().Set("Retry-After", string(rune(retryAfter)))
+		w.Header().Set("Retry-After", strconv.Itoa(retryAfter))
 	}
 	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(map[string]interface{}{
