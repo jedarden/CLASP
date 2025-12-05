@@ -38,6 +38,18 @@ cd CLASP
 make build
 ```
 
+### Via Docker
+
+```bash
+# Run with Docker
+docker run -d -p 8080:8080 \
+  -e OPENAI_API_KEY=sk-... \
+  ghcr.io/jedarden/clasp-proxy:latest
+
+# Or with docker-compose
+docker-compose up -d
+```
+
 ## Quick Start
 
 ### Using with OpenAI
@@ -90,6 +102,7 @@ Options:
   -port <port>       Port to listen on (default: 8080)
   -provider <name>   LLM provider: openai, azure, openrouter, custom
   -model <model>     Default model to use for all requests
+  -debug             Enable debug logging (full request/response)
   -version           Show version information
   -help              Show help message
 ```
@@ -113,6 +126,9 @@ Options:
 | `OPENROUTER_API_KEY` | OpenRouter API key | - |
 | `CUSTOM_BASE_URL` | Custom endpoint base URL | - |
 | `CUSTOM_API_KEY` | Custom endpoint API key | - |
+| `CLASP_DEBUG` | Enable all debug logging | `false` |
+| `CLASP_DEBUG_REQUESTS` | Log requests only | `false` |
+| `CLASP_DEBUG_RESPONSES` | Log responses only | `false` |
 
 ### Model Mapping
 
@@ -189,6 +205,41 @@ Access `/metrics` for request statistics:
 }
 ```
 
+## Docker
+
+### Build and Run
+
+```bash
+# Build Docker image
+make docker
+
+# Run container
+make docker-run
+
+# Stop container
+make docker-stop
+```
+
+### Docker Compose
+
+Create a `.env` file with your configuration:
+
+```bash
+PROVIDER=openai
+OPENAI_API_KEY=sk-...
+CLASP_DEFAULT_MODEL=gpt-4o
+```
+
+Then start the service:
+
+```bash
+docker-compose up -d
+```
+
+### Docker Environment Variables
+
+All configuration is done through environment variables. See the Environment Variables section above.
+
 ## Development
 
 ```bash
@@ -201,9 +252,34 @@ make test
 # Build for all platforms
 make build-all
 
+# Build Docker image
+make docker
+
 # Format code
 make fmt
 ```
+
+## Debugging
+
+Enable debug logging to troubleshoot issues:
+
+```bash
+# Via CLI flag
+clasp -debug
+
+# Via environment variable
+CLASP_DEBUG=true clasp
+
+# Log only requests or responses
+CLASP_DEBUG_REQUESTS=true clasp
+CLASP_DEBUG_RESPONSES=true clasp
+```
+
+Debug output includes:
+- Incoming Anthropic requests
+- Outgoing OpenAI requests
+- Raw OpenAI responses
+- Transformed Anthropic responses
 
 ## License
 

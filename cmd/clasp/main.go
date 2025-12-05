@@ -23,6 +23,7 @@ func main() {
 	port := flag.Int("port", 0, "Port to listen on (overrides CLASP_PORT)")
 	provider := flag.String("provider", "", "LLM provider (openai, azure, openrouter, custom)")
 	model := flag.String("model", "", "Default model to use")
+	debug := flag.Bool("debug", false, "Enable debug logging (requests and responses)")
 	showVersion := flag.Bool("version", false, "Show version information")
 	help := flag.Bool("help", false, "Show help message")
 
@@ -67,6 +68,11 @@ func main() {
 	if *model != "" {
 		cfg.DefaultModel = *model
 	}
+	if *debug {
+		cfg.Debug = true
+		cfg.DebugRequests = true
+		cfg.DebugResponses = true
+	}
 
 	// Create and start server
 	server, err := proxy.NewServer(cfg)
@@ -98,6 +104,7 @@ Options:
   -port <port>       Port to listen on (default: 8080, or CLASP_PORT env)
   -provider <name>   LLM provider: openai, azure, openrouter, custom
   -model <model>     Default model to use for all requests
+  -debug             Enable debug logging (full request/response)
   -version           Show version information
   -help              Show this help message
 
@@ -130,6 +137,11 @@ Environment Variables:
   Server:
     CLASP_PORT           Port to listen on (default: 8080)
     CLASP_LOG_LEVEL      Logging level (debug, info, minimal)
+
+  Debug:
+    CLASP_DEBUG            Enable all debug logging (true/1)
+    CLASP_DEBUG_REQUESTS   Log incoming/outgoing requests (true/1)
+    CLASP_DEBUG_RESPONSES  Log responses (true/1)
 
 Examples:
   # Use OpenAI with GPT-4o

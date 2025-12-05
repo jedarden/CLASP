@@ -119,6 +119,12 @@ func (h *Handler) HandleMessages(w http.ResponseWriter, r *http.Request) {
 		atomic.AddInt64(&h.metrics.ToolCallRequests, 1)
 	}
 
+	// Debug logging for incoming request
+	if h.cfg.DebugRequests {
+		debugJSON, _ := json.MarshalIndent(anthropicReq, "", "  ")
+		log.Printf("[CLASP DEBUG] Incoming Anthropic request:\n%s", string(debugJSON))
+	}
+
 	// Map the model
 	targetModel := h.cfg.MapModel(anthropicReq.Model)
 	targetModel = h.provider.TransformModelID(targetModel)
@@ -141,6 +147,12 @@ func (h *Handler) HandleMessages(w http.ResponseWriter, r *http.Request) {
 		log.Printf("[CLASP] Error marshaling request: %v", err)
 		h.writeErrorResponse(w, http.StatusInternalServerError, "api_error", "Error preparing request")
 		return
+	}
+
+	// Debug logging for outgoing request
+	if h.cfg.DebugRequests {
+		debugJSON, _ := json.MarshalIndent(openAIReq, "", "  ")
+		log.Printf("[CLASP DEBUG] Outgoing OpenAI request:\n%s", string(debugJSON))
 	}
 
 	// Execute request with retry logic
@@ -276,6 +288,11 @@ func (h *Handler) handleNonStreamingResponse(w http.ResponseWriter, resp *http.R
 		return
 	}
 
+	// Debug logging for raw response
+	if h.cfg.DebugResponses {
+		log.Printf("[CLASP DEBUG] Raw OpenAI response:\n%s", string(body))
+	}
+
 	// Parse OpenAI response
 	var openAIResp struct {
 		ID      string `json:"id"`
@@ -342,6 +359,12 @@ func (h *Handler) handleNonStreamingResponse(w http.ResponseWriter, resp *http.R
 				Input: input,
 			})
 		}
+	}
+
+	// Debug logging for Anthropic response
+	if h.cfg.DebugResponses {
+		debugJSON, _ := json.MarshalIndent(anthropicResp, "", "  ")
+		log.Printf("[CLASP DEBUG] Transformed Anthropic response:\n%s", string(debugJSON))
 	}
 
 	// Write response
