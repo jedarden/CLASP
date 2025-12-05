@@ -314,6 +314,97 @@ func TestTransformRequest_AssistantWithToolUse(t *testing.T) {
 	}
 }
 
+func TestTransformRequest_MaxTokensCapping(t *testing.T) {
+	tests := []struct {
+		name           string
+		inputTokens    int
+		targetModel    string
+		expectedTokens int
+	}{
+		{
+			name:           "GPT-4o with tokens under limit",
+			inputTokens:    1024,
+			targetModel:    "gpt-4o",
+			expectedTokens: 1024,
+		},
+		{
+			name:           "GPT-4o with tokens at limit",
+			inputTokens:    16384,
+			targetModel:    "gpt-4o",
+			expectedTokens: 16384,
+		},
+		{
+			name:           "GPT-4o with tokens over limit",
+			inputTokens:    21333,
+			targetModel:    "gpt-4o",
+			expectedTokens: 16384,
+		},
+		{
+			name:           "GPT-4o-mini with high tokens",
+			inputTokens:    50000,
+			targetModel:    "gpt-4o-mini",
+			expectedTokens: 16384,
+		},
+		{
+			name:           "GPT-4 Turbo with high tokens",
+			inputTokens:    10000,
+			targetModel:    "gpt-4-turbo",
+			expectedTokens: 4096,
+		},
+		{
+			name:           "O1 model with very high tokens",
+			inputTokens:    50000,
+			targetModel:    "o1",
+			expectedTokens: 50000, // O1 supports 100k
+		},
+		{
+			name:           "O1 model at limit",
+			inputTokens:    100000,
+			targetModel:    "o1",
+			expectedTokens: 100000,
+		},
+		{
+			name:           "O1 model over limit",
+			inputTokens:    150000,
+			targetModel:    "o1",
+			expectedTokens: 100000,
+		},
+		{
+			name:           "Unknown model uses default limit",
+			inputTokens:    10000,
+			targetModel:    "unknown-model",
+			expectedTokens: 4096, // Default cap
+		},
+		{
+			name:           "Zero tokens unchanged",
+			inputTokens:    0,
+			targetModel:    "gpt-4o",
+			expectedTokens: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := &models.AnthropicRequest{
+				Model:     "claude-3-5-sonnet-20241022",
+				MaxTokens: tt.inputTokens,
+				Messages: []models.AnthropicMessage{
+					{Role: "user", Content: "test"},
+				},
+			}
+
+			result, err := translator.TransformRequest(req, tt.targetModel)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			if result.MaxTokens != tt.expectedTokens {
+				t.Errorf("expected max_tokens %d, got %d", tt.expectedTokens, result.MaxTokens)
+			}
+		})
+	}
+}
+
 func BenchmarkTransformRequest(b *testing.B) {
 	req := &models.AnthropicRequest{
 		Model:     "claude-3-opus-20240229",

@@ -9,12 +9,78 @@ import (
 	"github.com/jedarden/clasp/pkg/models"
 )
 
+// Model max_tokens limits for OpenAI models.
+// These limits represent the maximum output tokens each model supports.
+var modelMaxTokenLimits = map[string]int{
+	// GPT-4o series
+	"gpt-4o":            16384,
+	"gpt-4o-2024-11-20": 16384,
+	"gpt-4o-2024-08-06": 16384,
+	"gpt-4o-2024-05-13": 4096,
+	"gpt-4o-mini":       16384,
+	"gpt-4o-mini-2024-07-18": 16384,
+	// GPT-4 Turbo
+	"gpt-4-turbo":            4096,
+	"gpt-4-turbo-2024-04-09": 4096,
+	"gpt-4-turbo-preview":    4096,
+	"gpt-4-0125-preview":     4096,
+	"gpt-4-1106-preview":     4096,
+	// GPT-4
+	"gpt-4":       8192,
+	"gpt-4-32k":   8192,
+	"gpt-4-0613":  8192,
+	"gpt-4-32k-0613": 8192,
+	// GPT-3.5 Turbo
+	"gpt-3.5-turbo":             4096,
+	"gpt-3.5-turbo-0125":        4096,
+	"gpt-3.5-turbo-1106":        4096,
+	"gpt-3.5-turbo-16k":         4096,
+	// O1 models (reasoning models)
+	"o1":         100000,
+	"o1-preview": 32768,
+	"o1-mini":    65536,
+}
+
+// defaultMaxTokenLimit is used when the model is not in the known list.
+const defaultMaxTokenLimit = 4096
+
+// capMaxTokens ensures max_tokens doesn't exceed the target model's limit.
+func capMaxTokens(maxTokens int, targetModel string) int {
+	if maxTokens <= 0 {
+		return maxTokens
+	}
+
+	// Look up model limit
+	limit, ok := modelMaxTokenLimits[targetModel]
+	if !ok {
+		// Try prefix matching for model variants
+		for modelPrefix, modelLimit := range modelMaxTokenLimits {
+			if strings.HasPrefix(targetModel, modelPrefix) {
+				limit = modelLimit
+				ok = true
+				break
+			}
+		}
+	}
+
+	// If still not found, use default
+	if !ok {
+		limit = defaultMaxTokenLimit
+	}
+
+	// Cap to model limit
+	if maxTokens > limit {
+		return limit
+	}
+	return maxTokens
+}
+
 // TransformRequest converts an Anthropic request to OpenAI format.
 func TransformRequest(req *models.AnthropicRequest, targetModel string) (*models.OpenAIRequest, error) {
 	openAIReq := &models.OpenAIRequest{
 		Model:       targetModel,
 		Stream:      req.Stream,
-		MaxTokens:   req.MaxTokens,
+		MaxTokens:   capMaxTokens(req.MaxTokens, targetModel),
 		Temperature: req.Temperature,
 		TopP:        req.TopP,
 	}
