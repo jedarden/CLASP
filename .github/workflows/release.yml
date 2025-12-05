@@ -184,7 +184,7 @@ jobs:
     needs: [version, github-release]
     if: needs.version.outputs.should_release == 'true'
     runs-on: ubuntu-latest
-    environment: npm-publish
+    # environment: npm-publish  # Temporarily disabled for debugging
     permissions:
       contents: read
       id-token: write
