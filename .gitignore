@@ -3,4 +3,4 @@ dist/
 *.tgz
 node_modules/
 coverage.out
-coverage.html
+coverage.html.claude-flow/metrics/
