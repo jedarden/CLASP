@@ -58,6 +58,11 @@ type Config struct {
 	RateLimitRequests  int     // Requests per window
 	RateLimitWindow    int     // Window in seconds
 	RateLimitBurst     int     // Burst allowance
+
+	// Cache settings
+	CacheEnabled  bool
+	CacheMaxSize  int   // Maximum number of entries
+	CacheTTL      int   // Time-to-live in seconds (0 = no expiry)
 }
 
 // DefaultConfig returns the default configuration.
@@ -74,6 +79,9 @@ func DefaultConfig() *Config {
 		RateLimitRequests:  60,   // 60 requests per window (default)
 		RateLimitWindow:    60,   // 60 second window (default)
 		RateLimitBurst:     10,   // Allow burst of 10 (default)
+		CacheEnabled:       false,
+		CacheMaxSize:       1000, // Default 1000 entries
+		CacheTTL:           3600, // Default 1 hour TTL
 	}
 }
 
@@ -154,6 +162,23 @@ func LoadFromEnv() (*Config, error) {
 			return nil, fmt.Errorf("invalid CLASP_RATE_LIMIT_BURST: %w", err)
 		}
 		cfg.RateLimitBurst = b
+	}
+
+	// Cache settings
+	cfg.CacheEnabled = os.Getenv("CLASP_CACHE") == "true" || os.Getenv("CLASP_CACHE") == "1"
+	if maxSize := os.Getenv("CLASP_CACHE_MAX_SIZE"); maxSize != "" {
+		m, err := strconv.Atoi(maxSize)
+		if err != nil {
+			return nil, fmt.Errorf("invalid CLASP_CACHE_MAX_SIZE: %w", err)
+		}
+		cfg.CacheMaxSize = m
+	}
+	if ttl := os.Getenv("CLASP_CACHE_TTL"); ttl != "" {
+		t, err := strconv.Atoi(ttl)
+		if err != nil {
+			return nil, fmt.Errorf("invalid CLASP_CACHE_TTL: %w", err)
+		}
+		cfg.CacheTTL = t
 	}
 
 	// Auto-detect provider from available API keys if not explicitly set

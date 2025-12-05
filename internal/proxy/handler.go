@@ -28,6 +28,7 @@ type Handler struct {
 	client      *http.Client
 	metrics     *Metrics
 	rateLimiter *RateLimiter
+	cache       *RequestCache
 }
 
 // Metrics tracks request statistics.
@@ -77,6 +78,11 @@ func NewHandler(cfg *config.Config) (*Handler, error) {
 // SetRateLimiter sets the rate limiter for metrics reporting.
 func (h *Handler) SetRateLimiter(rl *RateLimiter) {
 	h.rateLimiter = rl
+}
+
+// SetCache sets the request cache.
+func (h *Handler) SetCache(cache *RequestCache) {
+	h.cache = cache
 }
 
 // createProvider creates the appropriate provider based on config.
@@ -129,6 +135,24 @@ func (h *Handler) HandleMessages(w http.ResponseWriter, r *http.Request) {
 	if h.cfg.DebugRequests {
 		debugJSON, _ := json.MarshalIndent(anthropicReq, "", "  ")
 		log.Printf("[CLASP DEBUG] Incoming Anthropic request:\n%s", string(debugJSON))
+	}
+
+	// Check cache for non-streaming requests
+	var cacheKey string
+	var cacheable bool
+	if h.cache != nil && !anthropicReq.Stream {
+		cacheKey, cacheable = GenerateCacheKey(&anthropicReq)
+		if cacheable {
+			if cachedResp, found := h.cache.Get(cacheKey); found {
+				log.Printf("[CLASP] Cache HIT for request")
+				atomic.AddInt64(&h.metrics.SuccessRequests, 1)
+				w.Header().Set("Content-Type", "application/json")
+				w.Header().Set("X-CLASP-Cache", "HIT")
+				json.NewEncoder(w).Encode(cachedResp)
+				return
+			}
+			log.Printf("[CLASP] Cache MISS for request")
+		}
 	}
 
 	// Map the model
@@ -189,7 +213,7 @@ func (h *Handler) HandleMessages(w http.ResponseWriter, r *http.Request) {
 	if anthropicReq.Stream {
 		h.handleStreamingResponse(w, resp, targetModel)
 	} else {
-		h.handleNonStreamingResponse(w, resp, targetModel)
+		h.handleNonStreamingResponse(w, resp, targetModel, cacheKey, cacheable)
 	}
 }
 
@@ -285,7 +309,7 @@ func (h *Handler) handleStreamingResponse(w http.ResponseWriter, resp *http.Resp
 }
 
 // handleNonStreamingResponse handles non-streaming responses.
-func (h *Handler) handleNonStreamingResponse(w http.ResponseWriter, resp *http.Response, targetModel string) {
+func (h *Handler) handleNonStreamingResponse(w http.ResponseWriter, resp *http.Response, targetModel string, cacheKey string, cacheable bool) {
 	// Read response body
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -373,8 +397,15 @@ func (h *Handler) handleNonStreamingResponse(w http.ResponseWriter, resp *http.R
 		log.Printf("[CLASP DEBUG] Transformed Anthropic response:\n%s", string(debugJSON))
 	}
 
+	// Store in cache if cacheable
+	if h.cache != nil && cacheable && cacheKey != "" {
+		h.cache.Set(cacheKey, &anthropicResp)
+		log.Printf("[CLASP] Response cached (key: %s...)", cacheKey[:16])
+	}
+
 	// Write response
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-CLASP-Cache", "MISS")
 	json.NewEncoder(w).Encode(anthropicResp)
 }
 
@@ -440,6 +471,19 @@ func (h *Handler) HandleMetrics(w http.ResponseWriter, r *http.Request) {
 			"requests": h.cfg.RateLimitRequests,
 			"window":   h.cfg.RateLimitWindow,
 			"burst":    h.cfg.RateLimitBurst,
+		}
+	}
+
+	// Add cache stats if enabled
+	if h.cache != nil {
+		size, maxSize, hits, misses, hitRate := h.cache.Stats()
+		response["cache"] = map[string]interface{}{
+			"enabled":  true,
+			"size":     size,
+			"max_size": maxSize,
+			"hits":     hits,
+			"misses":   misses,
+			"hit_rate": fmt.Sprintf("%.2f%%", hitRate),
 		}
 	}
 
@@ -518,6 +562,26 @@ func (h *Handler) HandleMetricsPrometheus(w http.ResponseWriter, r *http.Request
 		fmt.Fprintf(w, "# TYPE clasp_rate_limit_denied counter\n")
 		fmt.Fprintf(w, "clasp_rate_limit_denied{provider=\"%s\"} %d\n", providerName, denied)
 	}
+
+	// Cache metrics
+	if h.cache != nil {
+		size, maxSize, hits, misses, _ := h.cache.Stats()
+		fmt.Fprintf(w, "# HELP clasp_cache_size Current number of entries in cache\n")
+		fmt.Fprintf(w, "# TYPE clasp_cache_size gauge\n")
+		fmt.Fprintf(w, "clasp_cache_size{provider=\"%s\"} %d\n", providerName, size)
+
+		fmt.Fprintf(w, "# HELP clasp_cache_max_size Maximum cache size\n")
+		fmt.Fprintf(w, "# TYPE clasp_cache_max_size gauge\n")
+		fmt.Fprintf(w, "clasp_cache_max_size{provider=\"%s\"} %d\n", providerName, maxSize)
+
+		fmt.Fprintf(w, "# HELP clasp_cache_hits Total cache hits\n")
+		fmt.Fprintf(w, "# TYPE clasp_cache_hits counter\n")
+		fmt.Fprintf(w, "clasp_cache_hits{provider=\"%s\"} %d\n", providerName, hits)
+
+		fmt.Fprintf(w, "# HELP clasp_cache_misses Total cache misses\n")
+		fmt.Fprintf(w, "# TYPE clasp_cache_misses counter\n")
+		fmt.Fprintf(w, "clasp_cache_misses{provider=\"%s\"} %d\n", providerName, misses)
+	}
 }
 
 // HandleRoot handles root path requests.
@@ -525,7 +589,7 @@ func (h *Handler) HandleRoot(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"name":     "CLASP",
-		"version":  "0.2.4",
+		"version":  "0.2.5",
 		"provider": h.provider.Name(),
 		"status":   "running",
 		"endpoints": map[string]string{
