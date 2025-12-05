@@ -340,6 +340,8 @@ func LoadFromEnv() (*Config, error) {
 			cfg.FallbackAPIKey = cfg.OpenRouterAPIKey
 		case ProviderAzure:
 			cfg.FallbackAPIKey = cfg.AzureAPIKey
+		case ProviderAnthropic:
+			cfg.FallbackAPIKey = cfg.AnthropicAPIKey
 		case ProviderCustom:
 			cfg.FallbackAPIKey = cfg.CustomAPIKey
 		}
@@ -408,6 +410,8 @@ func loadTierConfig(tier string, cfg *Config) *TierConfig {
 			tierCfg.APIKey = cfg.OpenRouterAPIKey
 		case ProviderAzure:
 			tierCfg.APIKey = cfg.AzureAPIKey
+		case ProviderAnthropic:
+			tierCfg.APIKey = cfg.AnthropicAPIKey
 		case ProviderCustom:
 			tierCfg.APIKey = cfg.CustomAPIKey
 		}
@@ -442,6 +446,8 @@ func loadTierConfig(tier string, cfg *Config) *TierConfig {
 				tierCfg.FallbackAPIKey = cfg.OpenRouterAPIKey
 			case ProviderAzure:
 				tierCfg.FallbackAPIKey = cfg.AzureAPIKey
+			case ProviderAnthropic:
+				tierCfg.FallbackAPIKey = cfg.AnthropicAPIKey
 			case ProviderCustom:
 				tierCfg.FallbackAPIKey = cfg.CustomAPIKey
 			}

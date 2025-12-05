@@ -15,7 +15,7 @@ import (
 )
 
 var (
-	version = "v0.4.1"
+	version = "v0.5.0"
 )
 
 func main() {
@@ -179,7 +179,7 @@ Usage: clasp [options]
 
 Options:
   -port <port>              Port to listen on (default: 8080, or CLASP_PORT env)
-  -provider <name>          LLM provider: openai, azure, openrouter, custom
+  -provider <name>          LLM provider: openai, azure, openrouter, anthropic, custom
   -model <model>            Default model to use for all requests
   -debug                    Enable debug logging (full request/response)
   -rate-limit               Enable rate limiting
@@ -219,6 +219,9 @@ Environment Variables:
   OpenRouter:
     OPENROUTER_API_KEY   Your OpenRouter API key
 
+  Anthropic (Passthrough Mode):
+    ANTHROPIC_API_KEY    Your Anthropic API key (passthrough - no translation)
+
   Custom:
     CUSTOM_BASE_URL      Base URL for OpenAI-compatible endpoint
     CUSTOM_API_KEY       API key (optional for some endpoints)
@@ -231,7 +234,7 @@ Environment Variables:
 
   Multi-Provider Routing (route different tiers to different providers):
     CLASP_MULTI_PROVIDER           Enable multi-provider routing (true/1)
-    CLASP_OPUS_PROVIDER            Provider for Opus tier (openai/openrouter/custom)
+    CLASP_OPUS_PROVIDER            Provider for Opus tier (openai/openrouter/anthropic/custom)
     CLASP_OPUS_MODEL               Model for Opus tier
     CLASP_OPUS_API_KEY             API key for Opus tier (optional, inherits from main)
     CLASP_OPUS_BASE_URL            Base URL for Opus tier (optional)
@@ -312,6 +315,17 @@ Examples:
 
   # Use local Ollama
   CUSTOM_BASE_URL=http://localhost:11434/v1 clasp -provider custom -model llama3.1
+
+  # Anthropic Passthrough (direct to Anthropic API, no translation)
+  ANTHROPIC_API_KEY=sk-ant-xxx clasp -provider anthropic
+  # Use original Claude models without translation - requests pass through unchanged
+
+  # Multi-provider with Anthropic tier (passthrough for opus, translate for others)
+  ANTHROPIC_API_KEY=sk-ant-xxx OPENAI_API_KEY=sk-xxx \
+    CLASP_MULTI_PROVIDER=true \
+    CLASP_OPUS_PROVIDER=anthropic CLASP_OPUS_MODEL=claude-3-opus-20240229 \
+    CLASP_SONNET_PROVIDER=openai CLASP_SONNET_MODEL=gpt-4o \
+    clasp -multi-provider
 
   # Multi-provider: Opus->OpenAI, Sonnet->OpenRouter, Haiku->local
   OPENAI_API_KEY=sk-xxx OPENROUTER_API_KEY=sk-or-xxx \
