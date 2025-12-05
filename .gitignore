@@ -1,1 +1,6 @@
 .env
+dist/
+*.tgz
+node_modules/
+coverage.out
+coverage.html

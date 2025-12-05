@@ -1,0 +1,53 @@
+{
+  "name": "clasp-proxy",
+  "version": "0.2.0",
+  "description": "Claude Language Agent Super Proxy - Translate Claude/Anthropic API calls to OpenAI-compatible endpoints",
+  "author": "jedarden",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jedarden/CLASP.git"
+  },
+  "bugs": {
+    "url": "https://github.com/jedarden/CLASP/issues"
+  },
+  "homepage": "https://github.com/jedarden/CLASP#readme",
+  "keywords": [
+    "claude",
+    "anthropic",
+    "openai",
+    "proxy",
+    "llm",
+    "ai",
+    "api",
+    "translation",
+    "openrouter",
+    "azure"
+  ],
+  "bin": {
+    "clasp": "./bin/clasp-wrapper.js"
+  },
+  "scripts": {
+    "postinstall": "node scripts/install.js",
+    "start": "node bin/clasp-wrapper.js",
+    "prepack": "node scripts/prepack.js"
+  },
+  "files": [
+    "bin/",
+    "scripts/",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=16.0.0"
+  },
+  "os": [
+    "darwin",
+    "linux",
+    "win32"
+  ],
+  "cpu": [
+    "x64",
+    "arm64"
+  ]
+}
