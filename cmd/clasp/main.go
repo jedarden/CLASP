@@ -15,7 +15,7 @@ import (
 )
 
 var (
-	version = "v0.2.3"
+	version = "v0.2.4"
 )
 
 func main() {
@@ -24,6 +24,10 @@ func main() {
 	provider := flag.String("provider", "", "LLM provider (openai, azure, openrouter, custom)")
 	model := flag.String("model", "", "Default model to use")
 	debug := flag.Bool("debug", false, "Enable debug logging (requests and responses)")
+	rateLimit := flag.Bool("rate-limit", false, "Enable rate limiting")
+	rateLimitReqs := flag.Int("rate-limit-requests", 0, "Requests per window (default: 60)")
+	rateLimitWindow := flag.Int("rate-limit-window", 0, "Window in seconds (default: 60)")
+	rateLimitBurst := flag.Int("rate-limit-burst", 0, "Burst allowance (default: 10)")
 	showVersion := flag.Bool("version", false, "Show version information")
 	help := flag.Bool("help", false, "Show help message")
 
@@ -73,6 +77,18 @@ func main() {
 		cfg.DebugRequests = true
 		cfg.DebugResponses = true
 	}
+	if *rateLimit {
+		cfg.RateLimitEnabled = true
+	}
+	if *rateLimitReqs > 0 {
+		cfg.RateLimitRequests = *rateLimitReqs
+	}
+	if *rateLimitWindow > 0 {
+		cfg.RateLimitWindow = *rateLimitWindow
+	}
+	if *rateLimitBurst > 0 {
+		cfg.RateLimitBurst = *rateLimitBurst
+	}
 
 	// Create and start server
 	server, err := proxy.NewServer(cfg)
@@ -101,12 +117,16 @@ func printHelp() {
 Usage: clasp [options]
 
 Options:
-  -port <port>       Port to listen on (default: 8080, or CLASP_PORT env)
-  -provider <name>   LLM provider: openai, azure, openrouter, custom
-  -model <model>     Default model to use for all requests
-  -debug             Enable debug logging (full request/response)
-  -version           Show version information
-  -help              Show this help message
+  -port <port>              Port to listen on (default: 8080, or CLASP_PORT env)
+  -provider <name>          LLM provider: openai, azure, openrouter, custom
+  -model <model>            Default model to use for all requests
+  -debug                    Enable debug logging (full request/response)
+  -rate-limit               Enable rate limiting
+  -rate-limit-requests <n>  Requests per window (default: 60)
+  -rate-limit-window <n>    Window in seconds (default: 60)
+  -rate-limit-burst <n>     Burst allowance (default: 10)
+  -version                  Show version information
+  -help                     Show this help message
 
 Environment Variables:
   PROVIDER           LLM provider (openai, azure, openrouter, anthropic, custom)
@@ -142,6 +162,12 @@ Environment Variables:
     CLASP_DEBUG            Enable all debug logging (true/1)
     CLASP_DEBUG_REQUESTS   Log incoming/outgoing requests (true/1)
     CLASP_DEBUG_RESPONSES  Log responses (true/1)
+
+  Rate Limiting:
+    CLASP_RATE_LIMIT           Enable rate limiting (true/1)
+    CLASP_RATE_LIMIT_REQUESTS  Requests per window (default: 60)
+    CLASP_RATE_LIMIT_WINDOW    Window in seconds (default: 60)
+    CLASP_RATE_LIMIT_BURST     Burst allowance (default: 10)
 
 Examples:
   # Use OpenAI with GPT-4o

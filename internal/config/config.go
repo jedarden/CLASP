@@ -52,18 +52,28 @@ type Config struct {
 	Debug          bool
 	DebugRequests  bool
 	DebugResponses bool
+
+	// Rate limiting settings
+	RateLimitEnabled   bool
+	RateLimitRequests  int     // Requests per window
+	RateLimitWindow    int     // Window in seconds
+	RateLimitBurst     int     // Burst allowance
 }
 
 // DefaultConfig returns the default configuration.
 func DefaultConfig() *Config {
 	return &Config{
-		Provider:          ProviderOpenAI,
-		OpenAIBaseURL:     "https://api.openai.com/v1",
-		OpenRouterBaseURL: "https://openrouter.ai/api/v1",
-		AzureAPIVersion:   "2024-02-15-preview",
-		Port:              8080,
-		LogLevel:          "info",
-		DefaultModel:      "gpt-4o",
+		Provider:           ProviderOpenAI,
+		OpenAIBaseURL:      "https://api.openai.com/v1",
+		OpenRouterBaseURL:  "https://openrouter.ai/api/v1",
+		AzureAPIVersion:    "2024-02-15-preview",
+		Port:               8080,
+		LogLevel:           "info",
+		DefaultModel:       "gpt-4o",
+		RateLimitEnabled:   false,
+		RateLimitRequests:  60,   // 60 requests per window (default)
+		RateLimitWindow:    60,   // 60 second window (default)
+		RateLimitBurst:     10,   // Allow burst of 10 (default)
 	}
 }
 
@@ -121,6 +131,30 @@ func LoadFromEnv() (*Config, error) {
 	cfg.Debug = os.Getenv("CLASP_DEBUG") == "true" || os.Getenv("CLASP_DEBUG") == "1"
 	cfg.DebugRequests = cfg.Debug || os.Getenv("CLASP_DEBUG_REQUESTS") == "true"
 	cfg.DebugResponses = cfg.Debug || os.Getenv("CLASP_DEBUG_RESPONSES") == "true"
+
+	// Rate limiting settings
+	cfg.RateLimitEnabled = os.Getenv("CLASP_RATE_LIMIT") == "true" || os.Getenv("CLASP_RATE_LIMIT") == "1"
+	if rps := os.Getenv("CLASP_RATE_LIMIT_REQUESTS"); rps != "" {
+		r, err := strconv.Atoi(rps)
+		if err != nil {
+			return nil, fmt.Errorf("invalid CLASP_RATE_LIMIT_REQUESTS: %w", err)
+		}
+		cfg.RateLimitRequests = r
+	}
+	if window := os.Getenv("CLASP_RATE_LIMIT_WINDOW"); window != "" {
+		w, err := strconv.Atoi(window)
+		if err != nil {
+			return nil, fmt.Errorf("invalid CLASP_RATE_LIMIT_WINDOW: %w", err)
+		}
+		cfg.RateLimitWindow = w
+	}
+	if burst := os.Getenv("CLASP_RATE_LIMIT_BURST"); burst != "" {
+		b, err := strconv.Atoi(burst)
+		if err != nil {
+			return nil, fmt.Errorf("invalid CLASP_RATE_LIMIT_BURST: %w", err)
+		}
+		cfg.RateLimitBurst = b
+	}
 
 	// Auto-detect provider from available API keys if not explicitly set
 	if os.Getenv("PROVIDER") == "" {
