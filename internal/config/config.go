@@ -89,6 +89,12 @@ type Config struct {
 	CacheEnabled  bool
 	CacheMaxSize  int   // Maximum number of entries
 	CacheTTL      int   // Time-to-live in seconds (0 = no expiry)
+
+	// Authentication settings
+	AuthEnabled              bool
+	AuthAPIKey               string
+	AuthAllowAnonymousHealth  bool
+	AuthAllowAnonymousMetrics bool
 }
 
 // DefaultConfig returns the default configuration.
@@ -105,9 +111,12 @@ func DefaultConfig() *Config {
 		RateLimitRequests:  60,   // 60 requests per window (default)
 		RateLimitWindow:    60,   // 60 second window (default)
 		RateLimitBurst:     10,   // Allow burst of 10 (default)
-		CacheEnabled:       false,
-		CacheMaxSize:       1000, // Default 1000 entries
-		CacheTTL:           3600, // Default 1 hour TTL
+		CacheEnabled:             false,
+		CacheMaxSize:             1000, // Default 1000 entries
+		CacheTTL:                 3600, // Default 1 hour TTL
+		AuthEnabled:              false,
+		AuthAllowAnonymousHealth:  true, // Allow health checks without auth by default
+		AuthAllowAnonymousMetrics: false,
 	}
 }
 
@@ -205,6 +214,16 @@ func LoadFromEnv() (*Config, error) {
 			return nil, fmt.Errorf("invalid CLASP_CACHE_TTL: %w", err)
 		}
 		cfg.CacheTTL = t
+	}
+
+	// Authentication settings
+	cfg.AuthEnabled = os.Getenv("CLASP_AUTH") == "true" || os.Getenv("CLASP_AUTH") == "1"
+	cfg.AuthAPIKey = os.Getenv("CLASP_AUTH_API_KEY")
+	if os.Getenv("CLASP_AUTH_ALLOW_ANONYMOUS_HEALTH") == "false" || os.Getenv("CLASP_AUTH_ALLOW_ANONYMOUS_HEALTH") == "0" {
+		cfg.AuthAllowAnonymousHealth = false
+	}
+	if os.Getenv("CLASP_AUTH_ALLOW_ANONYMOUS_METRICS") == "true" || os.Getenv("CLASP_AUTH_ALLOW_ANONYMOUS_METRICS") == "1" {
+		cfg.AuthAllowAnonymousMetrics = true
 	}
 
 	// Multi-provider routing settings

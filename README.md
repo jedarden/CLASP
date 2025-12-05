@@ -11,6 +11,7 @@ A high-performance Go proxy that translates Claude/Anthropic API calls to OpenAI
 - **Connection Pooling**: Optimized HTTP transport with persistent connections
 - **Retry Logic**: Exponential backoff for transient failures
 - **Metrics Endpoint**: Request statistics and performance monitoring
+- **API Key Authentication**: Secure the proxy with optional API key validation
 
 ## Installation
 
@@ -108,6 +109,9 @@ Options:
   -cache-max-size <n>    Maximum cache entries (default: 1000)
   -cache-ttl <n>         Cache TTL in seconds (default: 3600)
   -multi-provider        Enable multi-provider tier routing
+  -fallback              Enable fallback routing for auto-failover
+  -auth                  Enable API key authentication
+  -auth-api-key <key>    API key for authentication (required with -auth)
   -version               Show version information
   -help                  Show help message
 ```
@@ -142,6 +146,11 @@ Options:
 | `CLASP_CACHE_MAX_SIZE` | Maximum cache entries | `1000` |
 | `CLASP_CACHE_TTL` | Cache TTL in seconds | `3600` |
 | `CLASP_MULTI_PROVIDER` | Enable multi-provider routing | `false` |
+| `CLASP_FALLBACK` | Enable fallback routing | `false` |
+| `CLASP_AUTH` | Enable API key authentication | `false` |
+| `CLASP_AUTH_API_KEY` | Required API key for access | - |
+| `CLASP_AUTH_ALLOW_ANONYMOUS_HEALTH` | Allow /health without auth | `true` |
+| `CLASP_AUTH_ALLOW_ANONYMOUS_METRICS` | Allow /metrics without auth | `false` |
 
 ### Model Mapping
 
@@ -368,6 +377,67 @@ Debug output includes:
 - Outgoing OpenAI requests
 - Raw OpenAI responses
 - Transformed Anthropic responses
+
+## Authentication
+
+Secure your CLASP proxy with API key authentication to control access:
+
+```bash
+# Enable authentication with CLI flags
+clasp -auth -auth-api-key "my-secret-key"
+
+# Or via environment variables
+CLASP_AUTH=true CLASP_AUTH_API_KEY="my-secret-key" clasp
+```
+
+### Providing the API Key
+
+Clients can provide the API key in two ways:
+
+```bash
+# Via x-api-key header
+curl http://localhost:8080/v1/messages \
+  -H "x-api-key: my-secret-key" \
+  -H "Content-Type: application/json" \
+  -d '{"model": "claude-3-5-sonnet-20241022", ...}'
+
+# Via Authorization header (Bearer token)
+curl http://localhost:8080/v1/messages \
+  -H "Authorization: Bearer my-secret-key" \
+  -H "Content-Type: application/json" \
+  -d '{"model": "claude-3-5-sonnet-20241022", ...}'
+```
+
+### Authentication Options
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `CLASP_AUTH` | Enable authentication | `false` |
+| `CLASP_AUTH_API_KEY` | Required API key | - |
+| `CLASP_AUTH_ALLOW_ANONYMOUS_HEALTH` | Allow /health without auth | `true` |
+| `CLASP_AUTH_ALLOW_ANONYMOUS_METRICS` | Allow /metrics without auth | `false` |
+
+### Endpoint Access with Authentication Enabled
+
+| Endpoint | Default Access |
+|----------|----------------|
+| `/` | Always accessible |
+| `/health` | Anonymous by default |
+| `/metrics` | Requires auth by default |
+| `/metrics/prometheus` | Requires auth by default |
+| `/v1/messages` | Requires auth |
+
+### Using with Claude Code
+
+When authentication is enabled, set both the base URL and API key:
+
+```bash
+# Start CLASP with auth
+OPENAI_API_KEY=sk-... clasp -auth -auth-api-key "proxy-key"
+
+# Use with Claude Code (the proxy key is passed as the Anthropic key)
+ANTHROPIC_BASE_URL=http://localhost:8080 ANTHROPIC_API_KEY=proxy-key claude
+```
 
 ## License
 
