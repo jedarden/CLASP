@@ -107,6 +107,7 @@ Options:
   -cache                 Enable response caching
   -cache-max-size <n>    Maximum cache entries (default: 1000)
   -cache-ttl <n>         Cache TTL in seconds (default: 3600)
+  -multi-provider        Enable multi-provider tier routing
   -version               Show version information
   -help                  Show help message
 ```
@@ -140,6 +141,7 @@ Options:
 | `CLASP_CACHE` | Enable response caching | `false` |
 | `CLASP_CACHE_MAX_SIZE` | Maximum cache entries | `1000` |
 | `CLASP_CACHE_TTL` | Cache TTL in seconds | `3600` |
+| `CLASP_MULTI_PROVIDER` | Enable multi-provider routing | `false` |
 
 ### Model Mapping
 
@@ -151,6 +153,50 @@ export CLASP_MODEL_OPUS=gpt-4o
 export CLASP_MODEL_SONNET=gpt-4o-mini
 export CLASP_MODEL_HAIKU=gpt-3.5-turbo
 ```
+
+### Multi-Provider Routing
+
+Route different Claude model tiers to different LLM providers for cost optimization:
+
+```bash
+# Enable multi-provider routing
+export CLASP_MULTI_PROVIDER=true
+
+# Route Opus tier to OpenAI (premium)
+export CLASP_OPUS_PROVIDER=openai
+export CLASP_OPUS_MODEL=gpt-4o
+export CLASP_OPUS_API_KEY=sk-...  # Optional, inherits from OPENAI_API_KEY
+
+# Route Sonnet tier to OpenRouter (cost-effective)
+export CLASP_SONNET_PROVIDER=openrouter
+export CLASP_SONNET_MODEL=anthropic/claude-3-sonnet
+export CLASP_SONNET_API_KEY=sk-or-...  # Optional, inherits from OPENROUTER_API_KEY
+
+# Route Haiku tier to local Ollama (free)
+export CLASP_HAIKU_PROVIDER=custom
+export CLASP_HAIKU_MODEL=llama3.1
+export CLASP_HAIKU_BASE_URL=http://localhost:11434/v1
+
+clasp -multi-provider
+```
+
+**Multi-Provider Environment Variables:**
+
+| Variable | Description |
+|----------|-------------|
+| `CLASP_MULTI_PROVIDER` | Enable multi-provider routing (`true`/`1`) |
+| `CLASP_{TIER}_PROVIDER` | Provider for tier: `openai`, `openrouter`, `custom` |
+| `CLASP_{TIER}_MODEL` | Model name for the tier |
+| `CLASP_{TIER}_API_KEY` | API key (optional, inherits from main config) |
+| `CLASP_{TIER}_BASE_URL` | Base URL (optional, uses provider default) |
+
+Where `{TIER}` is `OPUS`, `SONNET`, or `HAIKU`.
+
+**Benefits:**
+- **Cost Optimization**: Use expensive providers only for complex tasks
+- **Latency Reduction**: Route simple requests to faster local models
+- **Redundancy**: Mix cloud and local providers for reliability
+- **A/B Testing**: Compare different models across tiers
 
 ## API Endpoints
 

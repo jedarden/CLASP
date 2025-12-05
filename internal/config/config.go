@@ -18,6 +18,14 @@ const (
 	ProviderCustom     ProviderType = "custom"
 )
 
+// TierConfig holds configuration for a specific model tier.
+type TierConfig struct {
+	Provider ProviderType
+	Model    string
+	APIKey   string
+	BaseURL  string
+}
+
 // Config holds the CLASP configuration.
 type Config struct {
 	// Provider settings
@@ -43,6 +51,12 @@ type Config struct {
 	ModelOpus    string
 	ModelSonnet  string
 	ModelHaiku   string
+
+	// Multi-provider routing (per-tier provider configuration)
+	MultiProviderEnabled bool
+	TierOpus             *TierConfig
+	TierSonnet           *TierConfig
+	TierHaiku            *TierConfig
 
 	// Server settings
 	Port     int
@@ -181,6 +195,12 @@ func LoadFromEnv() (*Config, error) {
 		cfg.CacheTTL = t
 	}
 
+	// Multi-provider routing settings
+	cfg.MultiProviderEnabled = os.Getenv("CLASP_MULTI_PROVIDER") == "true" || os.Getenv("CLASP_MULTI_PROVIDER") == "1"
+	cfg.TierOpus = loadTierConfig("OPUS", cfg)
+	cfg.TierSonnet = loadTierConfig("SONNET", cfg)
+	cfg.TierHaiku = loadTierConfig("HAIKU", cfg)
+
 	// Auto-detect provider from available API keys if not explicitly set
 	if os.Getenv("PROVIDER") == "" {
 		cfg.Provider = detectProvider(cfg)
@@ -212,6 +232,55 @@ func detectProvider(cfg *Config) ProviderType {
 		return ProviderCustom
 	}
 	return ProviderOpenAI // Default
+}
+
+// loadTierConfig loads tier-specific configuration from environment variables.
+// Pattern: CLASP_<TIER>_PROVIDER, CLASP_<TIER>_MODEL, CLASP_<TIER>_API_KEY, CLASP_<TIER>_BASE_URL
+func loadTierConfig(tier string, cfg *Config) *TierConfig {
+	provider := os.Getenv("CLASP_" + tier + "_PROVIDER")
+	model := os.Getenv("CLASP_" + tier + "_MODEL")
+	apiKey := os.Getenv("CLASP_" + tier + "_API_KEY")
+	baseURL := os.Getenv("CLASP_" + tier + "_BASE_URL")
+
+	// If no provider specified for this tier, return nil
+	if provider == "" && model == "" {
+		return nil
+	}
+
+	tierCfg := &TierConfig{
+		Provider: ProviderType(provider),
+		Model:    model,
+		APIKey:   apiKey,
+		BaseURL:  baseURL,
+	}
+
+	// If no explicit API key, inherit from main config based on provider
+	if tierCfg.APIKey == "" {
+		switch tierCfg.Provider {
+		case ProviderOpenAI:
+			tierCfg.APIKey = cfg.OpenAIAPIKey
+		case ProviderOpenRouter:
+			tierCfg.APIKey = cfg.OpenRouterAPIKey
+		case ProviderAzure:
+			tierCfg.APIKey = cfg.AzureAPIKey
+		case ProviderCustom:
+			tierCfg.APIKey = cfg.CustomAPIKey
+		}
+	}
+
+	// If no explicit base URL, use defaults based on provider
+	if tierCfg.BaseURL == "" {
+		switch tierCfg.Provider {
+		case ProviderOpenAI:
+			tierCfg.BaseURL = cfg.OpenAIBaseURL
+		case ProviderOpenRouter:
+			tierCfg.BaseURL = cfg.OpenRouterBaseURL
+		case ProviderCustom:
+			tierCfg.BaseURL = cfg.CustomBaseURL
+		}
+	}
+
+	return tierCfg
 }
 
 // Validate checks that the configuration is valid.
@@ -313,6 +382,49 @@ func (c *Config) MapModel(requestedModel string) string {
 		return c.DefaultModel
 	}
 	return requestedModel
+}
+
+// GetTierConfig returns the tier-specific configuration for a given model.
+// Returns nil if multi-provider routing is disabled or no tier config exists.
+func (c *Config) GetTierConfig(requestedModel string) *TierConfig {
+	if !c.MultiProviderEnabled {
+		return nil
+	}
+
+	// Match model to tier
+	switch {
+	case contains(requestedModel, "opus"):
+		return c.TierOpus
+	case contains(requestedModel, "sonnet"):
+		return c.TierSonnet
+	case contains(requestedModel, "haiku"):
+		return c.TierHaiku
+	}
+
+	return nil
+}
+
+// ModelTier represents a Claude model tier.
+type ModelTier string
+
+const (
+	TierOpus   ModelTier = "opus"
+	TierSonnet ModelTier = "sonnet"
+	TierHaiku  ModelTier = "haiku"
+)
+
+// GetModelTier returns the tier for a given model name.
+func GetModelTier(model string) ModelTier {
+	switch {
+	case contains(model, "opus"):
+		return TierOpus
+	case contains(model, "sonnet"):
+		return TierSonnet
+	case contains(model, "haiku"):
+		return TierHaiku
+	default:
+		return TierSonnet // Default to sonnet tier
+	}
 }
 
 // contains checks if s contains substr (case-insensitive).

@@ -23,12 +23,13 @@ import (
 
 // Handler handles incoming Anthropic API requests.
 type Handler struct {
-	cfg         *config.Config
-	provider    provider.Provider
-	client      *http.Client
-	metrics     *Metrics
-	rateLimiter *RateLimiter
-	cache       *RequestCache
+	cfg             *config.Config
+	provider        provider.Provider
+	client          *http.Client
+	metrics         *Metrics
+	rateLimiter     *RateLimiter
+	cache           *RequestCache
+	tierProviders   map[config.ModelTier]provider.Provider
 }
 
 // Metrics tracks request statistics.
@@ -67,12 +68,37 @@ func NewHandler(cfg *config.Config) (*Handler, error) {
 		Timeout:   120 * time.Second, // Long timeout for streaming
 	}
 
-	return &Handler{
-		cfg:      cfg,
-		provider: p,
-		client:   client,
-		metrics:  &Metrics{StartTime: time.Now()},
-	}, nil
+	handler := &Handler{
+		cfg:           cfg,
+		provider:      p,
+		client:        client,
+		metrics:       &Metrics{StartTime: time.Now()},
+		tierProviders: make(map[config.ModelTier]provider.Provider),
+	}
+
+	// Initialize tier-specific providers if multi-provider routing is enabled
+	if cfg.MultiProviderEnabled {
+		if cfg.TierOpus != nil {
+			if tierProvider, err := createTierProvider(cfg.TierOpus); err == nil {
+				handler.tierProviders[config.TierOpus] = tierProvider
+				log.Printf("[CLASP] Multi-provider: opus -> %s (%s)", cfg.TierOpus.Provider, cfg.TierOpus.Model)
+			}
+		}
+		if cfg.TierSonnet != nil {
+			if tierProvider, err := createTierProvider(cfg.TierSonnet); err == nil {
+				handler.tierProviders[config.TierSonnet] = tierProvider
+				log.Printf("[CLASP] Multi-provider: sonnet -> %s (%s)", cfg.TierSonnet.Provider, cfg.TierSonnet.Model)
+			}
+		}
+		if cfg.TierHaiku != nil {
+			if tierProvider, err := createTierProvider(cfg.TierHaiku); err == nil {
+				handler.tierProviders[config.TierHaiku] = tierProvider
+				log.Printf("[CLASP] Multi-provider: haiku -> %s (%s)", cfg.TierHaiku.Provider, cfg.TierHaiku.Model)
+			}
+		}
+	}
+
+	return handler, nil
 }
 
 // SetRateLimiter sets the rate limiter for metrics reporting.
@@ -98,6 +124,27 @@ func createProvider(cfg *config.Config) (provider.Provider, error) {
 		return provider.NewCustomProvider(cfg.CustomBaseURL), nil
 	default:
 		return nil, fmt.Errorf("unsupported provider: %s", cfg.Provider)
+	}
+}
+
+// createTierProvider creates a provider from a tier configuration.
+func createTierProvider(tierCfg *config.TierConfig) (provider.Provider, error) {
+	baseURL := tierCfg.BaseURL
+	switch tierCfg.Provider {
+	case config.ProviderOpenAI:
+		if baseURL == "" {
+			baseURL = "https://api.openai.com/v1"
+		}
+		return provider.NewOpenAIProviderWithKey(baseURL, tierCfg.APIKey), nil
+	case config.ProviderOpenRouter:
+		if baseURL == "" {
+			baseURL = "https://openrouter.ai/api/v1"
+		}
+		return provider.NewOpenRouterProviderWithKey(baseURL, tierCfg.APIKey), nil
+	case config.ProviderCustom:
+		return provider.NewCustomProviderWithKey(baseURL, tierCfg.APIKey), nil
+	default:
+		return nil, fmt.Errorf("unsupported tier provider: %s", tierCfg.Provider)
 	}
 }
 
@@ -155,11 +202,33 @@ func (h *Handler) HandleMessages(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Map the model
-	targetModel := h.cfg.MapModel(anthropicReq.Model)
-	targetModel = h.provider.TransformModelID(targetModel)
+	// Select provider and model based on tier (multi-provider routing)
+	selectedProvider := h.provider
+	tierCfg := h.cfg.GetTierConfig(anthropicReq.Model)
+	var targetModel string
 
-	log.Printf("[CLASP] Request: %s -> %s (streaming: %v)", anthropicReq.Model, targetModel, anthropicReq.Stream)
+	if tierCfg != nil {
+		// Use tier-specific provider and model
+		tier := config.GetModelTier(anthropicReq.Model)
+		if tierProvider, ok := h.tierProviders[tier]; ok {
+			selectedProvider = tierProvider
+			targetModel = tierCfg.Model
+			if targetModel == "" {
+				targetModel = h.cfg.MapModel(anthropicReq.Model)
+			}
+			log.Printf("[CLASP] Multi-provider routing: %s -> %s via %s", anthropicReq.Model, targetModel, tierCfg.Provider)
+		} else {
+			// Fallback to default provider
+			targetModel = h.cfg.MapModel(anthropicReq.Model)
+			targetModel = selectedProvider.TransformModelID(targetModel)
+		}
+	} else {
+		// Default model mapping
+		targetModel = h.cfg.MapModel(anthropicReq.Model)
+		targetModel = selectedProvider.TransformModelID(targetModel)
+	}
+
+	log.Printf("[CLASP] Request: %s -> %s (streaming: %v, provider: %s)", anthropicReq.Model, targetModel, anthropicReq.Stream, selectedProvider.Name())
 
 	// Transform request to OpenAI format
 	openAIReq, err := translator.TransformRequest(&anthropicReq, targetModel)
@@ -186,7 +255,7 @@ func (h *Handler) HandleMessages(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Execute request with retry logic
-	resp, err := h.doRequestWithRetry(r.Context(), reqBody)
+	resp, err := h.doRequestWithRetry(r.Context(), reqBody, selectedProvider)
 	if err != nil {
 		atomic.AddInt64(&h.metrics.ErrorRequests, 1)
 		log.Printf("[CLASP] Error making upstream request: %v", err)
@@ -218,20 +287,20 @@ func (h *Handler) HandleMessages(w http.ResponseWriter, r *http.Request) {
 }
 
 // doRequestWithRetry executes the upstream request with exponential backoff retry.
-func (h *Handler) doRequestWithRetry(ctx interface{ Done() <-chan struct{} }, reqBody []byte) (*http.Response, error) {
+func (h *Handler) doRequestWithRetry(ctx interface{ Done() <-chan struct{} }, reqBody []byte, p provider.Provider) (*http.Response, error) {
 	maxRetries := 3
 	baseDelay := 500 * time.Millisecond
 
 	var lastErr error
 	for attempt := 0; attempt < maxRetries; attempt++ {
 		// Create fresh request for each attempt
-		upstreamReq, err := http.NewRequest(http.MethodPost, h.provider.GetEndpointURL(), bytes.NewReader(reqBody))
+		upstreamReq, err := http.NewRequest(http.MethodPost, p.GetEndpointURL(), bytes.NewReader(reqBody))
 		if err != nil {
 			return nil, fmt.Errorf("creating request: %w", err)
 		}
 
-		// Set headers
-		for key, values := range h.provider.GetHeaders(h.cfg.GetAPIKey()) {
+		// Set headers (API key may be embedded in provider for tier routing)
+		for key, values := range p.GetHeaders(h.cfg.GetAPIKey()) {
 			for _, v := range values {
 				upstreamReq.Header.Add(key, v)
 			}
@@ -587,9 +656,9 @@ func (h *Handler) HandleMetricsPrometheus(w http.ResponseWriter, r *http.Request
 // HandleRoot handles root path requests.
 func (h *Handler) HandleRoot(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	response := map[string]interface{}{
 		"name":     "CLASP",
-		"version":  "0.2.5",
+		"version":  "0.3.0",
 		"provider": h.provider.Name(),
 		"status":   "running",
 		"endpoints": map[string]string{
@@ -598,7 +667,18 @@ func (h *Handler) HandleRoot(w http.ResponseWriter, r *http.Request) {
 			"metrics":    "/metrics",
 			"prometheus": "/metrics/prometheus",
 		},
-	})
+	}
+
+	// Add multi-provider routing info if enabled
+	if h.cfg.MultiProviderEnabled && len(h.tierProviders) > 0 {
+		routing := make(map[string]string)
+		for tier, p := range h.tierProviders {
+			routing[string(tier)] = p.Name()
+		}
+		response["multi_provider_routing"] = routing
+	}
+
+	json.NewEncoder(w).Encode(response)
 }
 
 // flushWriter wraps http.ResponseWriter to auto-flush after each write.

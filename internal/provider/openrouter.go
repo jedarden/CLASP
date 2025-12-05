@@ -8,6 +8,7 @@ import (
 // OpenRouterProvider implements the Provider interface for OpenRouter.
 type OpenRouterProvider struct {
 	BaseURL string
+	apiKey  string // Optional: used for tier-specific routing
 }
 
 // NewOpenRouterProvider creates a new OpenRouter provider.
@@ -18,6 +19,15 @@ func NewOpenRouterProvider(baseURL string) *OpenRouterProvider {
 	return &OpenRouterProvider{BaseURL: baseURL}
 }
 
+// NewOpenRouterProviderWithKey creates a new OpenRouter provider with an embedded API key.
+// Used for multi-provider routing where each tier has its own credentials.
+func NewOpenRouterProviderWithKey(baseURL, apiKey string) *OpenRouterProvider {
+	if baseURL == "" {
+		baseURL = "https://openrouter.ai/api/v1"
+	}
+	return &OpenRouterProvider{BaseURL: baseURL, apiKey: apiKey}
+}
+
 // Name returns the provider name.
 func (p *OpenRouterProvider) Name() string {
 	return "openrouter"
@@ -26,11 +36,16 @@ func (p *OpenRouterProvider) Name() string {
 // GetHeaders returns the HTTP headers for OpenRouter API requests.
 func (p *OpenRouterProvider) GetHeaders(apiKey string) http.Header {
 	headers := http.Header{}
-	headers.Set("Authorization", "Bearer "+apiKey)
+	// Use embedded API key if set (for tier-specific routing), otherwise use provided key
+	key := apiKey
+	if p.apiKey != "" {
+		key = p.apiKey
+	}
+	headers.Set("Authorization", "Bearer "+key)
 	headers.Set("Content-Type", "application/json")
 	headers.Set("HTTP-Referer", "https://github.com/jedarden/CLASP")
 	headers.Set("X-Title", "CLASP Proxy")
-	headers.Set("User-Agent", "CLASP/0.2.2 (+https://github.com/jedarden/CLASP)")
+	headers.Set("User-Agent", "CLASP/0.2.5 (+https://github.com/jedarden/CLASP)")
 	return headers
 }
 
