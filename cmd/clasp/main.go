@@ -15,7 +15,7 @@ import (
 )
 
 var (
-	version = "v0.2.4"
+	version = "v0.2.5"
 )
 
 func main() {
@@ -28,6 +28,9 @@ func main() {
 	rateLimitReqs := flag.Int("rate-limit-requests", 0, "Requests per window (default: 60)")
 	rateLimitWindow := flag.Int("rate-limit-window", 0, "Window in seconds (default: 60)")
 	rateLimitBurst := flag.Int("rate-limit-burst", 0, "Burst allowance (default: 10)")
+	cache := flag.Bool("cache", false, "Enable response caching")
+	cacheMaxSize := flag.Int("cache-max-size", 0, "Maximum cache entries (default: 1000)")
+	cacheTTL := flag.Int("cache-ttl", 0, "Cache TTL in seconds (default: 3600)")
 	showVersion := flag.Bool("version", false, "Show version information")
 	help := flag.Bool("help", false, "Show help message")
 
@@ -89,6 +92,15 @@ func main() {
 	if *rateLimitBurst > 0 {
 		cfg.RateLimitBurst = *rateLimitBurst
 	}
+	if *cache {
+		cfg.CacheEnabled = true
+	}
+	if *cacheMaxSize > 0 {
+		cfg.CacheMaxSize = *cacheMaxSize
+	}
+	if *cacheTTL > 0 {
+		cfg.CacheTTL = *cacheTTL
+	}
 
 	// Create and start server
 	server, err := proxy.NewServer(cfg)
@@ -125,6 +137,9 @@ Options:
   -rate-limit-requests <n>  Requests per window (default: 60)
   -rate-limit-window <n>    Window in seconds (default: 60)
   -rate-limit-burst <n>     Burst allowance (default: 10)
+  -cache                    Enable response caching
+  -cache-max-size <n>       Maximum cache entries (default: 1000)
+  -cache-ttl <n>            Cache TTL in seconds (default: 3600)
   -version                  Show version information
   -help                     Show this help message
 
@@ -168,6 +183,11 @@ Environment Variables:
     CLASP_RATE_LIMIT_REQUESTS  Requests per window (default: 60)
     CLASP_RATE_LIMIT_WINDOW    Window in seconds (default: 60)
     CLASP_RATE_LIMIT_BURST     Burst allowance (default: 10)
+
+  Caching:
+    CLASP_CACHE              Enable response caching (true/1)
+    CLASP_CACHE_MAX_SIZE     Maximum cache entries (default: 1000)
+    CLASP_CACHE_TTL          Cache TTL in seconds (default: 3600)
 
 Examples:
   # Use OpenAI with GPT-4o

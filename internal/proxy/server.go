@@ -20,6 +20,7 @@ type Server struct {
 	handler     *Handler
 	server      *http.Server
 	rateLimiter *RateLimiter
+	cache       *RequestCache
 }
 
 // NewServer creates a new proxy server.
@@ -45,6 +46,12 @@ func NewServer(cfg *config.Config) (*Server, error) {
 		s.handler.SetRateLimiter(s.rateLimiter)
 	}
 
+	// Initialize cache if enabled
+	if cfg.CacheEnabled {
+		s.cache = NewRequestCache(cfg.CacheMaxSize, time.Duration(cfg.CacheTTL)*time.Second)
+		s.handler.SetCache(s.cache)
+	}
+
 	return s, nil
 }
 
@@ -68,6 +75,12 @@ func (s *Server) Start() error {
 		handler = RateLimitMiddleware(s.rateLimiter)(handler)
 		log.Printf("[CLASP] Rate limiting enabled: %d requests per %d seconds (burst: %d)",
 			s.cfg.RateLimitRequests, s.cfg.RateLimitWindow, s.cfg.RateLimitBurst)
+	}
+
+	// Log cache status
+	if s.cache != nil {
+		log.Printf("[CLASP] Response caching enabled: max %d entries, TTL %d seconds",
+			s.cfg.CacheMaxSize, s.cfg.CacheTTL)
 	}
 
 	// Apply logging middleware
