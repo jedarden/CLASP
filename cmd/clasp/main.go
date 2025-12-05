@@ -15,7 +15,7 @@ import (
 )
 
 var (
-	version = "v0.3.2"
+	version = "v0.4.0"
 )
 
 func main() {
@@ -35,6 +35,13 @@ func main() {
 	fallback := flag.Bool("fallback", false, "Enable fallback routing")
 	auth := flag.Bool("auth", false, "Enable API key authentication")
 	authAPIKey := flag.String("auth-api-key", "", "API key for authentication (required with -auth)")
+	queueEnabled := flag.Bool("queue", false, "Enable request queuing during outages")
+	queueMaxSize := flag.Int("queue-max-size", 0, "Maximum queued requests (default: 100)")
+	queueMaxWait := flag.Int("queue-max-wait", 0, "Queue timeout in seconds (default: 30)")
+	circuitBreaker := flag.Bool("circuit-breaker", false, "Enable circuit breaker pattern")
+	cbThreshold := flag.Int("cb-threshold", 0, "Circuit breaker failure threshold (default: 5)")
+	cbRecovery := flag.Int("cb-recovery", 0, "Circuit breaker success recovery threshold (default: 2)")
+	cbTimeout := flag.Int("cb-timeout", 0, "Circuit breaker timeout in seconds (default: 30)")
 	showVersion := flag.Bool("version", false, "Show version information")
 	help := flag.Bool("help", false, "Show help message")
 
@@ -117,6 +124,27 @@ func main() {
 	if *authAPIKey != "" {
 		cfg.AuthAPIKey = *authAPIKey
 	}
+	if *queueEnabled {
+		cfg.QueueEnabled = true
+	}
+	if *queueMaxSize > 0 {
+		cfg.QueueMaxSize = *queueMaxSize
+	}
+	if *queueMaxWait > 0 {
+		cfg.QueueMaxWaitSeconds = *queueMaxWait
+	}
+	if *circuitBreaker {
+		cfg.CircuitBreakerEnabled = true
+	}
+	if *cbThreshold > 0 {
+		cfg.CircuitBreakerThreshold = *cbThreshold
+	}
+	if *cbRecovery > 0 {
+		cfg.CircuitBreakerRecovery = *cbRecovery
+	}
+	if *cbTimeout > 0 {
+		cfg.CircuitBreakerTimeoutSec = *cbTimeout
+	}
 
 	// Validate authentication configuration
 	if cfg.AuthEnabled && cfg.AuthAPIKey == "" {
@@ -165,6 +193,13 @@ Options:
   -fallback                 Enable fallback routing for auto-failover
   -auth                     Enable API key authentication for proxy access
   -auth-api-key <key>       API key for authentication (required with -auth)
+  -queue                    Enable request queuing during provider outages
+  -queue-max-size <n>       Maximum queued requests (default: 100)
+  -queue-max-wait <n>       Queue timeout in seconds (default: 30)
+  -circuit-breaker          Enable circuit breaker pattern
+  -cb-threshold <n>         Failures before opening circuit (default: 5)
+  -cb-recovery <n>          Successes to close circuit (default: 2)
+  -cb-timeout <n>           Circuit breaker timeout in seconds (default: 30)
   -version                  Show version information
   -help                     Show this help message
 
@@ -250,6 +285,19 @@ Environment Variables:
     CLASP_HAIKU_FALLBACK_PROVIDER   Fallback provider for Haiku tier
     CLASP_HAIKU_FALLBACK_MODEL      Fallback model for Haiku tier
 
+  Request Queue (buffer requests during provider outages):
+    CLASP_QUEUE                Enable request queuing (true/1)
+    CLASP_QUEUE_MAX_SIZE       Maximum queued requests (default: 100)
+    CLASP_QUEUE_MAX_WAIT       Queue timeout in seconds (default: 30)
+    CLASP_QUEUE_RETRY_DELAY    Retry delay in milliseconds (default: 1000)
+    CLASP_QUEUE_MAX_RETRIES    Maximum retries per request (default: 3)
+
+  Circuit Breaker (prevent cascade failures):
+    CLASP_CIRCUIT_BREAKER          Enable circuit breaker (true/1)
+    CLASP_CIRCUIT_BREAKER_THRESHOLD Failures before opening (default: 5)
+    CLASP_CIRCUIT_BREAKER_RECOVERY  Successes to close (default: 2)
+    CLASP_CIRCUIT_BREAKER_TIMEOUT   Timeout in seconds (default: 30)
+
 Examples:
   # Use OpenAI with GPT-4o
   OPENAI_API_KEY=sk-xxx clasp -model gpt-4o
@@ -281,6 +329,12 @@ Examples:
 
   # Then use with x-api-key header:
   curl -H "x-api-key: my-secret-key" http://localhost:8080/v1/messages ...
+
+  # Enable circuit breaker to prevent cascade failures
+  OPENAI_API_KEY=sk-xxx clasp -circuit-breaker
+
+  # Request queuing with circuit breaker for maximum resilience
+  OPENAI_API_KEY=sk-xxx clasp -queue -circuit-breaker
 
 Claude Code Integration:
   Set ANTHROPIC_BASE_URL to point to CLASP:
