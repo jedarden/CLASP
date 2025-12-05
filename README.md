@@ -99,12 +99,16 @@ clasp -provider custom -model llama3.1
 clasp [options]
 
 Options:
-  -port <port>       Port to listen on (default: 8080)
-  -provider <name>   LLM provider: openai, azure, openrouter, custom
-  -model <model>     Default model to use for all requests
-  -debug             Enable debug logging (full request/response)
-  -version           Show version information
-  -help              Show help message
+  -port <port>           Port to listen on (default: 8080)
+  -provider <name>       LLM provider: openai, azure, openrouter, custom
+  -model <model>         Default model to use for all requests
+  -debug                 Enable debug logging (full request/response)
+  -rate-limit            Enable rate limiting
+  -cache                 Enable response caching
+  -cache-max-size <n>    Maximum cache entries (default: 1000)
+  -cache-ttl <n>         Cache TTL in seconds (default: 3600)
+  -version               Show version information
+  -help                  Show help message
 ```
 
 ### Environment Variables
@@ -129,6 +133,13 @@ Options:
 | `CLASP_DEBUG` | Enable all debug logging | `false` |
 | `CLASP_DEBUG_REQUESTS` | Log requests only | `false` |
 | `CLASP_DEBUG_RESPONSES` | Log responses only | `false` |
+| `CLASP_RATE_LIMIT` | Enable rate limiting | `false` |
+| `CLASP_RATE_LIMIT_REQUESTS` | Requests per window | `60` |
+| `CLASP_RATE_LIMIT_WINDOW` | Window in seconds | `60` |
+| `CLASP_RATE_LIMIT_BURST` | Burst allowance | `10` |
+| `CLASP_CACHE` | Enable response caching | `false` |
+| `CLASP_CACHE_MAX_SIZE` | Maximum cache entries | `1000` |
+| `CLASP_CACHE_TTL` | Cache TTL in seconds | `3600` |
 
 ### Model Mapping
 
@@ -147,7 +158,8 @@ export CLASP_MODEL_HAIKU=gpt-3.5-turbo
 |----------|-------------|
 | `POST /v1/messages` | Anthropic Messages API (translated) |
 | `GET /health` | Health check |
-| `GET /metrics` | Request statistics |
+| `GET /metrics` | Request statistics (JSON) |
+| `GET /metrics/prometheus` | Prometheus metrics |
 | `GET /` | Server info |
 
 ## Example Usage
@@ -183,6 +195,28 @@ curl http://localhost:8080/v1/messages \
   }'
 ```
 
+## Response Caching
+
+CLASP can cache responses to reduce API costs and improve latency for repeated requests:
+
+```bash
+# Enable caching with defaults (1000 entries, 1 hour TTL)
+clasp -cache
+
+# Custom cache settings
+clasp -cache -cache-max-size 500 -cache-ttl 1800
+
+# Via environment
+CLASP_CACHE=true CLASP_CACHE_MAX_SIZE=500 clasp
+```
+
+**Caching behavior:**
+- Only non-streaming requests are cached
+- Requests with `temperature > 0` are not cached (non-deterministic)
+- Cache uses LRU (Least Recently Used) eviction when full
+- Cache entries expire after TTL (time-to-live)
+- Response headers include `X-CLASP-Cache: HIT` or `X-CLASP-Cache: MISS`
+
 ## Metrics
 
 Access `/metrics` for request statistics:
@@ -200,6 +234,14 @@ Access `/metrics` for request statistics:
   "performance": {
     "avg_latency_ms": "523.50",
     "requests_per_sec": "2.34"
+  },
+  "cache": {
+    "enabled": true,
+    "size": 42,
+    "max_size": 1000,
+    "hits": 156,
+    "misses": 44,
+    "hit_rate": "78.00%"
   },
   "uptime": "5m30s"
 }
