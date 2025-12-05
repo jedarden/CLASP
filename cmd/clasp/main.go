@@ -15,7 +15,7 @@ import (
 )
 
 var (
-	version = "0.2.0"
+	version = "v0.2.1"
 )
 
 func main() {
@@ -29,7 +29,7 @@ func main() {
 	flag.Parse()
 
 	if *showVersion {
-		fmt.Printf("CLASP version %s\n", version)
+		fmt.Printf("CLASP %s\n", version)
 		os.Exit(0)
 	}
 
@@ -86,12 +86,11 @@ func printBanner() {
 ╔═══════════════════════════════════════════════════════════════╗
 ║        CLASP - Claude Language Agent Super Proxy              ║
 ║        Translate Claude API calls to any LLM provider         ║
-╚═══════════════════════════════════════════════════════════════╝
-`)
+╚═══════════════════════════════════════════════════════════════╝`)
 }
 
 func printHelp() {
-	fmt.Printf(`CLASP - Claude Language Agent Super Proxy v%s
+	fmt.Printf(`CLASP - Claude Language Agent Super Proxy %s
 
 Usage: clasp [options]
 
