@@ -431,7 +431,7 @@ func (h *Handler) HandleRoot(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"name":     "CLASP",
-		"version":  "0.2.1",
+		"version":  "0.2.2",
 		"provider": h.provider.Name(),
 		"status":   "running",
 		"endpoints": map[string]string{
