@@ -32,6 +32,7 @@ type Handler struct {
 	cache            *RequestCache
 	queue            *RequestQueue
 	circuitBreaker   *CircuitBreaker
+	costTracker      *CostTracker
 	tierProviders    map[config.ModelTier]provider.Provider
 	tierFallbacks    map[config.ModelTier]provider.Provider
 }
@@ -79,6 +80,7 @@ func NewHandler(cfg *config.Config) (*Handler, error) {
 		provider:      p,
 		client:        client,
 		metrics:       &Metrics{StartTime: time.Now()},
+		costTracker:   NewCostTracker(),
 		tierProviders: make(map[config.ModelTier]provider.Provider),
 		tierFallbacks: make(map[config.ModelTier]provider.Provider),
 	}
@@ -530,10 +532,21 @@ func (h *Handler) handlePassthroughNonStreaming(w http.ResponseWriter, resp *htt
 		log.Printf("[CLASP DEBUG] Passthrough response:\n%s", string(body))
 	}
 
-	// Parse response for caching
-	if h.cache != nil && cacheable && cacheKey != "" {
-		var anthropicResp models.AnthropicResponse
-		if err := json.Unmarshal(body, &anthropicResp); err == nil {
+	// Parse response for caching and cost tracking
+	var anthropicResp models.AnthropicResponse
+	if err := json.Unmarshal(body, &anthropicResp); err == nil {
+		// Track costs for passthrough
+		if h.costTracker != nil && anthropicResp.Usage != nil {
+			h.costTracker.RecordUsage(
+				"anthropic",
+				anthropicResp.Model,
+				anthropicResp.Usage.InputTokens,
+				anthropicResp.Usage.OutputTokens,
+			)
+		}
+
+		// Cache if enabled
+		if h.cache != nil && cacheable && cacheKey != "" {
 			h.cache.Set(cacheKey, &anthropicResp)
 			log.Printf("[CLASP] Passthrough response cached (key: %s...)", cacheKey[:16])
 		}
@@ -747,6 +760,16 @@ func (h *Handler) handleNonStreamingResponse(w http.ResponseWriter, resp *http.R
 		log.Printf("[CLASP DEBUG] Transformed Anthropic response:\n%s", string(debugJSON))
 	}
 
+	// Track costs
+	if h.costTracker != nil && anthropicResp.Usage != nil {
+		h.costTracker.RecordUsage(
+			h.provider.Name(),
+			targetModel,
+			anthropicResp.Usage.InputTokens,
+			anthropicResp.Usage.OutputTokens,
+		)
+	}
+
 	// Store in cache if cacheable
 	if h.cache != nil && cacheable && cacheKey != "" {
 		h.cache.Set(cacheKey, &anthropicResp)
@@ -873,6 +896,21 @@ func (h *Handler) HandleMetrics(w http.ResponseWriter, r *http.Request) {
 		response["circuit_breaker"] = map[string]interface{}{
 			"enabled": true,
 			"state":   h.circuitBreaker.State(),
+		}
+	}
+
+	// Add cost tracking stats
+	if h.costTracker != nil {
+		summary := h.costTracker.GetSummary()
+		response["costs"] = map[string]interface{}{
+			"enabled":            true,
+			"total_cost_usd":     fmt.Sprintf("%.6f", summary.TotalCostUSD),
+			"input_cost_usd":     fmt.Sprintf("%.6f", summary.InputCostUSD),
+			"output_cost_usd":    fmt.Sprintf("%.6f", summary.OutputCostUSD),
+			"total_input_tokens": summary.TotalInputTokens,
+			"total_output_tokens": summary.TotalOutputTokens,
+			"cost_per_request":   fmt.Sprintf("%.6f", summary.CostPerRequest),
+			"cost_per_hour":      fmt.Sprintf("%.6f", summary.CostPerHour),
 		}
 	}
 
@@ -1040,6 +1078,76 @@ func (h *Handler) HandleMetricsPrometheus(w http.ResponseWriter, r *http.Request
 		}
 		fmt.Fprintf(w, "clasp_circuit_breaker_open{provider=\"%s\"} %d\n", providerName, isOpen)
 	}
+
+	// Cost tracking metrics
+	if h.costTracker != nil {
+		summary := h.costTracker.GetSummary()
+
+		fmt.Fprintf(w, "# HELP clasp_cost_total_usd Total cost in USD\n")
+		fmt.Fprintf(w, "# TYPE clasp_cost_total_usd counter\n")
+		fmt.Fprintf(w, "clasp_cost_total_usd{provider=\"%s\"} %.8f\n", providerName, summary.TotalCostUSD)
+
+		fmt.Fprintf(w, "# HELP clasp_cost_input_usd Total input token cost in USD\n")
+		fmt.Fprintf(w, "# TYPE clasp_cost_input_usd counter\n")
+		fmt.Fprintf(w, "clasp_cost_input_usd{provider=\"%s\"} %.8f\n", providerName, summary.InputCostUSD)
+
+		fmt.Fprintf(w, "# HELP clasp_cost_output_usd Total output token cost in USD\n")
+		fmt.Fprintf(w, "# TYPE clasp_cost_output_usd counter\n")
+		fmt.Fprintf(w, "clasp_cost_output_usd{provider=\"%s\"} %.8f\n", providerName, summary.OutputCostUSD)
+
+		fmt.Fprintf(w, "# HELP clasp_tokens_input_total Total input tokens processed\n")
+		fmt.Fprintf(w, "# TYPE clasp_tokens_input_total counter\n")
+		fmt.Fprintf(w, "clasp_tokens_input_total{provider=\"%s\"} %d\n", providerName, summary.TotalInputTokens)
+
+		fmt.Fprintf(w, "# HELP clasp_tokens_output_total Total output tokens generated\n")
+		fmt.Fprintf(w, "# TYPE clasp_tokens_output_total counter\n")
+		fmt.Fprintf(w, "clasp_tokens_output_total{provider=\"%s\"} %d\n", providerName, summary.TotalOutputTokens)
+
+		fmt.Fprintf(w, "# HELP clasp_cost_per_request_usd Average cost per request in USD\n")
+		fmt.Fprintf(w, "# TYPE clasp_cost_per_request_usd gauge\n")
+		fmt.Fprintf(w, "clasp_cost_per_request_usd{provider=\"%s\"} %.8f\n", providerName, summary.CostPerRequest)
+
+		fmt.Fprintf(w, "# HELP clasp_cost_per_hour_usd Cost rate per hour in USD\n")
+		fmt.Fprintf(w, "# TYPE clasp_cost_per_hour_usd gauge\n")
+		fmt.Fprintf(w, "clasp_cost_per_hour_usd{provider=\"%s\"} %.8f\n", providerName, summary.CostPerHour)
+
+		// Per-model costs
+		for model, mc := range summary.ByModel {
+			fmt.Fprintf(w, "clasp_cost_by_model_usd{provider=\"%s\",model=\"%s\"} %.8f\n", providerName, model, mc.TotalCostUSD)
+			fmt.Fprintf(w, "clasp_tokens_by_model{provider=\"%s\",model=\"%s\",type=\"input\"} %d\n", providerName, model, mc.InputTokens)
+			fmt.Fprintf(w, "clasp_tokens_by_model{provider=\"%s\",model=\"%s\",type=\"output\"} %d\n", providerName, model, mc.OutputTokens)
+		}
+	}
+}
+
+// HandleCosts handles cost tracking endpoint requests.
+func (h *Handler) HandleCosts(w http.ResponseWriter, r *http.Request) {
+	if h.costTracker == nil {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"enabled": false,
+			"message": "Cost tracking is not enabled",
+		})
+		return
+	}
+
+	// Handle POST to reset costs
+	if r.Method == http.MethodPost {
+		action := r.URL.Query().Get("action")
+		if action == "reset" {
+			h.costTracker.Reset()
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"status":  "ok",
+				"message": "Cost tracking data has been reset",
+			})
+			return
+		}
+	}
+
+	summary := h.costTracker.GetSummary()
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(summary)
 }
 
 // HandleRoot handles root path requests.
@@ -1047,7 +1155,7 @@ func (h *Handler) HandleRoot(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	response := map[string]interface{}{
 		"name":     "CLASP",
-		"version":  "0.5.1",
+		"version":  "0.6.0",
 		"provider": h.provider.Name(),
 		"status":   "running",
 		"endpoints": map[string]string{
@@ -1055,6 +1163,7 @@ func (h *Handler) HandleRoot(w http.ResponseWriter, r *http.Request) {
 			"health":     "/health",
 			"metrics":    "/metrics",
 			"prometheus": "/metrics/prometheus",
+			"costs":      "/costs",
 		},
 	}
 
