@@ -99,7 +99,7 @@ dev:
 	air -c .air.toml
 
 # Docker image name
-DOCKER_IMAGE=clasp-proxy
+DOCKER_IMAGE=clasp-ai
 DOCKER_TAG=$(VERSION)
 
 # Build Docker image
