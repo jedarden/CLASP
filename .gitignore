@@ -4,3 +4,4 @@ dist/
 node_modules/
 coverage.out
 coverage.html.claude-flow/metrics/
+.swarm/
