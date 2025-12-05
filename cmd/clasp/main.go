@@ -15,7 +15,7 @@ import (
 )
 
 var (
-	version = "v0.3.0"
+	version = "v0.3.1"
 )
 
 func main() {
@@ -32,6 +32,7 @@ func main() {
 	cacheMaxSize := flag.Int("cache-max-size", 0, "Maximum cache entries (default: 1000)")
 	cacheTTL := flag.Int("cache-ttl", 0, "Cache TTL in seconds (default: 3600)")
 	multiProvider := flag.Bool("multi-provider", false, "Enable multi-provider tier routing")
+	fallback := flag.Bool("fallback", false, "Enable fallback routing")
 	showVersion := flag.Bool("version", false, "Show version information")
 	help := flag.Bool("help", false, "Show help message")
 
@@ -105,6 +106,9 @@ func main() {
 	if *multiProvider {
 		cfg.MultiProviderEnabled = true
 	}
+	if *fallback {
+		cfg.FallbackEnabled = true
+	}
 
 	// Create and start server
 	server, err := proxy.NewServer(cfg)
@@ -145,6 +149,7 @@ Options:
   -cache-max-size <n>       Maximum cache entries (default: 1000)
   -cache-ttl <n>            Cache TTL in seconds (default: 3600)
   -multi-provider           Enable multi-provider tier routing
+  -fallback                 Enable fallback routing for auto-failover
   -version                  Show version information
   -help                     Show this help message
 
@@ -209,6 +214,21 @@ Environment Variables:
     CLASP_CACHE_MAX_SIZE     Maximum cache entries (default: 1000)
     CLASP_CACHE_TTL          Cache TTL in seconds (default: 3600)
 
+  Fallback Routing (auto-failover to backup provider):
+    CLASP_FALLBACK           Enable global fallback routing (true/1)
+    CLASP_FALLBACK_PROVIDER  Fallback provider (openai/openrouter/custom)
+    CLASP_FALLBACK_MODEL     Model to use with fallback provider
+    CLASP_FALLBACK_API_KEY   API key for fallback (optional, inherits from main)
+    CLASP_FALLBACK_BASE_URL  Base URL for fallback (optional)
+
+  Tier-Specific Fallback (per-tier fallback within multi-provider):
+    CLASP_OPUS_FALLBACK_PROVIDER    Fallback provider for Opus tier
+    CLASP_OPUS_FALLBACK_MODEL       Fallback model for Opus tier
+    CLASP_SONNET_FALLBACK_PROVIDER  Fallback provider for Sonnet tier
+    CLASP_SONNET_FALLBACK_MODEL     Fallback model for Sonnet tier
+    CLASP_HAIKU_FALLBACK_PROVIDER   Fallback provider for Haiku tier
+    CLASP_HAIKU_FALLBACK_MODEL      Fallback model for Haiku tier
+
 Examples:
   # Use OpenAI with GPT-4o
   OPENAI_API_KEY=sk-xxx clasp -model gpt-4o
@@ -227,6 +247,13 @@ Examples:
     CLASP_SONNET_PROVIDER=openrouter CLASP_SONNET_MODEL=anthropic/claude-3-sonnet \
     CLASP_HAIKU_PROVIDER=custom CLASP_HAIKU_BASE_URL=http://localhost:11434/v1 CLASP_HAIKU_MODEL=llama3.1 \
     clasp -multi-provider
+
+  # Fallback routing: OpenAI primary with OpenRouter fallback
+  OPENAI_API_KEY=sk-xxx OPENROUTER_API_KEY=sk-or-xxx \
+    CLASP_FALLBACK=true \
+    CLASP_FALLBACK_PROVIDER=openrouter \
+    CLASP_FALLBACK_MODEL=openai/gpt-4o \
+    clasp -fallback
 
 Claude Code Integration:
   Set ANTHROPIC_BASE_URL to point to CLASP:
