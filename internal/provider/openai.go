@@ -9,6 +9,7 @@ import (
 // OpenAIProvider implements the Provider interface for OpenAI.
 type OpenAIProvider struct {
 	BaseURL string
+	apiKey  string // Optional: used for tier-specific routing
 }
 
 // NewOpenAIProvider creates a new OpenAI provider.
@@ -19,6 +20,15 @@ func NewOpenAIProvider(baseURL string) *OpenAIProvider {
 	return &OpenAIProvider{BaseURL: baseURL}
 }
 
+// NewOpenAIProviderWithKey creates a new OpenAI provider with an embedded API key.
+// Used for multi-provider routing where each tier has its own credentials.
+func NewOpenAIProviderWithKey(baseURL, apiKey string) *OpenAIProvider {
+	if baseURL == "" {
+		baseURL = "https://api.openai.com/v1"
+	}
+	return &OpenAIProvider{BaseURL: baseURL, apiKey: apiKey}
+}
+
 // Name returns the provider name.
 func (p *OpenAIProvider) Name() string {
 	return "openai"
@@ -27,7 +37,12 @@ func (p *OpenAIProvider) Name() string {
 // GetHeaders returns the HTTP headers for OpenAI API requests.
 func (p *OpenAIProvider) GetHeaders(apiKey string) http.Header {
 	headers := http.Header{}
-	headers.Set("Authorization", "Bearer "+apiKey)
+	// Use embedded API key if set (for tier-specific routing), otherwise use provided key
+	key := apiKey
+	if p.apiKey != "" {
+		key = p.apiKey
+	}
+	headers.Set("Authorization", "Bearer "+key)
 	headers.Set("Content-Type", "application/json")
 	return headers
 }
