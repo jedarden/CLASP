@@ -19,18 +19,23 @@ jobs:
           - os: ubuntu-latest
             goos: linux
             goarch: amd64
+            ext: ''
           - os: ubuntu-latest
             goos: linux
             goarch: arm64
+            ext: ''
           - os: macos-latest
             goos: darwin
             goarch: amd64
+            ext: ''
           - os: macos-latest
             goos: darwin
             goarch: arm64
+            ext: ''
           - os: windows-latest
             goos: windows
             goarch: amd64
+            ext: '.exe'
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -43,10 +48,8 @@ jobs:
         env:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
-        run: |
-          EXT=""
-          [ "$GOOS" = "windows" ] && EXT=".exe"
-          go build -ldflags="-s -w -X main.version=${{ github.ref_name }}" -o clasp-${{ matrix.goos }}-${{ matrix.goarch }}${EXT} ./cmd/clasp
+        shell: bash
+        run: go build -ldflags="-s -w -X main.version=${{ github.ref_name }}" -o clasp-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }} ./cmd/clasp
 
       - uses: actions/upload-artifact@v4
         with:
