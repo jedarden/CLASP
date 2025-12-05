@@ -15,7 +15,7 @@ import (
 )
 
 var (
-	version = "v0.2.5"
+	version = "v0.3.0"
 )
 
 func main() {
@@ -31,6 +31,7 @@ func main() {
 	cache := flag.Bool("cache", false, "Enable response caching")
 	cacheMaxSize := flag.Int("cache-max-size", 0, "Maximum cache entries (default: 1000)")
 	cacheTTL := flag.Int("cache-ttl", 0, "Cache TTL in seconds (default: 3600)")
+	multiProvider := flag.Bool("multi-provider", false, "Enable multi-provider tier routing")
 	showVersion := flag.Bool("version", false, "Show version information")
 	help := flag.Bool("help", false, "Show help message")
 
@@ -101,6 +102,9 @@ func main() {
 	if *cacheTTL > 0 {
 		cfg.CacheTTL = *cacheTTL
 	}
+	if *multiProvider {
+		cfg.MultiProviderEnabled = true
+	}
 
 	// Create and start server
 	server, err := proxy.NewServer(cfg)
@@ -140,6 +144,7 @@ Options:
   -cache                    Enable response caching
   -cache-max-size <n>       Maximum cache entries (default: 1000)
   -cache-ttl <n>            Cache TTL in seconds (default: 3600)
+  -multi-provider           Enable multi-provider tier routing
   -version                  Show version information
   -help                     Show this help message
 
@@ -168,6 +173,21 @@ Environment Variables:
     CLASP_MODEL_OPUS     Model to use for Opus tier
     CLASP_MODEL_SONNET   Model to use for Sonnet tier
     CLASP_MODEL_HAIKU    Model to use for Haiku tier
+
+  Multi-Provider Routing (route different tiers to different providers):
+    CLASP_MULTI_PROVIDER           Enable multi-provider routing (true/1)
+    CLASP_OPUS_PROVIDER            Provider for Opus tier (openai/openrouter/custom)
+    CLASP_OPUS_MODEL               Model for Opus tier
+    CLASP_OPUS_API_KEY             API key for Opus tier (optional, inherits from main)
+    CLASP_OPUS_BASE_URL            Base URL for Opus tier (optional)
+    CLASP_SONNET_PROVIDER          Provider for Sonnet tier
+    CLASP_SONNET_MODEL             Model for Sonnet tier
+    CLASP_SONNET_API_KEY           API key for Sonnet tier
+    CLASP_SONNET_BASE_URL          Base URL for Sonnet tier
+    CLASP_HAIKU_PROVIDER           Provider for Haiku tier
+    CLASP_HAIKU_MODEL              Model for Haiku tier
+    CLASP_HAIKU_API_KEY            API key for Haiku tier
+    CLASP_HAIKU_BASE_URL           Base URL for Haiku tier
 
   Server:
     CLASP_PORT           Port to listen on (default: 8080)
@@ -199,6 +219,14 @@ Examples:
 
   # Use local Ollama
   CUSTOM_BASE_URL=http://localhost:11434/v1 clasp -provider custom -model llama3.1
+
+  # Multi-provider: Opus->OpenAI, Sonnet->OpenRouter, Haiku->local
+  OPENAI_API_KEY=sk-xxx OPENROUTER_API_KEY=sk-or-xxx \
+    CLASP_MULTI_PROVIDER=true \
+    CLASP_OPUS_PROVIDER=openai CLASP_OPUS_MODEL=gpt-4o \
+    CLASP_SONNET_PROVIDER=openrouter CLASP_SONNET_MODEL=anthropic/claude-3-sonnet \
+    CLASP_HAIKU_PROVIDER=custom CLASP_HAIKU_BASE_URL=http://localhost:11434/v1 CLASP_HAIKU_MODEL=llama3.1 \
+    clasp -multi-provider
 
 Claude Code Integration:
   Set ANTHROPIC_BASE_URL to point to CLASP:
