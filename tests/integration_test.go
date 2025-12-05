@@ -314,6 +314,75 @@ func TestIntegration_HealthCheck(t *testing.T) {
 	}
 }
 
+// TestIntegration_PrometheusMetrics tests the Prometheus metrics endpoint
+func TestIntegration_PrometheusMetrics(t *testing.T) {
+	cfg := &config.Config{
+		Provider:     config.ProviderOpenAI,
+		OpenAIAPIKey: "test-key",
+		OpenAIBaseURL: "https://api.openai.com/v1",
+		DefaultModel: "gpt-4o",
+		Port:        8080,
+	}
+
+	handler, err := proxy.NewHandler(cfg)
+	if err != nil {
+		t.Fatalf("Failed to create handler: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/metrics/prometheus", nil)
+	rec := httptest.NewRecorder()
+	handler.HandleMetricsPrometheus(rec, req)
+
+	resp := rec.Result()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("Expected status 200, got %d", resp.StatusCode)
+	}
+
+	// Verify content type
+	contentType := resp.Header.Get("Content-Type")
+	if !strings.HasPrefix(contentType, "text/plain") {
+		t.Errorf("Expected Content-Type 'text/plain', got '%s'", contentType)
+	}
+
+	// Read body
+	body, _ := io.ReadAll(resp.Body)
+	output := string(body)
+
+	t.Logf("Prometheus metrics:\n%s", output)
+
+	// Verify required metrics
+	requiredMetrics := []string{
+		"clasp_requests_total",
+		"clasp_requests_successful",
+		"clasp_requests_errors",
+		"clasp_requests_streaming",
+		"clasp_requests_tool_calls",
+		"clasp_latency_total_ms",
+		"clasp_uptime_seconds",
+		"clasp_latency_avg_ms",
+		"clasp_requests_per_second",
+	}
+
+	for _, metric := range requiredMetrics {
+		if !strings.Contains(output, metric) {
+			t.Errorf("Missing required metric: %s", metric)
+		}
+	}
+
+	// Verify HELP and TYPE comments
+	if !strings.Contains(output, "# HELP") {
+		t.Error("Missing HELP comments in Prometheus output")
+	}
+	if !strings.Contains(output, "# TYPE") {
+		t.Error("Missing TYPE comments in Prometheus output")
+	}
+
+	// Verify provider label
+	if !strings.Contains(output, `provider="openai"`) {
+		t.Error("Missing provider label in metrics")
+	}
+}
+
 // TestIntegration_Timeout tests request timeout handling
 func TestIntegration_Timeout(t *testing.T) {
 	apiKey := os.Getenv("OPENAI_API_KEY")
