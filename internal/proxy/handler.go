@@ -426,18 +426,80 @@ func (h *Handler) HandleMetrics(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// HandleMetricsPrometheus handles Prometheus metrics endpoint requests.
+func (h *Handler) HandleMetricsPrometheus(w http.ResponseWriter, r *http.Request) {
+	total := atomic.LoadInt64(&h.metrics.TotalRequests)
+	success := atomic.LoadInt64(&h.metrics.SuccessRequests)
+	errors := atomic.LoadInt64(&h.metrics.ErrorRequests)
+	streams := atomic.LoadInt64(&h.metrics.StreamRequests)
+	toolCalls := atomic.LoadInt64(&h.metrics.ToolCallRequests)
+	totalLatency := atomic.LoadInt64(&h.metrics.TotalLatencyMs)
+
+	uptime := time.Since(h.metrics.StartTime)
+	providerName := h.provider.Name()
+
+	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
+
+	// Write Prometheus format metrics
+	fmt.Fprintf(w, "# HELP clasp_requests_total Total number of requests handled by CLASP\n")
+	fmt.Fprintf(w, "# TYPE clasp_requests_total counter\n")
+	fmt.Fprintf(w, "clasp_requests_total{provider=\"%s\"} %d\n", providerName, total)
+
+	fmt.Fprintf(w, "# HELP clasp_requests_successful Total number of successful requests\n")
+	fmt.Fprintf(w, "# TYPE clasp_requests_successful counter\n")
+	fmt.Fprintf(w, "clasp_requests_successful{provider=\"%s\"} %d\n", providerName, success)
+
+	fmt.Fprintf(w, "# HELP clasp_requests_errors Total number of failed requests\n")
+	fmt.Fprintf(w, "# TYPE clasp_requests_errors counter\n")
+	fmt.Fprintf(w, "clasp_requests_errors{provider=\"%s\"} %d\n", providerName, errors)
+
+	fmt.Fprintf(w, "# HELP clasp_requests_streaming Total number of streaming requests\n")
+	fmt.Fprintf(w, "# TYPE clasp_requests_streaming counter\n")
+	fmt.Fprintf(w, "clasp_requests_streaming{provider=\"%s\"} %d\n", providerName, streams)
+
+	fmt.Fprintf(w, "# HELP clasp_requests_tool_calls Total number of requests with tool calls\n")
+	fmt.Fprintf(w, "# TYPE clasp_requests_tool_calls counter\n")
+	fmt.Fprintf(w, "clasp_requests_tool_calls{provider=\"%s\"} %d\n", providerName, toolCalls)
+
+	fmt.Fprintf(w, "# HELP clasp_latency_total_ms Total latency of all successful requests in milliseconds\n")
+	fmt.Fprintf(w, "# TYPE clasp_latency_total_ms counter\n")
+	fmt.Fprintf(w, "clasp_latency_total_ms{provider=\"%s\"} %d\n", providerName, totalLatency)
+
+	fmt.Fprintf(w, "# HELP clasp_uptime_seconds Time since CLASP started in seconds\n")
+	fmt.Fprintf(w, "# TYPE clasp_uptime_seconds gauge\n")
+	fmt.Fprintf(w, "clasp_uptime_seconds{provider=\"%s\"} %.2f\n", providerName, uptime.Seconds())
+
+	// Derived metrics
+	var avgLatency float64
+	if success > 0 {
+		avgLatency = float64(totalLatency) / float64(success)
+	}
+	fmt.Fprintf(w, "# HELP clasp_latency_avg_ms Average latency per successful request in milliseconds\n")
+	fmt.Fprintf(w, "# TYPE clasp_latency_avg_ms gauge\n")
+	fmt.Fprintf(w, "clasp_latency_avg_ms{provider=\"%s\"} %.2f\n", providerName, avgLatency)
+
+	var requestsPerSec float64
+	if uptime.Seconds() > 0 {
+		requestsPerSec = float64(total) / uptime.Seconds()
+	}
+	fmt.Fprintf(w, "# HELP clasp_requests_per_second Current request rate per second\n")
+	fmt.Fprintf(w, "# TYPE clasp_requests_per_second gauge\n")
+	fmt.Fprintf(w, "clasp_requests_per_second{provider=\"%s\"} %.4f\n", providerName, requestsPerSec)
+}
+
 // HandleRoot handles root path requests.
 func (h *Handler) HandleRoot(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"name":     "CLASP",
-		"version":  "0.2.2",
+		"version":  "0.2.3",
 		"provider": h.provider.Name(),
 		"status":   "running",
 		"endpoints": map[string]string{
-			"messages": "/v1/messages",
-			"health":   "/health",
-			"metrics":  "/metrics",
+			"messages":   "/v1/messages",
+			"health":     "/health",
+			"metrics":    "/metrics",
+			"prometheus": "/metrics/prometheus",
 		},
 	})
 }
