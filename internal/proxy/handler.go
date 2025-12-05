@@ -230,6 +230,13 @@ func (h *Handler) HandleMessages(w http.ResponseWriter, r *http.Request) {
 		atomic.AddInt64(&h.metrics.ToolCallRequests, 1)
 	}
 
+	// Resolve model alias if configured
+	originalModel := anthropicReq.Model
+	anthropicReq.Model = h.cfg.ResolveAlias(anthropicReq.Model)
+	if anthropicReq.Model != originalModel {
+		log.Printf("[CLASP] Resolved model alias: %s -> %s", originalModel, anthropicReq.Model)
+	}
+
 	// Debug logging for incoming request
 	if h.cfg.DebugRequests {
 		debugJSON, _ := json.MarshalIndent(anthropicReq, "", "  ")
@@ -897,7 +904,7 @@ func (h *Handler) HandleRoot(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	response := map[string]interface{}{
 		"name":     "CLASP",
-		"version":  "0.4.0",
+		"version":  "0.4.1",
 		"provider": h.provider.Name(),
 		"status":   "running",
 		"endpoints": map[string]string{
@@ -906,6 +913,11 @@ func (h *Handler) HandleRoot(w http.ResponseWriter, r *http.Request) {
 			"metrics":    "/metrics",
 			"prometheus": "/metrics/prometheus",
 		},
+	}
+
+	// Add model aliases if configured
+	if aliases := h.cfg.GetAliases(); len(aliases) > 0 {
+		response["model_aliases"] = aliases
 	}
 
 	// Add multi-provider routing info if enabled

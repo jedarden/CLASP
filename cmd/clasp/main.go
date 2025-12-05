@@ -15,7 +15,7 @@ import (
 )
 
 var (
-	version = "v0.4.0"
+	version = "v0.4.1"
 )
 
 func main() {
@@ -298,6 +298,10 @@ Environment Variables:
     CLASP_CIRCUIT_BREAKER_RECOVERY  Successes to close (default: 2)
     CLASP_CIRCUIT_BREAKER_TIMEOUT   Timeout in seconds (default: 30)
 
+  Model Aliasing (create custom model names):
+    CLASP_ALIAS_<name>=<model>     Define a model alias (e.g., CLASP_ALIAS_FAST=gpt-4o-mini)
+    CLASP_MODEL_ALIASES            Comma-separated aliases (e.g., fast:gpt-4o-mini,smart:gpt-4o)
+
 Examples:
   # Use OpenAI with GPT-4o
   OPENAI_API_KEY=sk-xxx clasp -model gpt-4o
@@ -335,6 +339,16 @@ Examples:
 
   # Request queuing with circuit breaker for maximum resilience
   OPENAI_API_KEY=sk-xxx clasp -queue -circuit-breaker
+
+  # Model aliasing: create stable custom model names
+  OPENAI_API_KEY=sk-xxx \
+    CLASP_ALIAS_FAST=gpt-4o-mini \
+    CLASP_ALIAS_SMART=gpt-4o \
+    CLASP_ALIAS_BEST=o1-preview \
+    clasp
+
+  # Or use comma-separated format
+  OPENAI_API_KEY=sk-xxx CLASP_MODEL_ALIASES="fast:gpt-4o-mini,smart:gpt-4o" clasp
 
 Claude Code Integration:
   Set ANTHROPIC_BASE_URL to point to CLASP:
