@@ -666,6 +666,20 @@ func (h *Handler) handleStreamingResponse(w http.ResponseWriter, resp *http.Resp
 
 	// Process stream
 	processor := translator.NewStreamProcessor(fw, messageID, targetModel)
+
+	// Set up cost tracking callback if cost tracker is available
+	if h.costTracker != nil {
+		processor.SetUsageCallback(func(inputTokens, outputTokens int) {
+			h.costTracker.RecordUsage(
+				h.provider.Name(),
+				targetModel,
+				inputTokens,
+				outputTokens,
+			)
+			log.Printf("[CLASP] Streaming cost tracked: %d input tokens, %d output tokens", inputTokens, outputTokens)
+		})
+	}
+
 	if err := processor.ProcessStream(resp.Body); err != nil {
 		log.Printf("[CLASP] Error processing stream: %v", err)
 	}
@@ -1155,7 +1169,7 @@ func (h *Handler) HandleRoot(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	response := map[string]interface{}{
 		"name":     "CLASP",
-		"version":  "0.7.2",
+		"version":  "0.7.3",
 		"provider": h.provider.Name(),
 		"status":   "running",
 		"endpoints": map[string]string{

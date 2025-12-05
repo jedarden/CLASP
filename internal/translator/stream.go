@@ -23,6 +23,9 @@ const (
 	StateDone
 )
 
+// UsageCallback is called when streaming completes with usage information.
+type UsageCallback func(inputTokens, outputTokens int)
+
 // StreamProcessor handles the transformation of OpenAI SSE streams to Anthropic format.
 type StreamProcessor struct {
 	mu sync.Mutex
@@ -41,7 +44,8 @@ type StreamProcessor struct {
 	activeToolCalls map[int]*toolCallState
 
 	// Usage tracking
-	usage *models.Usage
+	usage         *models.Usage
+	usageCallback UsageCallback
 
 	// Output
 	writer io.Writer
@@ -67,6 +71,25 @@ func NewStreamProcessor(writer io.Writer, messageID, targetModel string) *Stream
 		toolCallIndex:   0,
 		activeToolCalls: make(map[int]*toolCallState),
 	}
+}
+
+// SetUsageCallback sets the callback function for usage reporting.
+// This is called when the stream completes with final token usage.
+func (sp *StreamProcessor) SetUsageCallback(callback UsageCallback) {
+	sp.mu.Lock()
+	defer sp.mu.Unlock()
+	sp.usageCallback = callback
+}
+
+// GetUsage returns the final usage statistics from the stream.
+// This should be called after ProcessStream completes.
+func (sp *StreamProcessor) GetUsage() (inputTokens, outputTokens int) {
+	sp.mu.Lock()
+	defer sp.mu.Unlock()
+	if sp.usage != nil {
+		return sp.usage.PromptTokens, sp.usage.CompletionTokens
+	}
+	return 0, 0
 }
 
 // ProcessStream reads an OpenAI SSE stream and writes Anthropic SSE events.
@@ -270,6 +293,11 @@ func (sp *StreamProcessor) handleFinishReason(reason string) error {
 func (sp *StreamProcessor) finalize() error {
 	sp.mu.Lock()
 	defer sp.mu.Unlock()
+
+	// Call usage callback if set and we have usage data
+	if sp.usageCallback != nil && sp.usage != nil {
+		sp.usageCallback(sp.usage.PromptTokens, sp.usage.CompletionTokens)
+	}
 
 	// Emit message_stop
 	if err := sp.emitMessageStop(); err != nil {

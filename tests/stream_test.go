@@ -193,6 +193,131 @@ data: [DONE]
 	}
 }
 
+func TestStreamProcessor_UsageCallback(t *testing.T) {
+	// Simulate OpenAI SSE stream with usage info at the end
+	streamData := `data: {"id":"chatcmpl-123","object":"chat.completion.chunk","created":1234567890,"model":"gpt-4o","choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-123","object":"chat.completion.chunk","created":1234567890,"model":"gpt-4o","choices":[{"index":0,"delta":{"content":"Hello"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-123","object":"chat.completion.chunk","created":1234567890,"model":"gpt-4o","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":150,"completion_tokens":25,"total_tokens":175}}
+
+data: [DONE]
+`
+
+	var buf bytes.Buffer
+	processor := translator.NewStreamProcessor(&buf, "msg_usage", "gpt-4o")
+
+	// Track callback invocation
+	var callbackInvoked bool
+	var receivedInputTokens, receivedOutputTokens int
+
+	processor.SetUsageCallback(func(inputTokens, outputTokens int) {
+		callbackInvoked = true
+		receivedInputTokens = inputTokens
+		receivedOutputTokens = outputTokens
+	})
+
+	err := processor.ProcessStream(strings.NewReader(streamData))
+	if err != nil {
+		t.Fatalf("ProcessStream failed: %v", err)
+	}
+
+	// Verify callback was invoked with correct values
+	if !callbackInvoked {
+		t.Error("usage callback was not invoked")
+	}
+	if receivedInputTokens != 150 {
+		t.Errorf("expected 150 input tokens, got %d", receivedInputTokens)
+	}
+	if receivedOutputTokens != 25 {
+		t.Errorf("expected 25 output tokens, got %d", receivedOutputTokens)
+	}
+
+	// Verify GetUsage also returns correct values
+	gotInput, gotOutput := processor.GetUsage()
+	if gotInput != 150 {
+		t.Errorf("GetUsage: expected 150 input tokens, got %d", gotInput)
+	}
+	if gotOutput != 25 {
+		t.Errorf("GetUsage: expected 25 output tokens, got %d", gotOutput)
+	}
+}
+
+func TestStreamProcessor_UsageCallback_NoUsageData(t *testing.T) {
+	// Simulate OpenAI SSE stream WITHOUT usage info (some providers don't send it)
+	streamData := `data: {"id":"chatcmpl-123","object":"chat.completion.chunk","created":1234567890,"model":"gpt-4o","choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-123","object":"chat.completion.chunk","created":1234567890,"model":"gpt-4o","choices":[{"index":0,"delta":{"content":"Hello"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-123","object":"chat.completion.chunk","created":1234567890,"model":"gpt-4o","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}
+
+data: [DONE]
+`
+
+	var buf bytes.Buffer
+	processor := translator.NewStreamProcessor(&buf, "msg_nousage", "gpt-4o")
+
+	// Track callback invocation - should NOT be called when no usage data
+	var callbackInvoked bool
+
+	processor.SetUsageCallback(func(inputTokens, outputTokens int) {
+		callbackInvoked = true
+	})
+
+	err := processor.ProcessStream(strings.NewReader(streamData))
+	if err != nil {
+		t.Fatalf("ProcessStream failed: %v", err)
+	}
+
+	// Callback should not be invoked when no usage data
+	if callbackInvoked {
+		t.Error("usage callback should not be invoked when no usage data is present")
+	}
+
+	// GetUsage should return zeros
+	gotInput, gotOutput := processor.GetUsage()
+	if gotInput != 0 || gotOutput != 0 {
+		t.Errorf("GetUsage: expected 0/0 without usage data, got %d/%d", gotInput, gotOutput)
+	}
+}
+
+func TestStreamProcessor_UsageCallback_LateUsage(t *testing.T) {
+	// Simulate stream where usage comes in a separate final chunk (OpenAI behavior)
+	streamData := `data: {"id":"chatcmpl-123","object":"chat.completion.chunk","created":1234567890,"model":"gpt-4o","choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-123","object":"chat.completion.chunk","created":1234567890,"model":"gpt-4o","choices":[{"index":0,"delta":{"content":"Test response"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-123","object":"chat.completion.chunk","created":1234567890,"model":"gpt-4o","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}
+
+data: {"id":"chatcmpl-123","object":"chat.completion.chunk","created":1234567890,"model":"gpt-4o","choices":[],"usage":{"prompt_tokens":200,"completion_tokens":50,"total_tokens":250}}
+
+data: [DONE]
+`
+
+	var buf bytes.Buffer
+	processor := translator.NewStreamProcessor(&buf, "msg_lateusage", "gpt-4o")
+
+	var receivedInputTokens, receivedOutputTokens int
+
+	processor.SetUsageCallback(func(inputTokens, outputTokens int) {
+		receivedInputTokens = inputTokens
+		receivedOutputTokens = outputTokens
+	})
+
+	err := processor.ProcessStream(strings.NewReader(streamData))
+	if err != nil {
+		t.Fatalf("ProcessStream failed: %v", err)
+	}
+
+	// Verify usage was captured even from late chunk
+	if receivedInputTokens != 200 {
+		t.Errorf("expected 200 input tokens, got %d", receivedInputTokens)
+	}
+	if receivedOutputTokens != 50 {
+		t.Errorf("expected 50 output tokens, got %d", receivedOutputTokens)
+	}
+}
+
 func BenchmarkStreamProcessor(b *testing.B) {
 	streamData := `data: {"id":"chatcmpl-123","object":"chat.completion.chunk","created":1234567890,"model":"gpt-4o","choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}]}
 
