@@ -1,6 +1,6 @@
 # CLASP Makefile
 
-.PHONY: build run test clean install build-all release-binaries npm-publish
+.PHONY: build run test clean install build-all release-binaries npm-publish docker docker-run docker-push
 
 # Build variables
 BINARY_NAME=clasp
@@ -98,6 +98,45 @@ deps:
 dev:
 	air -c .air.toml
 
+# Docker image name
+DOCKER_IMAGE=clasp-proxy
+DOCKER_TAG=$(VERSION)
+
+# Build Docker image
+docker:
+	@echo "Building Docker image..."
+	docker build -t $(DOCKER_IMAGE):$(DOCKER_TAG) -t $(DOCKER_IMAGE):latest .
+	@echo "Docker image built: $(DOCKER_IMAGE):$(DOCKER_TAG)"
+
+# Run Docker container
+docker-run:
+	docker run -d --name clasp \
+		-p 8080:8080 \
+		-e PROVIDER=$${PROVIDER:-openai} \
+		-e OPENAI_API_KEY=$$OPENAI_API_KEY \
+		$(DOCKER_IMAGE):latest
+
+# Stop Docker container
+docker-stop:
+	docker stop clasp 2>/dev/null || true
+	docker rm clasp 2>/dev/null || true
+
+# Push Docker image (requires docker login)
+docker-push: docker
+	docker tag $(DOCKER_IMAGE):$(DOCKER_TAG) ghcr.io/jedarden/$(DOCKER_IMAGE):$(DOCKER_TAG)
+	docker tag $(DOCKER_IMAGE):latest ghcr.io/jedarden/$(DOCKER_IMAGE):latest
+	docker push ghcr.io/jedarden/$(DOCKER_IMAGE):$(DOCKER_TAG)
+	docker push ghcr.io/jedarden/$(DOCKER_IMAGE):latest
+	@echo "Docker image pushed to ghcr.io/jedarden/$(DOCKER_IMAGE)"
+
+# Build and run with docker-compose
+compose-up:
+	docker-compose up -d --build
+
+# Stop docker-compose
+compose-down:
+	docker-compose down
+
 # Help
 help:
 	@echo "CLASP - Claude Language Agent Super Proxy"
@@ -118,3 +157,9 @@ help:
 	@echo "  release-binaries Build and upload binaries to GitHub release"
 	@echo "  npm-publish      Publish package to npm"
 	@echo "  npm-pack         Create npm package tarball for testing"
+	@echo "  docker           Build Docker image"
+	@echo "  docker-run       Run Docker container"
+	@echo "  docker-stop      Stop Docker container"
+	@echo "  docker-push      Push Docker image to GHCR"
+	@echo "  compose-up       Start with docker-compose"
+	@echo "  compose-down     Stop docker-compose"
