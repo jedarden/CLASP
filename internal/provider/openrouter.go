@@ -30,7 +30,7 @@ func (p *OpenRouterProvider) GetHeaders(apiKey string) http.Header {
 	headers.Set("Content-Type", "application/json")
 	headers.Set("HTTP-Referer", "https://github.com/jedarden/CLASP")
 	headers.Set("X-Title", "CLASP Proxy")
-	headers.Set("User-Agent", "CLASP/1.0")
+	headers.Set("User-Agent", "CLASP/0.2.0 (+https://github.com/jedarden/CLASP)")
 	return headers
 }
 

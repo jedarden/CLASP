@@ -42,6 +42,7 @@ func (s *Server) Start() error {
 	// Register routes
 	mux.HandleFunc("/", s.handler.HandleRoot)
 	mux.HandleFunc("/health", s.handler.HandleHealth)
+	mux.HandleFunc("/metrics", s.handler.HandleMetrics)
 	mux.HandleFunc("/v1/messages", s.handler.HandleMessages)
 
 	// Create server
