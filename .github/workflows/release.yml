@@ -2,17 +2,114 @@ name: Release
 
 on:
   push:
-    tags:
-      - 'v*'
+    branches:
+      - main
   workflow_dispatch:
     inputs:
-      version:
-        description: 'Version to publish (without v prefix)'
-        required: true
-        type: string
+      bump:
+        description: 'Version bump type'
+        required: false
+        type: choice
+        options:
+          - auto
+          - patch
+          - minor
+          - major
+        default: auto
 
 jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      new_version: ${{ steps.bump.outputs.new_version }}
+      should_release: ${{ steps.bump.outputs.should_release }}
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Determine version bump
+        id: bump
+        run: |
+          # Get latest tag or default to v0.0.0
+          LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+          echo "Latest tag: $LATEST_TAG"
+
+          # Parse current version (strip 'v' prefix)
+          VERSION="${LATEST_TAG#v}"
+          MAJOR=$(echo "$VERSION" | cut -d. -f1)
+          MINOR=$(echo "$VERSION" | cut -d. -f2)
+          PATCH=$(echo "$VERSION" | cut -d. -f3)
+
+          echo "Current version: $MAJOR.$MINOR.$PATCH"
+
+          # Determine bump type from input or commits
+          BUMP_TYPE="${{ inputs.bump }}"
+          if [ "$BUMP_TYPE" = "auto" ] || [ -z "$BUMP_TYPE" ]; then
+            # Analyze commits since last tag
+            COMMITS=$(git log ${LATEST_TAG}..HEAD --pretty=format:"%s" 2>/dev/null || git log --pretty=format:"%s")
+
+            if echo "$COMMITS" | grep -qiE "^(feat|feature)!:|BREAKING CHANGE"; then
+              BUMP_TYPE="major"
+            elif echo "$COMMITS" | grep -qiE "^(feat|feature)(\(.+\))?:"; then
+              BUMP_TYPE="minor"
+            else
+              # Default to patch for fix:, chore:, docs:, or any other commit
+              BUMP_TYPE="patch"
+            fi
+          fi
+
+          echo "Bump type: $BUMP_TYPE"
+
+          # Calculate new version
+          case "$BUMP_TYPE" in
+            major)
+              MAJOR=$((MAJOR + 1))
+              MINOR=0
+              PATCH=0
+              ;;
+            minor)
+              MINOR=$((MINOR + 1))
+              PATCH=0
+              ;;
+            patch)
+              PATCH=$((PATCH + 1))
+              ;;
+          esac
+
+          NEW_VERSION="$MAJOR.$MINOR.$PATCH"
+          NEW_TAG="v$NEW_VERSION"
+
+          echo "New version: $NEW_VERSION"
+          echo "New tag: $NEW_TAG"
+
+          # Check if there are new commits since last tag
+          COMMIT_COUNT=$(git rev-list ${LATEST_TAG}..HEAD --count 2>/dev/null || echo "1")
+          if [ "$COMMIT_COUNT" = "0" ] && [ -z "${{ inputs.bump }}" ]; then
+            echo "No new commits since $LATEST_TAG, skipping release"
+            echo "should_release=false" >> $GITHUB_OUTPUT
+            echo "new_version=$VERSION" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          echo "should_release=true" >> $GITHUB_OUTPUT
+          echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+
+          # Create and push tag
+          git tag -a "$NEW_TAG" -m "Release $NEW_VERSION"
+          git push origin "$NEW_TAG"
+
   build:
+    needs: version
+    if: needs.version.outputs.should_release == 'true'
     strategy:
       matrix:
         include:
@@ -49,7 +146,7 @@ jobs:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
         shell: bash
-        run: go build -ldflags="-s -w -X main.version=${{ github.ref_name }}" -o clasp-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }} ./cmd/clasp
+        run: go build -ldflags="-s -w -X main.version=v${{ needs.version.outputs.new_version }}" -o clasp-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }} ./cmd/clasp
 
       - uses: actions/upload-artifact@v4
         with:
@@ -57,7 +154,8 @@ jobs:
           path: clasp-*
 
   github-release:
-    needs: build
+    needs: [version, build]
+    if: needs.version.outputs.should_release == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -77,12 +175,14 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
+          tag_name: v${{ needs.version.outputs.new_version }}
           files: release/clasp-*
           generate_release_notes: true
           draft: false
 
   publish-npm:
-    needs: github-release
+    needs: [version, github-release]
+    if: needs.version.outputs.should_release == 'true'
     runs-on: ubuntu-latest
     environment: npm-publish
     permissions:
@@ -96,13 +196,8 @@ jobs:
           node-version: '20'
           registry-url: 'https://registry.npmjs.org'
 
-      - name: Update version from tag
-        run: |
-          VERSION="${GITHUB_REF#refs/tags/v}"
-          if [ -n "${{ inputs.version }}" ]; then
-            VERSION="${{ inputs.version }}"
-          fi
-          npm version $VERSION --no-git-tag-version --allow-same-version
+      - name: Update version
+        run: npm version ${{ needs.version.outputs.new_version }} --no-git-tag-version --allow-same-version
 
       - name: Publish with provenance
         run: npm publish --access public --provenance
