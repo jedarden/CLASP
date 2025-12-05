@@ -1,5 +1,5 @@
 {
-  "name": "clasp-proxy",
+  "name": "clasp-ai",
   "version": "0.5.1",
   "description": "Claude Language Agent Super Proxy - Translate Claude/Anthropic API calls to OpenAI-compatible endpoints",
   "author": "jedarden",
