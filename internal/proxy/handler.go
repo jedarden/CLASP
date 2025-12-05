@@ -23,24 +23,28 @@ import (
 
 // Handler handles incoming Anthropic API requests.
 type Handler struct {
-	cfg             *config.Config
-	provider        provider.Provider
-	client          *http.Client
-	metrics         *Metrics
-	rateLimiter     *RateLimiter
-	cache           *RequestCache
-	tierProviders   map[config.ModelTier]provider.Provider
+	cfg              *config.Config
+	provider         provider.Provider
+	fallbackProvider provider.Provider
+	client           *http.Client
+	metrics          *Metrics
+	rateLimiter      *RateLimiter
+	cache            *RequestCache
+	tierProviders    map[config.ModelTier]provider.Provider
+	tierFallbacks    map[config.ModelTier]provider.Provider
 }
 
 // Metrics tracks request statistics.
 type Metrics struct {
-	TotalRequests    int64
-	SuccessRequests  int64
-	ErrorRequests    int64
-	StreamRequests   int64
-	ToolCallRequests int64
-	TotalLatencyMs   int64
-	StartTime        time.Time
+	TotalRequests     int64
+	SuccessRequests   int64
+	ErrorRequests     int64
+	StreamRequests    int64
+	ToolCallRequests  int64
+	TotalLatencyMs    int64
+	FallbackAttempts  int64
+	FallbackSuccesses int64
+	StartTime         time.Time
 }
 
 // NewHandler creates a new request handler with optimized HTTP client.
@@ -74,6 +78,17 @@ func NewHandler(cfg *config.Config) (*Handler, error) {
 		client:        client,
 		metrics:       &Metrics{StartTime: time.Now()},
 		tierProviders: make(map[config.ModelTier]provider.Provider),
+		tierFallbacks: make(map[config.ModelTier]provider.Provider),
+	}
+
+	// Initialize global fallback provider if configured
+	if cfg.HasGlobalFallback() {
+		if fallbackCfg := cfg.GetGlobalFallbackConfig(); fallbackCfg != nil {
+			if fallbackProvider, err := createTierProvider(fallbackCfg); err == nil {
+				handler.fallbackProvider = fallbackProvider
+				log.Printf("[CLASP] Global fallback: %s (%s)", cfg.FallbackProvider, cfg.FallbackModel)
+			}
+		}
 	}
 
 	// Initialize tier-specific providers if multi-provider routing is enabled
@@ -83,17 +98,42 @@ func NewHandler(cfg *config.Config) (*Handler, error) {
 				handler.tierProviders[config.TierOpus] = tierProvider
 				log.Printf("[CLASP] Multi-provider: opus -> %s (%s)", cfg.TierOpus.Provider, cfg.TierOpus.Model)
 			}
+			// Initialize tier-specific fallback
+			if cfg.TierOpus.HasFallback() {
+				if fb := cfg.TierOpus.GetFallbackConfig(); fb != nil {
+					if fbProvider, err := createTierProvider(fb); err == nil {
+						handler.tierFallbacks[config.TierOpus] = fbProvider
+						log.Printf("[CLASP] Fallback: opus -> %s (%s)", fb.Provider, fb.Model)
+					}
+				}
+			}
 		}
 		if cfg.TierSonnet != nil {
 			if tierProvider, err := createTierProvider(cfg.TierSonnet); err == nil {
 				handler.tierProviders[config.TierSonnet] = tierProvider
 				log.Printf("[CLASP] Multi-provider: sonnet -> %s (%s)", cfg.TierSonnet.Provider, cfg.TierSonnet.Model)
 			}
+			if cfg.TierSonnet.HasFallback() {
+				if fb := cfg.TierSonnet.GetFallbackConfig(); fb != nil {
+					if fbProvider, err := createTierProvider(fb); err == nil {
+						handler.tierFallbacks[config.TierSonnet] = fbProvider
+						log.Printf("[CLASP] Fallback: sonnet -> %s (%s)", fb.Provider, fb.Model)
+					}
+				}
+			}
 		}
 		if cfg.TierHaiku != nil {
 			if tierProvider, err := createTierProvider(cfg.TierHaiku); err == nil {
 				handler.tierProviders[config.TierHaiku] = tierProvider
 				log.Printf("[CLASP] Multi-provider: haiku -> %s (%s)", cfg.TierHaiku.Provider, cfg.TierHaiku.Model)
+			}
+			if cfg.TierHaiku.HasFallback() {
+				if fb := cfg.TierHaiku.GetFallbackConfig(); fb != nil {
+					if fbProvider, err := createTierProvider(fb); err == nil {
+						handler.tierFallbacks[config.TierHaiku] = fbProvider
+						log.Printf("[CLASP] Fallback: haiku -> %s (%s)", fb.Provider, fb.Model)
+					}
+				}
 			}
 		}
 	}
@@ -256,6 +296,37 @@ func (h *Handler) HandleMessages(w http.ResponseWriter, r *http.Request) {
 
 	// Execute request with retry logic
 	resp, err := h.doRequestWithRetry(r.Context(), reqBody, selectedProvider)
+	usedFallback := false
+
+	// Check if we should try fallback
+	if (err != nil || (resp != nil && resp.StatusCode >= 500)) {
+		fallbackProvider, fallbackModel := h.getFallbackProvider(anthropicReq.Model)
+		if fallbackProvider != nil {
+			// Close original response if it exists
+			if resp != nil {
+				resp.Body.Close()
+			}
+
+			atomic.AddInt64(&h.metrics.FallbackAttempts, 1)
+			log.Printf("[CLASP] Primary provider failed, attempting fallback to %s", fallbackProvider.Name())
+
+			// Re-transform request with fallback model if specified
+			if fallbackModel != "" {
+				targetModel = fallbackModel
+				openAIReq, _ = translator.TransformRequest(&anthropicReq, targetModel)
+				reqBody, _ = json.Marshal(openAIReq)
+			}
+
+			// Try fallback provider
+			resp, err = h.doRequestWithRetry(r.Context(), reqBody, fallbackProvider)
+			if err == nil && resp.StatusCode < 500 {
+				atomic.AddInt64(&h.metrics.FallbackSuccesses, 1)
+				usedFallback = true
+				log.Printf("[CLASP] Fallback to %s succeeded", fallbackProvider.Name())
+			}
+		}
+	}
+
 	if err != nil {
 		atomic.AddInt64(&h.metrics.ErrorRequests, 1)
 		log.Printf("[CLASP] Error making upstream request: %v", err)
@@ -277,6 +348,11 @@ func (h *Handler) HandleMessages(w http.ResponseWriter, r *http.Request) {
 
 	atomic.AddInt64(&h.metrics.SuccessRequests, 1)
 	atomic.AddInt64(&h.metrics.TotalLatencyMs, time.Since(start).Milliseconds())
+
+	// Add header to indicate fallback was used
+	if usedFallback {
+		w.Header().Set("X-CLASP-Fallback", "true")
+	}
 
 	// Handle streaming vs non-streaming
 	if anthropicReq.Stream {
@@ -333,6 +409,28 @@ func (h *Handler) doRequestWithRetry(ctx interface{ Done() <-chan struct{} }, re
 	}
 
 	return nil, fmt.Errorf("max retries exceeded: %w", lastErr)
+}
+
+// getFallbackProvider returns the appropriate fallback provider and model for the given request model.
+// It checks tier-specific fallbacks first, then global fallback.
+func (h *Handler) getFallbackProvider(requestModel string) (provider.Provider, string) {
+	// First check for tier-specific fallback
+	tier := config.GetModelTier(requestModel)
+	if fbProvider, ok := h.tierFallbacks[tier]; ok {
+		// Get fallback model from tier config
+		tierCfg := h.cfg.GetTierConfig(requestModel)
+		if tierCfg != nil && tierCfg.FallbackModel != "" {
+			return fbProvider, tierCfg.FallbackModel
+		}
+		return fbProvider, ""
+	}
+
+	// Fall back to global fallback provider
+	if h.fallbackProvider != nil {
+		return h.fallbackProvider, h.cfg.FallbackModel
+	}
+
+	return nil, ""
 }
 
 // writeErrorResponse writes an Anthropic-formatted error response.
@@ -556,6 +654,22 @@ func (h *Handler) HandleMetrics(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Add fallback stats if fallback is configured
+	if h.fallbackProvider != nil || len(h.tierFallbacks) > 0 {
+		fbAttempts := atomic.LoadInt64(&h.metrics.FallbackAttempts)
+		fbSuccesses := atomic.LoadInt64(&h.metrics.FallbackSuccesses)
+		var fbSuccessRate float64
+		if fbAttempts > 0 {
+			fbSuccessRate = float64(fbSuccesses) / float64(fbAttempts) * 100
+		}
+		response["fallback"] = map[string]interface{}{
+			"enabled":      true,
+			"attempts":     fbAttempts,
+			"successes":    fbSuccesses,
+			"success_rate": fmt.Sprintf("%.2f%%", fbSuccessRate),
+		}
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
 }
@@ -651,6 +765,20 @@ func (h *Handler) HandleMetricsPrometheus(w http.ResponseWriter, r *http.Request
 		fmt.Fprintf(w, "# TYPE clasp_cache_misses counter\n")
 		fmt.Fprintf(w, "clasp_cache_misses{provider=\"%s\"} %d\n", providerName, misses)
 	}
+
+	// Fallback metrics
+	if h.fallbackProvider != nil || len(h.tierFallbacks) > 0 {
+		fbAttempts := atomic.LoadInt64(&h.metrics.FallbackAttempts)
+		fbSuccesses := atomic.LoadInt64(&h.metrics.FallbackSuccesses)
+
+		fmt.Fprintf(w, "# HELP clasp_fallback_attempts Total fallback attempts\n")
+		fmt.Fprintf(w, "# TYPE clasp_fallback_attempts counter\n")
+		fmt.Fprintf(w, "clasp_fallback_attempts{provider=\"%s\"} %d\n", providerName, fbAttempts)
+
+		fmt.Fprintf(w, "# HELP clasp_fallback_successes Total successful fallback attempts\n")
+		fmt.Fprintf(w, "# TYPE clasp_fallback_successes counter\n")
+		fmt.Fprintf(w, "clasp_fallback_successes{provider=\"%s\"} %d\n", providerName, fbSuccesses)
+	}
 }
 
 // HandleRoot handles root path requests.
@@ -658,7 +786,7 @@ func (h *Handler) HandleRoot(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	response := map[string]interface{}{
 		"name":     "CLASP",
-		"version":  "0.3.0",
+		"version":  "0.3.1",
 		"provider": h.provider.Name(),
 		"status":   "running",
 		"endpoints": map[string]string{
@@ -676,6 +804,18 @@ func (h *Handler) HandleRoot(w http.ResponseWriter, r *http.Request) {
 			routing[string(tier)] = p.Name()
 		}
 		response["multi_provider_routing"] = routing
+	}
+
+	// Add fallback info if configured
+	if h.fallbackProvider != nil {
+		response["fallback_provider"] = h.fallbackProvider.Name()
+	}
+	if len(h.tierFallbacks) > 0 {
+		fallbacks := make(map[string]string)
+		for tier, p := range h.tierFallbacks {
+			fallbacks[string(tier)] = p.Name()
+		}
+		response["tier_fallbacks"] = fallbacks
 	}
 
 	json.NewEncoder(w).Encode(response)
