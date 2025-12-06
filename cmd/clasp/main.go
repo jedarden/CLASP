@@ -3,12 +3,18 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
+	"syscall"
+	"time"
 
+	"github.com/jedarden/clasp/internal/claudecode"
 	"github.com/jedarden/clasp/internal/config"
 	"github.com/jedarden/clasp/internal/proxy"
 	"github.com/jedarden/clasp/internal/setup"
@@ -16,7 +22,7 @@ import (
 )
 
 var (
-	version = "v0.10.0"
+	version = "v0.11.0"
 )
 
 func main() {
@@ -49,6 +55,13 @@ func main() {
 	configure := flag.Bool("configure", false, "Run interactive setup wizard (alias for -setup)")
 	listModels := flag.Bool("models", false, "List available models from provider")
 
+	// Claude Code management flags
+	launchClaude := flag.Bool("launch", false, "Start proxy and launch Claude Code")
+	updateClaude := flag.Bool("update-claude", false, "Update Claude Code to latest version")
+	claudeStatus := flag.Bool("claude-status", false, "Check Claude Code installation status")
+	proxyOnly := flag.Bool("proxy-only", false, "Run proxy only (no Claude Code launch)")
+	verbose := flag.Bool("verbose", false, "Enable verbose output")
+
 	flag.Parse()
 
 	if *showVersion {
@@ -74,6 +87,47 @@ func main() {
 	if *listModels {
 		if err := listAvailableModels(); err != nil {
 			log.Fatalf("[CLASP] Failed to list models: %v", err)
+		}
+		os.Exit(0)
+	}
+
+	// Handle Claude Code status check
+	if *claudeStatus {
+		manager := claudecode.NewManager("", *verbose)
+		status, err := manager.CheckInstallation()
+		if err != nil {
+			log.Fatalf("[CLASP] Error checking Claude Code: %v", err)
+		}
+
+		fmt.Println("")
+		if status.Installed {
+			fmt.Printf("Claude Code: Installed\n")
+			fmt.Printf("  Version: %s\n", status.Version)
+			fmt.Printf("  Path: %s\n", status.Path)
+			fmt.Printf("  Method: %s\n", status.InstallMethod)
+
+			// Check for updates
+			needsUpdate, latestVersion, err := manager.CheckForUpdates(status.Version)
+			if err == nil {
+				if needsUpdate {
+					fmt.Printf("  Update Available: %s\n", latestVersion)
+				} else {
+					fmt.Printf("  Status: Up to date\n")
+				}
+			}
+		} else {
+			fmt.Println("Claude Code: Not installed")
+			fmt.Println("  Run 'clasp -launch' to install and launch Claude Code")
+		}
+		fmt.Println("")
+		os.Exit(0)
+	}
+
+	// Handle Claude Code update
+	if *updateClaude {
+		manager := claudecode.NewManager("", *verbose)
+		if err := manager.Update(); err != nil {
+			log.Fatalf("[CLASP] Failed to update Claude Code: %v", err)
 		}
 		os.Exit(0)
 	}
@@ -194,12 +248,89 @@ func main() {
 		log.Fatalf("[CLASP] Authentication enabled but no API key provided. Set CLASP_AUTH_API_KEY or use -auth-api-key flag.")
 	}
 
-	// Create and start server
+	// Create server
 	server, err := proxy.NewServer(cfg)
 	if err != nil {
 		log.Fatalf("[CLASP] Failed to create server: %v", err)
 	}
 
+	// If launching Claude Code, start proxy in background and then launch Claude
+	if *launchClaude && !*proxyOnly {
+		printBanner()
+		fmt.Println("")
+
+		// Get Claude args (everything after "--")
+		_, claudeArgs := claudecode.ParseClaudeArgs(flag.Args())
+
+		// Start the proxy server in a goroutine
+		serverErrCh := make(chan error, 1)
+		go func() {
+			serverErrCh <- server.Start()
+		}()
+
+		// Wait briefly for proxy to start
+		time.Sleep(500 * time.Millisecond)
+
+		// Check if proxy started successfully by hitting health endpoint
+		proxyURL := fmt.Sprintf("http://localhost:%d", cfg.Port)
+		healthURL := proxyURL + "/health"
+
+		for i := 0; i < 10; i++ {
+			resp, err := http.Get(healthURL)
+			if err == nil && resp.StatusCode == 200 {
+				resp.Body.Close()
+				break
+			}
+			if resp != nil {
+				resp.Body.Close()
+			}
+			time.Sleep(200 * time.Millisecond)
+		}
+
+		fmt.Printf("[CLASP] Proxy started on %s\n", proxyURL)
+
+		// Set up signal handling for graceful shutdown
+		ctx, cancel := context.WithCancel(context.Background())
+		sigCh := make(chan os.Signal, 1)
+		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+
+		go func() {
+			<-sigCh
+			fmt.Println("\n[CLASP] Shutting down...")
+			cancel()
+		}()
+
+		// Launch Claude Code
+		manager := claudecode.NewManager(proxyURL, *verbose)
+		launchOpts := claudecode.LaunchOptions{
+			WorkingDir:  "",
+			Args:        claudeArgs,
+			ProxyURL:    proxyURL,
+			Interactive: true,
+		}
+
+		claudeErrCh := make(chan error, 1)
+		go func() {
+			claudeErrCh <- manager.Launch(launchOpts)
+		}()
+
+		// Wait for either Claude to exit or context cancellation
+		select {
+		case err := <-claudeErrCh:
+			if err != nil {
+				log.Printf("[CLASP] Claude Code exited with error: %v", err)
+			}
+		case <-ctx.Done():
+			// Shutdown requested
+		case err := <-serverErrCh:
+			log.Printf("[CLASP] Proxy server error: %v", err)
+		}
+
+		fmt.Println("[CLASP] Session ended")
+		os.Exit(0)
+	}
+
+	// Standard proxy-only mode
 	printBanner()
 
 	if err := server.Start(); err != nil {
@@ -218,12 +349,19 @@ func printBanner() {
 func printHelp() {
 	fmt.Printf(`CLASP - Claude Language Agent Super Proxy %s
 
-Usage: clasp [options]
+Usage: clasp [options] [-- claude-args...]
 
 Setup & Configuration:
   -setup                    Run interactive setup wizard
   -configure                Alias for -setup
   -models                   List available models from provider
+
+Claude Code Management:
+  -launch                   Start proxy and launch Claude Code (recommended)
+  -claude-status            Check Claude Code installation status
+  -update-claude            Update Claude Code to latest version
+  -proxy-only               Run proxy only without launching Claude Code
+  -verbose                  Enable verbose output
 
 Options:
   -port <port>              Port to listen on (default: 8080, or CLASP_PORT env)
@@ -426,9 +564,20 @@ Examples:
   OPENAI_API_KEY=sk-xxx CLASP_MODEL_ALIASES="fast:gpt-4o-mini,smart:gpt-4o" clasp
 
 Claude Code Integration:
-  Set ANTHROPIC_BASE_URL to point to CLASP:
+  # Recommended: Use -launch to start proxy and Claude Code together
+  OPENAI_API_KEY=sk-xxx clasp -launch
 
+  # Pass arguments to Claude Code after "--"
+  OPENAI_API_KEY=sk-xxx clasp -launch -- --resume
+
+  # Manual integration (set ANTHROPIC_BASE_URL to point to CLASP)
   ANTHROPIC_BASE_URL=http://localhost:8080 claude
+
+  # Check Claude Code installation status
+  clasp -claude-status
+
+  # Update Claude Code to latest version
+  clasp -update-claude
 
 For more information: https://github.com/jedarden/CLASP
 `, version)
