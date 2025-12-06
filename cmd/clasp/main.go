@@ -23,7 +23,7 @@ import (
 )
 
 var (
-	version = "v0.16.15"
+	version = "v0.17.0"
 )
 
 func main() {
@@ -89,7 +89,15 @@ func main() {
 	// Profile management flags
 	profileName := flag.String("profile", "", "Use a specific profile")
 
+	// Direct API key flag (with security warning)
+	directAPIKey := flag.String("api-key", "", "API key for provider (⚠️ visible in shell history)")
+
 	flag.Parse()
+
+	// Warn about API key in command line (security risk)
+	if *directAPIKey != "" {
+		fmt.Print(setup.WarnCLIAPIKey())
+	}
 
 	// Apply profile if specified
 	if *profileName != "" {
@@ -204,6 +212,31 @@ func main() {
 		// Reload env after setup
 		if err := setup.ApplyConfigToEnv(); err != nil {
 			log.Fatalf("[CLASP] Failed to apply configuration: %v", err)
+		}
+	}
+
+	// Apply direct API key if provided (sets appropriate env var based on provider)
+	if *directAPIKey != "" {
+		// Determine provider and set appropriate env var
+		providerToUse := *provider
+		if providerToUse == "" {
+			providerToUse = os.Getenv("PROVIDER")
+		}
+		if providerToUse == "" {
+			providerToUse = "openai" // Default to OpenAI
+		}
+
+		switch providerToUse {
+		case "openai":
+			os.Setenv("OPENAI_API_KEY", *directAPIKey)
+		case "azure":
+			os.Setenv("AZURE_API_KEY", *directAPIKey)
+		case "openrouter":
+			os.Setenv("OPENROUTER_API_KEY", *directAPIKey)
+		case "anthropic":
+			os.Setenv("ANTHROPIC_API_KEY", *directAPIKey)
+		case "custom":
+			os.Setenv("CUSTOM_API_KEY", *directAPIKey)
 		}
 	}
 

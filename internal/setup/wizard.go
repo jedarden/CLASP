@@ -269,8 +269,15 @@ func (w *Wizard) promptInput(prompt, defaultVal string) (string, error) {
 }
 
 func (w *Wizard) promptSecure(prompt, defaultVal string) (string, error) {
-	// For now, just use regular input since we can't easily hide input in Go
-	// without external dependencies. In production, you'd use terminal.ReadPassword
+	// Use Bubble Tea secure input if terminal is available
+	if IsTTY() {
+		placeholder := "Paste your key here..."
+		if defaultVal != "" {
+			placeholder = defaultVal
+		}
+		return RunSecureInput(prompt, placeholder, true)
+	}
+	// Fallback for non-TTY environments
 	return w.promptInput(prompt, defaultVal)
 }
 
@@ -406,6 +413,32 @@ func isChatModel(id string) bool {
 }
 
 func (w *Wizard) selectModel(provider string, models []string) (string, error) {
+	return w.selectModelWithTier(provider, models, "")
+}
+
+// selectModelWithTier selects a model with optional tier context.
+func (w *Wizard) selectModelWithTier(provider string, models []string, tier string) (string, error) {
+	// If TTY available and we have models, use fuzzy picker
+	if IsTTY() && len(models) > 0 {
+		// Get known model metadata
+		knownModels := GetKnownModels(provider)
+
+		// Merge fetched models with known metadata
+		modelInfos := MergeModelLists(models, knownModels)
+
+		if len(modelInfos) > 0 {
+			selected, err := RunModelPicker(modelInfos, provider, tier)
+			if err != nil {
+				// Fall back to basic selection on error
+				w.printf("Note: Model picker unavailable, using basic selection.\n")
+			} else if selected != "" {
+				return selected, nil
+			}
+			// If cancelled, fall through to manual input
+		}
+	}
+
+	// Fallback: basic text selection
 	if len(models) == 0 {
 		return w.promptInput("Enter model name", getDefaultModel(provider))
 	}
