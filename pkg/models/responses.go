@@ -39,8 +39,10 @@ type ResponsesInput struct {
 }
 
 // ResponsesContentPart represents a content part in Responses input.
+// Note: Responses API uses "input_text" and "input_image" for user/input content types,
+// and "output_text" for assistant/output content types.
 type ResponsesContentPart struct {
-	Type     string             `json:"type"` // "text", "image_url", "input_audio"
+	Type     string             `json:"type"` // "input_text", "input_image", "output_text", "input_audio", "text", "image_url"
 	Text     string             `json:"text,omitempty"`
 	ImageURL *ImageURL          `json:"image_url,omitempty"`
 	Audio    *ResponsesAudioPart `json:"input_audio,omitempty"`
@@ -53,8 +55,15 @@ type ResponsesAudioPart struct {
 }
 
 // ResponsesTool represents a tool definition in Responses API.
+// Note: Responses API supports both the Chat Completions format (with nested function)
+// and a flattened format where name/description/parameters are at the top level.
 type ResponsesTool struct {
-	Type       string                  `json:"type"` // "function", "code_interpreter", "file_search", "mcp"
+	Type        string                  `json:"type"` // "function", "code_interpreter", "file_search", "mcp", "custom"
+	// Top-level fields for Responses API flattened format
+	Name        string                  `json:"name,omitempty"`
+	Description string                  `json:"description,omitempty"`
+	Parameters  interface{}             `json:"parameters,omitempty"`
+	// Nested function for backwards compatibility with Chat Completions format
 	Function   *ResponsesFunction      `json:"function,omitempty"`
 	MCPServer  *ResponsesMCPServer     `json:"mcp_server,omitempty"`
 }

@@ -12,10 +12,16 @@ import (
 // TransformRequestToResponses converts an Anthropic request to OpenAI Responses API format.
 // This is used for models that require the /v1/responses endpoint.
 func TransformRequestToResponses(req *models.AnthropicRequest, targetModel string, previousResponseID string) (*models.ResponsesRequest, error) {
+	// Enforce minimum max_output_tokens of 16 (Responses API requirement)
+	maxOutputTokens := req.MaxTokens
+	if maxOutputTokens < 16 {
+		maxOutputTokens = 16
+	}
+
 	responsesReq := &models.ResponsesRequest{
 		Model:              targetModel,
 		Stream:             req.Stream,
-		MaxOutputTokens:    req.MaxTokens,
+		MaxOutputTokens:    maxOutputTokens,
 		Temperature:        req.Temperature,
 		TopP:               req.TopP,
 		PreviousResponseID: previousResponseID,
@@ -84,21 +90,24 @@ func transformMessagesToInput(req *models.AnthropicRequest) ([]models.ResponsesI
 }
 
 // transformUserMessageToInput converts a user message to Responses input.
+// Note: Responses API uses "input_text" and "input_image" for user content types.
 func transformUserMessageToInput(content []models.ContentBlock) models.ResponsesInput {
 	var parts []models.ResponsesContentPart
 
 	for _, block := range content {
 		switch block.Type {
 		case "text":
+			// Responses API requires "input_text" for user text content
 			parts = append(parts, models.ResponsesContentPart{
-				Type: "text",
+				Type: "input_text",
 				Text: block.Text,
 			})
 		case "image":
 			if block.Source != nil {
 				dataURL := fmt.Sprintf("data:%s;base64,%s", block.Source.MediaType, block.Source.Data)
+				// Responses API requires "input_image" for image content
 				parts = append(parts, models.ResponsesContentPart{
-					Type: "image_url",
+					Type: "input_image",
 					ImageURL: &models.ImageURL{
 						URL: dataURL,
 					},
@@ -107,8 +116,8 @@ func transformUserMessageToInput(content []models.ContentBlock) models.Responses
 		}
 	}
 
-	// If only text content, use string format
-	if len(parts) == 1 && parts[0].Type == "text" {
+	// If only text content, use string format for simplicity
+	if len(parts) == 1 && parts[0].Type == "input_text" {
 		return models.ResponsesInput{
 			Type:    "message",
 			Role:    "user",
@@ -116,7 +125,7 @@ func transformUserMessageToInput(content []models.ContentBlock) models.Responses
 		}
 	}
 
-	// Otherwise use array format
+	// Otherwise use array format with proper content types
 	if len(parts) == 0 {
 		return models.ResponsesInput{
 			Type:    "message",
@@ -203,6 +212,8 @@ func transformAssistantMessageToInput(content []models.ContentBlock) []models.Re
 }
 
 // transformToolsToResponses converts Anthropic tools to Responses API format.
+// The Responses API uses a flattened tool structure where name, description, and parameters
+// are at the top level (not nested in a "function" object like Chat Completions API).
 func transformToolsToResponses(tools []models.AnthropicTool) []models.ResponsesTool {
 	result := make([]models.ResponsesTool, len(tools))
 
@@ -210,8 +221,14 @@ func transformToolsToResponses(tools []models.AnthropicTool) []models.ResponsesT
 		// Clean up input schema
 		params := cleanupSchema(tool.InputSchema)
 
+		// Responses API uses a flattened structure with name at top level
 		result[i] = models.ResponsesTool{
-			Type: "function",
+			Type:        "function",
+			Name:        tool.Name,
+			Description: tool.Description,
+			Parameters:  params,
+			// Also set Function for backwards compatibility, but Responses API
+			// primarily uses the top-level fields
 			Function: &models.ResponsesFunction{
 				Name:        tool.Name,
 				Description: tool.Description,
