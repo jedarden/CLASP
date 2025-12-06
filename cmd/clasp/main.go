@@ -11,11 +11,12 @@ import (
 
 	"github.com/jedarden/clasp/internal/config"
 	"github.com/jedarden/clasp/internal/proxy"
+	"github.com/jedarden/clasp/internal/setup"
 	"github.com/joho/godotenv"
 )
 
 var (
-	version = "v0.9.0"
+	version = "v0.10.0"
 )
 
 func main() {
@@ -44,6 +45,9 @@ func main() {
 	cbTimeout := flag.Int("cb-timeout", 0, "Circuit breaker timeout in seconds (default: 30)")
 	showVersion := flag.Bool("version", false, "Show version information")
 	help := flag.Bool("help", false, "Show help message")
+	runSetup := flag.Bool("setup", false, "Run interactive setup wizard")
+	configure := flag.Bool("configure", false, "Run interactive setup wizard (alias for -setup)")
+	listModels := flag.Bool("models", false, "List available models from provider")
 
 	flag.Parse()
 
@@ -57,6 +61,23 @@ func main() {
 		os.Exit(0)
 	}
 
+	// Handle setup command
+	if *runSetup || *configure {
+		wizard := setup.NewWizard()
+		if _, err := wizard.Run(); err != nil {
+			log.Fatalf("[CLASP] Setup failed: %v", err)
+		}
+		os.Exit(0)
+	}
+
+	// Handle models command
+	if *listModels {
+		if err := listAvailableModels(); err != nil {
+			log.Fatalf("[CLASP] Failed to list models: %v", err)
+		}
+		os.Exit(0)
+	}
+
 	// Load .env file if it exists
 	envPaths := []string{
 		".env",
@@ -67,6 +88,28 @@ func main() {
 			if err := godotenv.Load(path); err == nil {
 				log.Printf("[CLASP] Loaded environment from %s", path)
 			}
+		}
+	}
+
+	// Try to load saved config from ~/.clasp/config.json
+	if err := setup.ApplyConfigToEnv(); err == nil {
+		log.Printf("[CLASP] Loaded configuration from %s", setup.GetConfigPath())
+	}
+
+	// Check if setup is needed (no API keys configured)
+	if setup.NeedsSetup() {
+		fmt.Println("")
+		fmt.Println("No configuration found. Starting interactive setup...")
+		fmt.Println("")
+
+		wizard := setup.NewWizard()
+		if _, err := wizard.Run(); err != nil {
+			log.Fatalf("[CLASP] Setup failed: %v", err)
+		}
+
+		// Reload env after setup
+		if err := setup.ApplyConfigToEnv(); err != nil {
+			log.Fatalf("[CLASP] Failed to apply configuration: %v", err)
 		}
 	}
 
@@ -176,6 +219,11 @@ func printHelp() {
 	fmt.Printf(`CLASP - Claude Language Agent Super Proxy %s
 
 Usage: clasp [options]
+
+Setup & Configuration:
+  -setup                    Run interactive setup wizard
+  -configure                Alias for -setup
+  -models                   List available models from provider
 
 Options:
   -port <port>              Port to listen on (default: 8080, or CLASP_PORT env)
@@ -384,4 +432,53 @@ Claude Code Integration:
 
 For more information: https://github.com/jedarden/CLASP
 `, version)
+}
+
+// listAvailableModels lists models from the configured provider.
+func listAvailableModels() error {
+	// Load .env file if it exists
+	envPaths := []string{
+		".env",
+		filepath.Join(os.Getenv("HOME"), ".clasp", ".env"),
+	}
+	for _, path := range envPaths {
+		if _, err := os.Stat(path); err == nil {
+			godotenv.Load(path)
+		}
+	}
+
+	// Try to load saved config
+	if err := setup.ApplyConfigToEnv(); err != nil {
+		// No saved config, try env
+	}
+
+	// Load configuration
+	cfg, err := config.LoadFromEnv()
+	if err != nil {
+		return fmt.Errorf("no configuration found. Run 'clasp -setup' first")
+	}
+
+	fmt.Println("")
+	fmt.Printf("Fetching models from %s...\n", cfg.Provider)
+	fmt.Println("")
+
+	wizard := setup.NewWizard()
+	models, err := wizard.FetchModelsPublic(string(cfg.Provider), cfg.GetAPIKey(), cfg.CustomBaseURL, cfg.AzureEndpoint)
+	if err != nil {
+		return fmt.Errorf("failed to fetch models: %w", err)
+	}
+
+	if len(models) == 0 {
+		fmt.Println("No models found.")
+		return nil
+	}
+
+	fmt.Printf("Available models (%d):\n", len(models))
+	fmt.Println("")
+	for _, m := range models {
+		fmt.Printf("  %s\n", m)
+	}
+	fmt.Println("")
+
+	return nil
 }
