@@ -3,5 +3,6 @@ dist/
 *.tgz
 node_modules/
 coverage.out
-coverage.html.claude-flow/metrics/
+coverage.html
+.claude-flow/metrics/
 .swarm/
