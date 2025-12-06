@@ -17,13 +17,14 @@ import (
 
 	"github.com/jedarden/clasp/internal/claudecode"
 	"github.com/jedarden/clasp/internal/config"
+	"github.com/jedarden/clasp/internal/logging"
 	"github.com/jedarden/clasp/internal/proxy"
 	"github.com/jedarden/clasp/internal/setup"
 	"github.com/joho/godotenv"
 )
 
 var (
-	version = "v0.24.0"
+	version = "v0.24.1"
 )
 
 func main() {
@@ -35,6 +36,9 @@ func main() {
 			return
 		case "status":
 			handleStatusCommand(os.Args[2:])
+			return
+		case "logs":
+			handleLogsCommand(os.Args[2:])
 			return
 		case "use":
 			// Quick alias: clasp use <profile>
@@ -335,6 +339,13 @@ func main() {
 	}
 
 	if shouldLaunchClaude {
+		// Configure logging to file to prevent TUI corruption
+		if err := logging.ConfigureForClaudeCode(); err != nil {
+			// Fall back to quiet mode if file logging fails
+			logging.ConfigureQuiet()
+		}
+		defer logging.Close()
+
 		printBanner()
 		fmt.Println("")
 
@@ -880,6 +891,75 @@ Examples:
 
 Profiles are stored in ~/.clasp/profiles/
 `)
+}
+
+// handleLogsCommand handles the logs subcommand.
+func handleLogsCommand(args []string) {
+	logPath := logging.GetLogPath()
+
+	if len(args) > 0 {
+		switch args[0] {
+		case "--path", "-p":
+			fmt.Println(logPath)
+			return
+		case "--clear", "-c":
+			if err := os.Remove(logPath); err != nil && !os.IsNotExist(err) {
+				fmt.Printf("Error clearing logs: %v\n", err)
+				os.Exit(1)
+			}
+			fmt.Println("Logs cleared.")
+			return
+		case "--help", "-h":
+			fmt.Print(`
+CLASP Logs
+
+Usage: clasp logs [options]
+
+Options:
+  --path, -p      Show log file path
+  --clear, -c     Clear the log file
+  --help, -h      Show this help
+
+By default, shows the last 50 lines of the log file.
+
+Log Location: ~/.clasp/logs/clasp.log
+
+When CLASP runs in Claude Code mode (the default), all proxy logs
+are written to this file instead of stdout to prevent TUI corruption.
+`)
+			return
+		}
+	}
+
+	// Check if log file exists
+	if _, err := os.Stat(logPath); os.IsNotExist(err) {
+		fmt.Println("No logs found yet.")
+		fmt.Printf("Log file location: %s\n", logPath)
+		fmt.Println("")
+		fmt.Println("Logs are created when CLASP runs in Claude Code mode.")
+		fmt.Println("Use 'clasp -proxy-only' to see logs in real-time on stdout.")
+		return
+	}
+
+	// Read and display the last 50 lines
+	content, err := os.ReadFile(logPath)
+	if err != nil {
+		fmt.Printf("Error reading logs: %v\n", err)
+		os.Exit(1)
+	}
+
+	lines := strings.Split(string(content), "\n")
+	start := 0
+	if len(lines) > 50 {
+		start = len(lines) - 50
+	}
+
+	fmt.Printf("=== CLASP Logs (%s) ===\n\n", logPath)
+	for _, line := range lines[start:] {
+		if line != "" {
+			fmt.Println(line)
+		}
+	}
 }
 
 // listAvailableModels lists models from the configured provider.

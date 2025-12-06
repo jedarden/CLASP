@@ -119,14 +119,57 @@ func (w *Wizard) Run() (*config.Config, error) {
 		}
 	}
 
-	// Step 5: Fetch and select model
+	// Step 5: Fetch and select model with API key validation
 	w.println("")
 	w.println("Fetching available models...")
 
-	models, err := w.fetchModels(provider, apiKey, baseURL, azureEndpoint)
-	if err != nil {
-		w.printf("Warning: Could not fetch models: %v\n", err)
-		w.println("You can manually specify a model.")
+	var models []string
+	maxRetries := 3
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		var fetchErr error
+		models, fetchErr = w.fetchModels(provider, apiKey, baseURL, azureEndpoint)
+		if fetchErr == nil {
+			break // Success
+		}
+
+		// Check for 401 (invalid API key) errors
+		if strings.Contains(fetchErr.Error(), "401") || strings.Contains(fetchErr.Error(), "Unauthorized") || strings.Contains(fetchErr.Error(), "Invalid API key") || strings.Contains(fetchErr.Error(), "Incorrect API key") {
+			w.println("")
+			w.println("✗ API key appears to be invalid. Please check and try again.")
+			w.println("")
+
+			if attempt < maxRetries {
+				// Let user re-enter API key
+				var keyErr error
+				apiKey, keyErr = w.promptAPIKey(provider)
+				if keyErr != nil {
+					return nil, keyErr
+				}
+				w.println("")
+				w.println("Retrying with new API key...")
+				continue
+			}
+
+			// Max retries reached
+			w.println("Maximum retries reached. You can skip validation and enter a model manually,")
+			w.println("or fix your API key and run setup again.")
+		} else {
+			// Other error - warn but continue
+			w.printf("Warning: Could not fetch models: %v\n", fetchErr)
+		}
+		break
+	}
+
+	// If no models fetched, use known models as fallback for the picker
+	if len(models) == 0 {
+		knownModels := GetKnownModels(provider)
+		for _, km := range knownModels {
+			models = append(models, km.ID)
+		}
+		if len(models) > 0 {
+			w.println("")
+			w.println("Using known models list. You can also enter a custom model name.")
+		}
 	}
 
 	model, err := w.selectModel(provider, models)
@@ -634,14 +677,57 @@ func (w *Wizard) RunProfileCreate(profileName string) (*Profile, error) {
 		}
 	}
 
-	// Fetch and select model
+	// Fetch and select model with API key validation
 	w.println("")
 	w.println("Fetching available models...")
 
-	models, err := w.fetchModels(provider, apiKey, baseURL, azureEndpoint)
-	if err != nil {
-		w.printf("Warning: Could not fetch models: %v\n", err)
-		w.println("You can manually specify a model.")
+	var models []string
+	maxRetries := 3
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		var fetchErr error
+		models, fetchErr = w.fetchModels(provider, apiKey, baseURL, azureEndpoint)
+		if fetchErr == nil {
+			break // Success
+		}
+
+		// Check for 401 (invalid API key) errors
+		if strings.Contains(fetchErr.Error(), "401") || strings.Contains(fetchErr.Error(), "Unauthorized") || strings.Contains(fetchErr.Error(), "Invalid API key") || strings.Contains(fetchErr.Error(), "Incorrect API key") {
+			w.println("")
+			w.println("✗ API key appears to be invalid. Please check and try again.")
+			w.println("")
+
+			if attempt < maxRetries {
+				// Let user re-enter API key
+				var keyErr error
+				apiKey, keyErr = w.promptAPIKey(provider)
+				if keyErr != nil {
+					return nil, keyErr
+				}
+				w.println("")
+				w.println("Retrying with new API key...")
+				continue
+			}
+
+			// Max retries reached
+			w.println("Maximum retries reached. You can skip validation and enter a model manually,")
+			w.println("or fix your API key and run setup again.")
+		} else {
+			// Other error - warn but continue
+			w.printf("Warning: Could not fetch models: %v\n", fetchErr)
+		}
+		break
+	}
+
+	// If no models fetched, use known models as fallback for the picker
+	if len(models) == 0 {
+		knownModels := GetKnownModels(provider)
+		for _, km := range knownModels {
+			models = append(models, km.ID)
+		}
+		if len(models) > 0 {
+			w.println("")
+			w.println("Using known models list. You can also enter a custom model name.")
+		}
 	}
 
 	model, err := w.selectModel(provider, models)
