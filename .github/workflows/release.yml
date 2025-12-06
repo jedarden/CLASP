@@ -220,5 +220,13 @@ jobs:
       - name: Update version
         run: npm version ${{ needs.version.outputs.new_version }} --no-git-tag-version --allow-same-version
 
+      - name: Sync VERSION in install.js
+        run: |
+          VERSION="${{ needs.version.outputs.new_version }}"
+          # Update VERSION constant in install.js
+          sed -i "s/const VERSION = '[0-9.]*';/const VERSION = '$VERSION';/" scripts/install.js
+          # Verify the change
+          grep "const VERSION" scripts/install.js
+
       - name: Publish with provenance
         run: npm publish --access public
