@@ -3,6 +3,7 @@ package translator
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/jedarden/clasp/pkg/models"
@@ -142,8 +143,17 @@ func TestTransformRequest_WithSystemMessage(t *testing.T) {
 	if result.Messages[0].Role != "system" {
 		t.Errorf("Messages[0].Role = %q, want %q", result.Messages[0].Role, "system")
 	}
-	if result.Messages[0].Content != "You are a helpful assistant." {
-		t.Errorf("Messages[0].Content = %q, want %q", result.Messages[0].Content, "You are a helpful assistant.")
+	// Identity filtering adds a prefix to all system messages
+	content, ok := result.Messages[0].Content.(string)
+	if !ok {
+		t.Fatalf("Messages[0].Content is not a string")
+	}
+	// Should contain the identity filter prefix and the original content
+	if !strings.Contains(content, "You are NOT Claude") {
+		t.Errorf("System message should contain identity filter prefix")
+	}
+	if !strings.Contains(content, "You are a helpful assistant.") {
+		t.Errorf("System message should contain original content")
 	}
 }
 
@@ -963,5 +973,149 @@ func TestTransformRequest_WithThinking(t *testing.T) {
 	}
 	if result.MaxCompletionTokens != 4096 {
 		t.Errorf("MaxCompletionTokens = %d, want %d", result.MaxCompletionTokens, 4096)
+	}
+}
+
+// Identity filtering tests
+
+func TestFilterIdentity_ClaudeCodeIdentity(t *testing.T) {
+	input := "You are Claude Code, Anthropic's official CLI tool for developers."
+	result := filterIdentity(input)
+
+	if strings.Contains(result, "You are Claude Code, Anthropic's official CLI") {
+		t.Error("Should replace Claude Code identity")
+	}
+	if !strings.Contains(result, "You are NOT Claude") {
+		t.Error("Should add 'You are NOT Claude' prefix")
+	}
+	if !strings.Contains(result, "This is Claude Code, an AI-powered CLI tool") {
+		t.Error("Should contain neutral replacement")
+	}
+}
+
+func TestFilterIdentity_ModelNameReference(t *testing.T) {
+	input := "You are powered by the model named Sonnet 4.5."
+	result := filterIdentity(input)
+
+	if strings.Contains(result, "Sonnet 4.5") {
+		t.Error("Should replace specific model name reference")
+	}
+	if !strings.Contains(result, "You are powered by an AI model.") {
+		t.Error("Should contain neutral model reference")
+	}
+}
+
+func TestFilterIdentity_ClaudeBackgroundInfo(t *testing.T) {
+	input := "Hello <claude_background_info>secret info here</claude_background_info> world"
+	result := filterIdentity(input)
+
+	if strings.Contains(result, "claude_background_info") {
+		t.Error("Should remove claude_background_info blocks")
+	}
+	if strings.Contains(result, "secret info here") {
+		t.Error("Should remove content inside claude_background_info")
+	}
+	if !strings.Contains(result, "Hello") || !strings.Contains(result, "world") {
+		t.Error("Should preserve content outside claude_background_info")
+	}
+}
+
+func TestFilterIdentity_MultipleNewlines(t *testing.T) {
+	input := "Line 1\n\n\n\n\nLine 2"
+	result := filterIdentity(input)
+
+	if strings.Contains(result, "\n\n\n") {
+		t.Error("Should collapse multiple newlines to double newline")
+	}
+}
+
+func TestFilterIdentity_Prefix(t *testing.T) {
+	input := "You are a helpful assistant."
+	result := filterIdentity(input)
+
+	if !strings.HasPrefix(result, "Note: You are NOT Claude.") {
+		t.Error("Should have identity clarification prefix")
+	}
+}
+
+func TestTransformMessages_GrokModel_AddsJSONInstruction(t *testing.T) {
+	req := &models.AnthropicRequest{
+		System: "You are a helpful assistant.",
+		Messages: []models.AnthropicMessage{
+			{Role: "user", Content: "Hello"},
+		},
+	}
+
+	messages, err := transformMessages(req, "x-ai/grok-3-beta")
+	if err != nil {
+		t.Fatalf("transformMessages failed: %v", err)
+	}
+
+	if len(messages) < 1 {
+		t.Fatal("Should have at least one message")
+	}
+
+	systemContent, ok := messages[0].Content.(string)
+	if !ok {
+		t.Fatal("System content should be a string")
+	}
+
+	if !strings.Contains(systemContent, "NEVER use XML format like <xai:function_call>") {
+		t.Error("System message for Grok should contain JSON instruction")
+	}
+}
+
+func TestTransformMessages_GrokModel_NoSystemMessage_AddsJSONInstruction(t *testing.T) {
+	req := &models.AnthropicRequest{
+		System: nil,
+		Messages: []models.AnthropicMessage{
+			{Role: "user", Content: "Hello"},
+		},
+	}
+
+	messages, err := transformMessages(req, "grok-3-mini")
+	if err != nil {
+		t.Fatalf("transformMessages failed: %v", err)
+	}
+
+	// Should add a system message with JSON instruction
+	if len(messages) < 2 {
+		t.Fatal("Should have at least 2 messages (system + user)")
+	}
+
+	systemContent, ok := messages[0].Content.(string)
+	if !ok {
+		t.Fatal("First message content should be a string")
+	}
+
+	if !strings.Contains(systemContent, "NEVER use XML format like <xai:function_call>") {
+		t.Error("Grok should have JSON instruction even without system message")
+	}
+}
+
+func TestTransformMessages_NonGrokModel_NoJSONInstruction(t *testing.T) {
+	req := &models.AnthropicRequest{
+		System: "You are a helpful assistant.",
+		Messages: []models.AnthropicMessage{
+			{Role: "user", Content: "Hello"},
+		},
+	}
+
+	messages, err := transformMessages(req, "gpt-4o")
+	if err != nil {
+		t.Fatalf("transformMessages failed: %v", err)
+	}
+
+	if len(messages) < 1 {
+		t.Fatal("Should have at least one message")
+	}
+
+	systemContent, ok := messages[0].Content.(string)
+	if !ok {
+		t.Fatal("System content should be a string")
+	}
+
+	if strings.Contains(systemContent, "NEVER use XML format like <xai:function_call>") {
+		t.Error("Non-Grok model should NOT have XML instruction")
 	}
 }

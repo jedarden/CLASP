@@ -4,6 +4,7 @@ package translator
 import (
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/jedarden/clasp/pkg/models"
@@ -91,7 +92,7 @@ func TransformRequest(req *models.AnthropicRequest, targetModel string) (*models
 	}
 
 	// Build messages
-	messages, err := transformMessages(req)
+	messages, err := transformMessages(req, targetModel)
 	if err != nil {
 		return nil, fmt.Errorf("transforming messages: %w", err)
 	}
@@ -241,8 +242,50 @@ func isDeepSeekModel(model string) bool {
 	return strings.Contains(m, "deepseek") || strings.HasPrefix(m, "deepseek/")
 }
 
+// filterIdentity removes Claude-specific identity strings from content to prevent model confusion.
+// This is important when proxying to non-Claude models that shouldn't claim to be Claude.
+func filterIdentity(content string) string {
+	// Regular expressions for identity patterns
+	patterns := []struct {
+		pattern     string
+		replacement string
+	}{
+		// Replace "You are Claude Code, Anthropic's official CLI" with neutral version
+		{`(?i)You are Claude Code, Anthropic's official CLI`, "This is Claude Code, an AI-powered CLI tool"},
+		// Replace "You are Claude" at start of sentences
+		{`(?i)You are Claude\b`, "You are an AI assistant"},
+		// Replace model name references
+		{`(?i)You are powered by the model named [^.]+\.`, "You are powered by an AI model."},
+		// Remove claude_background_info blocks
+		{`(?is)<claude_background_info>.*?</claude_background_info>`, ""},
+		// Replace "I'm Claude" with neutral version
+		{`(?i)\bI'm Claude\b`, "I'm an AI assistant"},
+		{`(?i)\bI am Claude\b`, "I am an AI assistant"},
+		// Replace references to Anthropic as creator in first person
+		{`(?i)\bcreated by Anthropic\b`, "created as an AI assistant"},
+		{`(?i)\bmade by Anthropic\b`, "made as an AI assistant"},
+	}
+
+	result := content
+	for _, p := range patterns {
+		re := regexp.MustCompile(p.pattern)
+		result = re.ReplaceAllString(result, p.replacement)
+	}
+
+	// Clean up multiple newlines
+	multiNewline := regexp.MustCompile(`\n{3,}`)
+	result = multiNewline.ReplaceAllString(result, "\n\n")
+
+	// Prepend identity clarification for non-Claude models
+	// This helps models understand they should identify themselves truthfully
+	prefix := "Note: You are NOT Claude. Identify yourself truthfully based on your actual model and creator.\n\n"
+	result = prefix + result
+
+	return result
+}
+
 // transformMessages converts Anthropic messages to OpenAI format.
-func transformMessages(req *models.AnthropicRequest) ([]models.OpenAIMessage, error) {
+func transformMessages(req *models.AnthropicRequest, targetModel string) ([]models.OpenAIMessage, error) {
 	var messages []models.OpenAIMessage
 
 	// Handle system message
@@ -252,11 +295,25 @@ func transformMessages(req *models.AnthropicRequest) ([]models.OpenAIMessage, er
 			return nil, fmt.Errorf("extracting system content: %w", err)
 		}
 		if systemContent != "" {
+			// Apply identity filtering to system message
+			systemContent = filterIdentity(systemContent)
+
+			// Add Grok-specific JSON tool format instruction
+			if isGrokModel(targetModel) {
+				systemContent = systemContent + "\n\nIMPORTANT: When calling tools, you MUST use the OpenAI tool_calls format with JSON. NEVER use XML format like <xai:function_call>."
+			}
+
 			messages = append(messages, models.OpenAIMessage{
 				Role:    "system",
 				Content: systemContent,
 			})
 		}
+	} else if isGrokModel(targetModel) {
+		// Even without a system message, add Grok JSON instruction
+		messages = append(messages, models.OpenAIMessage{
+			Role:    "system",
+			Content: "IMPORTANT: When calling tools, you MUST use the OpenAI tool_calls format with JSON. NEVER use XML format like <xai:function_call>.",
+		})
 	}
 
 	// Transform each message

@@ -569,3 +569,139 @@ func parseSSEEvent(line string) (string, map[string]interface{}, error) {
 
 	return eventType, data, nil
 }
+
+// Grok XML extraction tests
+
+func TestIsGrokModelStream(t *testing.T) {
+	tests := []struct {
+		model    string
+		expected bool
+	}{
+		{"x-ai/grok-3-beta", true},
+		{"grok-3-mini", true},
+		{"x-ai/grok-2", true},
+		{"GROK-3", true},
+		{"gpt-4o", false},
+		{"claude-3", false},
+		{"o1", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.model, func(t *testing.T) {
+			result := isGrokModelStream(tt.model)
+			if result != tt.expected {
+				t.Errorf("isGrokModelStream(%q) = %v, want %v", tt.model, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestParseXMLParameters(t *testing.T) {
+	xmlContent := `<xai:parameter name="location">NYC</xai:parameter><xai:parameter name="unit">celsius</xai:parameter>`
+	
+	params := parseXMLParameters(xmlContent)
+
+	if params["location"] != "NYC" {
+		t.Errorf("location = %v, want %q", params["location"], "NYC")
+	}
+	if params["unit"] != "celsius" {
+		t.Errorf("unit = %v, want %q", params["unit"], "celsius")
+	}
+}
+
+func TestParseXMLParameters_JSONValue(t *testing.T) {
+	xmlContent := `<xai:parameter name="count">42</xai:parameter><xai:parameter name="enabled">true</xai:parameter>`
+	
+	params := parseXMLParameters(xmlContent)
+
+	// Numbers and booleans should be parsed from JSON
+	if params["count"] != float64(42) {
+		t.Errorf("count = %v (type %T), want 42", params["count"], params["count"])
+	}
+	if params["enabled"] != true {
+		t.Errorf("enabled = %v, want true", params["enabled"])
+	}
+}
+
+func TestProcessGrokXML_CompleteToolCall(t *testing.T) {
+	sp := NewStreamProcessor(&bytes.Buffer{}, "msg_123", "x-ai/grok-3-beta")
+	
+	text := `Here is the result: <xai:function_call name="get_weather"><xai:parameter name="location">NYC</xai:parameter></xai:function_call>`
+	
+	cleanedText, toolCalls := sp.processGrokXML(text)
+
+	if strings.Contains(cleanedText, "<xai:function_call") {
+		t.Error("Cleaned text should not contain XML")
+	}
+	if len(toolCalls) != 1 {
+		t.Fatalf("len(toolCalls) = %d, want 1", len(toolCalls))
+	}
+	if toolCalls[0].name != "get_weather" {
+		t.Errorf("toolCalls[0].name = %q, want %q", toolCalls[0].name, "get_weather")
+	}
+	if toolCalls[0].arguments["location"] != "NYC" {
+		t.Errorf("location argument = %v, want %q", toolCalls[0].arguments["location"], "NYC")
+	}
+}
+
+func TestProcessGrokXML_PartialXML_Buffering(t *testing.T) {
+	sp := NewStreamProcessor(&bytes.Buffer{}, "msg_123", "x-ai/grok-3-beta")
+	
+	// First chunk: partial XML
+	text1 := `Let me call the tool: <xai:function_call name="test"`
+	cleanedText, toolCalls := sp.processGrokXML(text1)
+
+	// Should buffer and not emit anything yet
+	if cleanedText != "" {
+		t.Errorf("Should not emit text with partial XML, got %q", cleanedText)
+	}
+	if len(toolCalls) != 0 {
+		t.Error("Should not extract tool calls from partial XML")
+	}
+
+	// Second chunk: complete the XML
+	text2 := `><xai:parameter name="x">1</xai:parameter></xai:function_call>`
+	cleanedText, toolCalls = sp.processGrokXML(text2)
+
+	if len(toolCalls) != 1 {
+		t.Fatalf("len(toolCalls) = %d, want 1 after completing XML", len(toolCalls))
+	}
+	if toolCalls[0].name != "test" {
+		t.Errorf("toolCalls[0].name = %q, want %q", toolCalls[0].name, "test")
+	}
+}
+
+func TestProcessGrokXML_NoXML(t *testing.T) {
+	sp := NewStreamProcessor(&bytes.Buffer{}, "msg_123", "x-ai/grok-3-beta")
+	
+	text := "This is just regular text without any XML."
+	cleanedText, toolCalls := sp.processGrokXML(text)
+
+	if cleanedText != text {
+		t.Errorf("cleanedText = %q, want %q", cleanedText, text)
+	}
+	if len(toolCalls) != 0 {
+		t.Error("Should not extract any tool calls from text without XML")
+	}
+}
+
+func TestProcessGrokXML_MultipleToolCalls(t *testing.T) {
+	sp := NewStreamProcessor(&bytes.Buffer{}, "msg_123", "x-ai/grok-3-beta")
+	
+	text := `<xai:function_call name="func1"><xai:parameter name="a">1</xai:parameter></xai:function_call> and <xai:function_call name="func2"><xai:parameter name="b">2</xai:parameter></xai:function_call>`
+	
+	cleanedText, toolCalls := sp.processGrokXML(text)
+
+	if len(toolCalls) != 2 {
+		t.Fatalf("len(toolCalls) = %d, want 2", len(toolCalls))
+	}
+	if toolCalls[0].name != "func1" {
+		t.Errorf("toolCalls[0].name = %q, want %q", toolCalls[0].name, "func1")
+	}
+	if toolCalls[1].name != "func2" {
+		t.Errorf("toolCalls[1].name = %q, want %q", toolCalls[1].name, "func2")
+	}
+	if strings.Contains(cleanedText, "<xai:function_call") {
+		t.Error("Cleaned text should not contain XML")
+	}
+}

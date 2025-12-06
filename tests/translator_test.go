@@ -2,6 +2,7 @@ package tests
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/jedarden/clasp/internal/translator"
@@ -68,8 +69,16 @@ func TestTransformRequest_WithSystemMessage(t *testing.T) {
 		t.Errorf("expected first message role 'system', got '%s'", result.Messages[0].Role)
 	}
 
-	if result.Messages[0].Content != "You are a helpful assistant." {
-		t.Errorf("unexpected system content: %v", result.Messages[0].Content)
+	// Identity filtering adds a prefix to system messages
+	content, ok := result.Messages[0].Content.(string)
+	if !ok {
+		t.Fatalf("expected system content to be a string")
+	}
+	if !strings.Contains(content, "You are NOT Claude") {
+		t.Errorf("system message should contain identity filter prefix")
+	}
+	if !strings.Contains(content, "You are a helpful assistant.") {
+		t.Errorf("system message should contain original content")
 	}
 }
 

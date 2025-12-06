@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"regexp"
 	"strings"
 	"sync"
 
@@ -49,6 +50,11 @@ type StreamProcessor struct {
 
 	// Output
 	writer io.Writer
+
+	// Grok XML tool call extraction
+	xmlBuffer        string
+	extractedXMLCall bool
+	xmlToolCallID    int
 }
 
 type toolCallState struct {
@@ -196,6 +202,24 @@ func (sp *StreamProcessor) processChoice(choice *models.StreamChoice) error {
 
 // handleTextContent handles text content from the stream.
 func (sp *StreamProcessor) handleTextContent(text string) error {
+	// Check if this is a Grok model that might emit XML tool calls
+	if isGrokModelStream(sp.targetModel) {
+		cleanedText, toolCalls := sp.processGrokXML(text)
+		text = cleanedText
+
+		// If we extracted tool calls, emit them
+		for _, tc := range toolCalls {
+			if err := sp.emitExtractedToolCall(tc); err != nil {
+				return err
+			}
+		}
+
+		// If no text left after extraction, skip
+		if text == "" {
+			return nil
+		}
+	}
+
 	// Start text block if not started
 	if !sp.textStarted {
 		if err := sp.emitContentBlockStart(sp.textBlockIndex, "text", "", ""); err != nil {
@@ -449,4 +473,142 @@ func mapFinishReason(reason string) string {
 	default:
 		return "end_turn"
 	}
+}
+
+// isGrokModelStream checks if the model is a Grok model (for streaming context).
+func isGrokModelStream(model string) bool {
+	m := strings.ToLower(model)
+	return strings.Contains(m, "grok") || strings.HasPrefix(m, "x-ai/")
+}
+
+// extractedToolCall represents a tool call extracted from Grok XML.
+type extractedToolCall struct {
+	name      string
+	arguments map[string]interface{}
+}
+
+// processGrokXML buffers text and extracts Grok XML tool calls.
+// Returns cleaned text (with XML removed) and any extracted tool calls.
+func (sp *StreamProcessor) processGrokXML(text string) (string, []extractedToolCall) {
+	// Accumulate text in buffer
+	sp.xmlBuffer += text
+
+	// Pattern for complete Grok XML tool calls
+	// Format: <xai:function_call name="func_name"><xai:parameter name="param">value</xai:parameter></xai:function_call>
+	xmlPattern := regexp.MustCompile(`<xai:function_call\s+name="([^"]+)">(.*?)</xai:function_call>`)
+
+	matches := xmlPattern.FindAllStringSubmatch(sp.xmlBuffer, -1)
+
+	if len(matches) == 0 {
+		// Check if we have a partial XML that needs buffering
+		if strings.Contains(sp.xmlBuffer, "<xai:function_call") && !strings.Contains(sp.xmlBuffer, "</xai:function_call>") {
+			// Partial XML - keep buffering, don't emit text yet
+			return "", nil
+		}
+
+		// No XML found, return buffer and clear
+		result := sp.xmlBuffer
+		sp.xmlBuffer = ""
+		return result, nil
+	}
+
+	// Extract tool calls from matches
+	var toolCalls []extractedToolCall
+	for _, match := range matches {
+		if len(match) >= 3 {
+			funcName := match[1]
+			paramsXML := match[2]
+
+			// Parse parameters from XML
+			params := parseXMLParameters(paramsXML)
+
+			toolCalls = append(toolCalls, extractedToolCall{
+				name:      funcName,
+				arguments: params,
+			})
+		}
+	}
+
+	// Remove XML from buffer and return cleaned text
+	cleanedText := xmlPattern.ReplaceAllString(sp.xmlBuffer, "")
+	sp.xmlBuffer = ""
+
+	// Clean up whitespace
+	cleanedText = strings.TrimSpace(cleanedText)
+
+	return cleanedText, toolCalls
+}
+
+// parseXMLParameters extracts parameters from Grok XML parameter format.
+func parseXMLParameters(xmlContent string) map[string]interface{} {
+	params := make(map[string]interface{})
+
+	// Pattern for parameters: <xai:parameter name="param_name">value</xai:parameter>
+	paramPattern := regexp.MustCompile(`<xai:parameter\s+name="([^"]+)">(.*?)</xai:parameter>`)
+
+	matches := paramPattern.FindAllStringSubmatch(xmlContent, -1)
+	for _, match := range matches {
+		if len(match) >= 3 {
+			paramName := match[1]
+			paramValue := match[2]
+
+			// Try to parse as JSON first (for objects/arrays)
+			var jsonValue interface{}
+			if err := json.Unmarshal([]byte(paramValue), &jsonValue); err == nil {
+				params[paramName] = jsonValue
+			} else {
+				// Use as string
+				params[paramName] = paramValue
+			}
+		}
+	}
+
+	return params
+}
+
+// emitExtractedToolCall emits an extracted Grok XML tool call as Anthropic format.
+func (sp *StreamProcessor) emitExtractedToolCall(tc extractedToolCall) error {
+	// Close text block if open
+	if sp.textStarted && sp.state == StateTextContent {
+		if err := sp.emitContentBlockStop(sp.textBlockIndex); err != nil {
+			return err
+		}
+	}
+
+	// Generate a unique tool call ID
+	sp.xmlToolCallID++
+	toolID := fmt.Sprintf("toolu_grok_%d", sp.xmlToolCallID)
+
+	// Calculate block index
+	blockIndex := sp.textBlockIndex
+	if sp.textStarted {
+		blockIndex = sp.textBlockIndex + 1 + len(sp.activeToolCalls)
+	} else {
+		blockIndex = len(sp.activeToolCalls)
+	}
+
+	// Emit content_block_start for tool_use
+	if err := sp.emitContentBlockStart(blockIndex, "tool_use", toolID, tc.name); err != nil {
+		return err
+	}
+
+	// Convert arguments to JSON and emit
+	argsJSON, err := json.Marshal(tc.arguments)
+	if err != nil {
+		argsJSON = []byte("{}")
+	}
+
+	if err := sp.emitContentBlockDelta(blockIndex, "input_json_delta", "", string(argsJSON)); err != nil {
+		return err
+	}
+
+	// Close the tool block
+	if err := sp.emitContentBlockStop(blockIndex); err != nil {
+		return err
+	}
+
+	sp.extractedXMLCall = true
+	sp.state = StateToolCall
+
+	return nil
 }
