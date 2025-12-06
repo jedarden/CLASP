@@ -4,6 +4,16 @@
 
 You are an autonomous development agent working on CLASP - a Go proxy that translates Claude/Anthropic API calls to OpenAI-compatible endpoints.
 
+## Design Philosophy
+
+**CLASP should feel as polished as a first-party tool, not a hacky proxy.**
+
+- Zero-config start: `npx clasp-ai` works immediately with sensible defaults
+- Guided onboarding: First run walks user through setup interactively
+- One command: Single command starts proxy AND launches Claude Code
+- Discoverable: Help text, suggestions, and clear error messages
+- Professional UX: Helpful errors, status visibility, intuitive commands
+
 ## Your Mission
 
 Build and improve CLASP to enable Claude Code users to connect through any LLM provider:
@@ -14,22 +24,33 @@ Build and improve CLASP to enable Claude Code users to connect through any LLM p
 
 ## Primary Goals (Priority Order)
 
-### Goal 1: Get Proxy Working with OpenAI API
+### Goal 1: User Experience & Onboarding (HIGHEST PRIORITY)
+- Interactive setup wizard on first run (no config = guided setup, not error)
+- Profile management system (`clasp profile create/use/edit/list`)
+- Launch Claude Code automatically after proxy starts
+- Dynamic port allocation (don't hardcode 8000)
+- Helpful error messages with actionable suggestions
+- Status command showing session info, routing, costs
+
+### Goal 2: Core Proxy Functionality
 - Implement protocol translation: Anthropic Messages API → OpenAI Chat Completions API
 - Handle SSE streaming correctly with state machine (IDLE → CONTENT → TOOL_CALL → DONE)
 - Support tool calls and tool results translation
+- Keepalive pings to prevent connection timeouts
 - Test interactively in tmux with Claude Code
 
-### Goal 2: Improve Speed and Reliability
+### Goal 3: Model Adapters & Provider Quirks
+- Model adapter system for provider-specific transformations
+- Thinking parameter mapping (budget_tokens → reasoning_effort, etc.)
+- Identity filtering (remove "You are Claude" from prompts)
+- XML tool call extraction for Grok models
+
+### Goal 4: Speed, Reliability & Polish
 - Optimize streaming latency
 - Add connection pooling and retry logic
 - Implement graceful error handling
 - Add health checks and metrics
-
-### Goal 3: Set Up OpenRouter Headers
-- Configure X-Title header to identify as CLASP
-- Set proper User-Agent
-- Add app attribution for OpenRouter leaderboards
+- OpenRouter headers (X-Title, User-Agent)
 
 ## Architecture Reference
 
@@ -68,6 +89,41 @@ Look for:
 - Follow existing patterns in codebase
 - Create/update tests for new functionality
 - Document significant changes
+
+### Step 3b: Test in tmux Session
+After making changes, test the npm package in an isolated tmux session:
+
+```bash
+# Create a new tmux session for testing
+tmux new-session -d -s clasp-test
+
+# Install and run the latest npm package
+tmux send-keys -t clasp-test 'npx clasp-ai@latest' Enter
+
+# Wait for startup and observe output
+sleep 5
+tmux capture-pane -t clasp-test -p
+
+# Test specific functionality (examples)
+tmux send-keys -t clasp-test 'clasp status' Enter
+tmux send-keys -t clasp-test 'clasp profile list' Enter
+
+# Capture results
+tmux capture-pane -t clasp-test -p > /tmp/clasp-test-output.txt
+
+# Always clean up the session when done
+tmux kill-session -t clasp-test
+```
+
+**Important:** Always kill the tmux session at the end of each test cycle to avoid resource leaks and ensure clean state for the next iteration.
+
+Testing checklist:
+- [ ] `npx clasp-ai` launches without errors
+- [ ] Interactive setup triggers when no config exists
+- [ ] Proxy starts and reports its port
+- [ ] Claude Code launches (if implemented)
+- [ ] Profile commands work as expected
+- [ ] Helpful error messages appear for missing config
 
 ### Step 4: Commit and Push
 ```bash
@@ -138,6 +194,58 @@ OPENROUTER_API_KEY=sk-or-...
 CUSTOM_BASE_URL=http://localhost:11434/v1
 ```
 
+### Profile Management
+
+Profiles are stored in `~/.clasp/`:
+```
+~/.clasp/
+├── config.json          # Global settings + active profile
+├── profiles/
+│   ├── default.json
+│   ├── work.json
+│   └── personal.json
+└── .credentials         # Encrypted API keys (optional)
+```
+
+Profile commands:
+```bash
+clasp profile create <name>     # Create new profile interactively
+clasp profile list              # Show all profiles
+clasp profile use <name>        # Switch active profile
+clasp profile edit <name>       # Modify existing profile
+clasp profile delete <name>     # Remove profile
+clasp profile show              # Display current profile settings
+```
+
+Each profile stores:
+- Provider (openai/azure/openrouter/custom)
+- API key (encrypted or reference to env var)
+- Model mappings per tier (opus→gpt-4o, sonnet→gpt-4o-mini, etc.)
+- Base URL for custom endpoints
+- Default parameters (temperature, max_tokens)
+- Port preference
+
+### Error Message Standards
+
+Bad:
+```
+Error: OPENAI_API_KEY not set
+```
+
+Good:
+```
+No API key configured.
+
+Quick fix options:
+  1. Run 'clasp setup' for interactive configuration
+  2. Set OPENAI_API_KEY environment variable
+  3. Use --api-key flag: clasp --api-key sk-...
+
+Need an API key? Get one at:
+  • OpenRouter: https://openrouter.ai/keys
+  • OpenAI: https://platform.openai.com/api-keys
+```
+
 ## Code Quality Standards
 
 - All exported functions must have doc comments
@@ -192,6 +300,8 @@ CLASP/
 
 ## Remember
 
+- **UX is the highest priority** - CLASP should feel polished, not hacky
+- **No config = guided setup**, not an error message
 - Focus on one goal at a time
 - Ship working code incrementally
 - Test with real Claude Code sessions

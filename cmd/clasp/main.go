@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -22,10 +23,33 @@ import (
 )
 
 var (
-	version = "v0.12.0"
+	version = "v0.13.0"
 )
 
 func main() {
+	// Check for subcommands first (before flag parsing)
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "profile":
+			handleProfileCommand(os.Args[2:])
+			return
+		case "status":
+			handleStatusCommand(os.Args[2:])
+			return
+		case "use":
+			// Quick alias: clasp use <profile>
+			if len(os.Args) > 2 {
+				wizard := setup.NewWizard()
+				if err := wizard.RunProfileUse(os.Args[2]); err != nil {
+					log.Fatalf("[CLASP] %v", err)
+				}
+			} else {
+				fmt.Println("Usage: clasp use <profile-name>")
+			}
+			return
+		}
+	}
+
 	// Parse command line flags
 	port := flag.Int("port", 0, "Port to listen on (overrides CLASP_PORT)")
 	provider := flag.String("provider", "", "LLM provider (openai, azure, openrouter, custom)")
@@ -62,7 +86,23 @@ func main() {
 	proxyOnly := flag.Bool("proxy-only", false, "Run proxy only (no Claude Code launch)")
 	verbose := flag.Bool("verbose", false, "Enable verbose output")
 
+	// Profile management flags
+	profileName := flag.String("profile", "", "Use a specific profile")
+
 	flag.Parse()
+
+	// Apply profile if specified
+	if *profileName != "" {
+		pm := setup.NewProfileManager()
+		profile, err := pm.GetProfile(*profileName)
+		if err != nil {
+			log.Fatalf("[CLASP] Profile '%s' not found. Run 'clasp profile list' to see available profiles.", *profileName)
+		}
+		if err := pm.ApplyProfileToEnv(profile); err != nil {
+			log.Fatalf("[CLASP] Failed to apply profile: %v", err)
+		}
+		log.Printf("[CLASP] Using profile: %s", *profileName)
+	}
 
 	if *showVersion {
 		fmt.Printf("CLASP %s\n", version)
@@ -350,11 +390,29 @@ func printHelp() {
 	fmt.Printf(`CLASP - Claude Language Agent Super Proxy %s
 
 Usage: clasp [options] [-- claude-args...]
+       clasp <command> [arguments]
+
+Quick Start:
+  clasp                     Start proxy with active profile
+  clasp -launch             Start proxy and launch Claude Code
+  clasp status              Show current configuration status
+  clasp use <profile>       Switch to a different profile
+
+Profile Management:
+  clasp profile create      Create new profile interactively
+  clasp profile list        List all profiles
+  clasp profile show        Show current profile details
+  clasp profile use <name>  Switch to a profile
+  clasp profile edit <name> Edit a profile
+  clasp profile delete <n>  Delete a profile
+  clasp profile export <n>  Export profile to file
+  clasp profile import <f>  Import profile from file
 
 Setup & Configuration:
   -setup                    Run interactive setup wizard
   -configure                Alias for -setup
   -models                   List available models from provider
+  -profile <name>           Use a specific profile for this session
 
 Claude Code Management:
   -launch                   Start proxy and launch Claude Code (recommended)
@@ -581,6 +639,205 @@ Claude Code Integration:
 
 For more information: https://github.com/jedarden/CLASP
 `, version)
+}
+
+// handleProfileCommand handles all profile subcommands.
+func handleProfileCommand(args []string) {
+	if len(args) == 0 {
+		printProfileHelp()
+		return
+	}
+
+	wizard := setup.NewWizard()
+
+	switch args[0] {
+	case "create":
+		name := ""
+		if len(args) > 1 {
+			name = args[1]
+		}
+		if _, err := wizard.RunProfileCreate(name); err != nil {
+			log.Fatalf("[CLASP] %v", err)
+		}
+
+	case "list":
+		if err := wizard.RunProfileList(); err != nil {
+			log.Fatalf("[CLASP] %v", err)
+		}
+
+	case "show":
+		name := ""
+		if len(args) > 1 {
+			name = args[1]
+		}
+		if err := wizard.RunProfileShow(name); err != nil {
+			log.Fatalf("[CLASP] %v", err)
+		}
+
+	case "use":
+		if len(args) < 2 {
+			fmt.Println("Usage: clasp profile use <name>")
+			os.Exit(1)
+		}
+		if err := wizard.RunProfileUse(args[1]); err != nil {
+			log.Fatalf("[CLASP] %v", err)
+		}
+
+	case "delete":
+		if len(args) < 2 {
+			fmt.Println("Usage: clasp profile delete <name>")
+			os.Exit(1)
+		}
+		if err := wizard.RunProfileDelete(args[1]); err != nil {
+			log.Fatalf("[CLASP] %v", err)
+		}
+
+	case "edit":
+		// Edit is essentially create with overwrite
+		name := ""
+		if len(args) > 1 {
+			name = args[1]
+		}
+		if _, err := wizard.RunProfileCreate(name); err != nil {
+			log.Fatalf("[CLASP] %v", err)
+		}
+
+	case "export":
+		if len(args) < 2 {
+			fmt.Println("Usage: clasp profile export <name> [output-file]")
+			os.Exit(1)
+		}
+		outputPath := ""
+		if len(args) > 2 {
+			outputPath = args[2]
+		}
+		if err := wizard.RunProfileExport(args[1], outputPath); err != nil {
+			log.Fatalf("[CLASP] %v", err)
+		}
+
+	case "import":
+		if len(args) < 2 {
+			fmt.Println("Usage: clasp profile import <file> [new-name]")
+			os.Exit(1)
+		}
+		newName := ""
+		if len(args) > 2 {
+			newName = args[2]
+		}
+		if err := wizard.RunProfileImport(args[1], newName); err != nil {
+			log.Fatalf("[CLASP] %v", err)
+		}
+
+	case "help", "-h", "--help":
+		printProfileHelp()
+
+	default:
+		fmt.Printf("Unknown profile command: %s\n", args[0])
+		printProfileHelp()
+		os.Exit(1)
+	}
+}
+
+// handleStatusCommand shows current CLASP status.
+func handleStatusCommand(args []string) {
+	pm := setup.NewProfileManager()
+
+	// Get active profile
+	activeProfile, err := pm.GetActiveProfile()
+	if err != nil {
+		// No profile, check for legacy config
+		if setup.NeedsSetup() {
+			fmt.Println("")
+			fmt.Println("CLASP is not configured.")
+			fmt.Println("Run 'clasp -setup' or 'clasp profile create' to get started.")
+			fmt.Println("")
+			return
+		}
+	}
+
+	fmt.Println("")
+	fmt.Printf("CLASP %s\n", version)
+	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+	if activeProfile != nil {
+		fmt.Printf("Profile:    %s\n", activeProfile.Name)
+		fmt.Printf("Provider:   %s\n", activeProfile.Provider)
+
+		if activeProfile.DefaultModel != "" {
+			fmt.Printf("Model:      %s\n", activeProfile.DefaultModel)
+		}
+
+		// Show tier mappings if configured
+		if len(activeProfile.TierMappings) > 0 {
+			fmt.Println("")
+			fmt.Println("Model Routing:")
+			for tier, mapping := range activeProfile.TierMappings {
+				fmt.Printf("  %s → %s\n", tier, mapping.Model)
+			}
+		}
+
+		// Show configured port
+		if activeProfile.Port > 0 {
+			fmt.Printf("\nPort:       %d\n", activeProfile.Port)
+		}
+
+		// Show features
+		var features []string
+		if activeProfile.RateLimitEnabled {
+			features = append(features, "rate-limit")
+		}
+		if activeProfile.CacheEnabled {
+			features = append(features, "cache")
+		}
+		if activeProfile.CircuitBreakerEnabled {
+			features = append(features, "circuit-breaker")
+		}
+		if len(features) > 0 {
+			fmt.Printf("\nFeatures:   %s\n", strings.Join(features, ", "))
+		}
+	} else {
+		fmt.Println("No profile configured.")
+	}
+
+	fmt.Println("")
+	fmt.Println("Commands:")
+	fmt.Println("  clasp                    Start proxy")
+	fmt.Println("  clasp -launch            Start proxy and Claude Code")
+	fmt.Println("  clasp profile list       Show all profiles")
+	fmt.Println("  clasp profile create     Create new profile")
+	fmt.Println("  clasp use <name>         Switch profile")
+	fmt.Println("")
+}
+
+// printProfileHelp shows profile command help.
+func printProfileHelp() {
+	fmt.Print(`
+CLASP Profile Management
+
+Usage: clasp profile <command> [arguments]
+
+Commands:
+  create [name]        Create a new profile interactively
+  list                 List all available profiles
+  show [name]          Show profile details (current profile if name omitted)
+  use <name>           Switch to a different profile
+  edit <name>          Edit an existing profile
+  delete <name>        Delete a profile
+  export <name> [file] Export profile to JSON file
+  import <file> [name] Import profile from JSON file
+
+Quick Commands:
+  clasp use <name>     Quick alias for 'clasp profile use'
+
+Examples:
+  clasp profile create work
+  clasp profile list
+  clasp profile use personal
+  clasp profile export work ./work-profile.json
+  clasp profile import ./shared.json team
+
+Profiles are stored in ~/.clasp/profiles/
+`)
 }
 
 // listAvailableModels lists models from the configured provider.

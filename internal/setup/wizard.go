@@ -701,3 +701,404 @@ func ApplyConfigToEnv() error {
 func (w *Wizard) FetchModelsPublic(provider, apiKey, baseURL, azureEndpoint string) ([]string, error) {
 	return w.fetchModels(provider, apiKey, baseURL, azureEndpoint)
 }
+
+// RunProfileCreate runs the interactive profile creation wizard.
+func (w *Wizard) RunProfileCreate(profileName string) (*Profile, error) {
+	pm := NewProfileManager()
+
+	w.println("")
+	w.println("╔═══════════════════════════════════════════════════════════════╗")
+	w.println("║             CLASP - Create New Profile                        ║")
+	w.println("╚═══════════════════════════════════════════════════════════════╝")
+	w.println("")
+
+	// Get profile name if not provided
+	if profileName == "" {
+		var err error
+		profileName, err = w.promptInput("Profile name", "default")
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// Check if profile exists
+	if pm.ProfileExists(profileName) {
+		w.printf("Warning: Profile '%s' already exists. Overwrite? [y/N]: ", profileName)
+		confirm, err := w.reader.ReadString('\n')
+		if err != nil {
+			return nil, err
+		}
+		confirm = strings.TrimSpace(strings.ToLower(confirm))
+		if confirm != "y" && confirm != "yes" {
+			return nil, fmt.Errorf("profile creation cancelled")
+		}
+	}
+
+	// Get description
+	description, err := w.promptInput("Description (optional)", "")
+	if err != nil {
+		return nil, err
+	}
+
+	// Select provider
+	provider, err := w.selectProvider()
+	if err != nil {
+		return nil, err
+	}
+
+	// Get API key
+	apiKey, err := w.promptAPIKey(provider)
+	if err != nil {
+		return nil, err
+	}
+
+	// Provider-specific configuration
+	var baseURL, azureEndpoint, azureDeployment string
+
+	switch provider {
+	case "azure":
+		azureEndpoint, err = w.promptInput("Azure OpenAI Endpoint", "https://your-resource.openai.azure.com")
+		if err != nil {
+			return nil, err
+		}
+		azureDeployment, err = w.promptInput("Azure Deployment Name", "gpt-4")
+		if err != nil {
+			return nil, err
+		}
+	case "custom":
+		baseURL, err = w.promptInput("Custom Base URL", "http://localhost:11434/v1")
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// Fetch and select model
+	w.println("")
+	w.println("Fetching available models...")
+
+	models, err := w.fetchModels(provider, apiKey, baseURL, azureEndpoint)
+	if err != nil {
+		w.printf("Warning: Could not fetch models: %v\n", err)
+		w.println("You can manually specify a model.")
+	}
+
+	model, err := w.selectModel(provider, models)
+	if err != nil {
+		return nil, err
+	}
+
+	// Ask about tier mappings
+	var tierMappings map[string]TierMapping
+	w.println("")
+	w.printf("Configure per-tier model mappings? (opus/sonnet/haiku) [y/N]: ")
+	tierChoice, _ := w.reader.ReadString('\n')
+	if strings.TrimSpace(strings.ToLower(tierChoice)) == "y" {
+		tierMappings, err = w.configureTierMappings(provider, apiKey, baseURL, azureEndpoint, models)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// Ask about port preference
+	var port int
+	w.println("")
+	portStr, err := w.promptInput("Preferred port (0 for auto)", "0")
+	if err != nil {
+		return nil, err
+	}
+	if portStr != "" && portStr != "0" {
+		port, _ = strconv.Atoi(portStr)
+	}
+
+	// Create profile
+	profile := &Profile{
+		Name:            profileName,
+		Description:     description,
+		Provider:        provider,
+		APIKey:          apiKey,
+		BaseURL:         baseURL,
+		AzureEndpoint:   azureEndpoint,
+		AzureDeployment: azureDeployment,
+		DefaultModel:    model,
+		TierMappings:    tierMappings,
+		Port:            port,
+	}
+
+	// Save profile
+	if pm.ProfileExists(profileName) {
+		if err := pm.UpdateProfile(profile); err != nil {
+			return nil, fmt.Errorf("failed to update profile: %w", err)
+		}
+	} else {
+		if err := pm.CreateProfile(profile); err != nil {
+			return nil, fmt.Errorf("failed to create profile: %w", err)
+		}
+	}
+
+	// Ask to set as active
+	w.println("")
+	w.printf("Set '%s' as the active profile? [Y/n]: ", profileName)
+	activeChoice, _ := w.reader.ReadString('\n')
+	activeChoice = strings.TrimSpace(strings.ToLower(activeChoice))
+	if activeChoice == "" || activeChoice == "y" || activeChoice == "yes" {
+		if err := pm.SetActiveProfile(profileName); err != nil {
+			w.printf("Warning: Could not set active profile: %v\n", err)
+		}
+	}
+
+	w.println("")
+	w.println("═══════════════════════════════════════════════════════════════")
+	w.printf("Profile '%s' created successfully!\n", profileName)
+	w.println("")
+	w.printf("Use it with: clasp --profile %s\n", profileName)
+	w.printf("Or set as default: clasp profile use %s\n", profileName)
+	w.println("═══════════════════════════════════════════════════════════════")
+	w.println("")
+
+	return profile, nil
+}
+
+// configureTierMappings walks through per-tier model configuration.
+func (w *Wizard) configureTierMappings(provider, apiKey, baseURL, azureEndpoint string, models []string) (map[string]TierMapping, error) {
+	mappings := make(map[string]TierMapping)
+	tiers := []string{"opus", "sonnet", "haiku"}
+	tierDescriptions := map[string]string{
+		"opus":   "Opus tier (most capable, highest cost)",
+		"sonnet": "Sonnet tier (balanced)",
+		"haiku":  "Haiku tier (fast, low cost)",
+	}
+
+	for _, tier := range tiers {
+		w.println("")
+		w.printf("=== %s ===\n", tierDescriptions[tier])
+
+		// Ask if this tier should use a different provider
+		w.printf("Use the same provider (%s)? [Y/n]: ", provider)
+		sameProvider, _ := w.reader.ReadString('\n')
+		sameProvider = strings.TrimSpace(strings.ToLower(sameProvider))
+
+		tierProvider := provider
+		tierAPIKey := apiKey
+		tierBaseURL := baseURL
+		tierModels := models
+
+		if sameProvider == "n" || sameProvider == "no" {
+			var err error
+			tierProvider, err = w.selectProvider()
+			if err != nil {
+				return nil, err
+			}
+
+			tierAPIKey, err = w.promptAPIKey(tierProvider)
+			if err != nil {
+				return nil, err
+			}
+
+			if tierProvider == "custom" {
+				tierBaseURL, err = w.promptInput("Custom Base URL", "http://localhost:11434/v1")
+				if err != nil {
+					return nil, err
+				}
+			}
+
+			// Fetch models for new provider
+			tierModels, _ = w.fetchModels(tierProvider, tierAPIKey, tierBaseURL, azureEndpoint)
+		}
+
+		// Select model for this tier
+		tierModel, err := w.selectModel(tierProvider, tierModels)
+		if err != nil {
+			return nil, err
+		}
+
+		mappings[tier] = TierMapping{
+			Provider: tierProvider,
+			Model:    tierModel,
+			APIKey:   tierAPIKey,
+			BaseURL:  tierBaseURL,
+		}
+	}
+
+	return mappings, nil
+}
+
+// RunProfileList displays all profiles.
+func (w *Wizard) RunProfileList() error {
+	pm := NewProfileManager()
+
+	profiles, err := pm.ListProfiles()
+	if err != nil {
+		return fmt.Errorf("failed to list profiles: %w", err)
+	}
+
+	if len(profiles) == 0 {
+		w.println("")
+		w.println("No profiles found.")
+		w.println("Create one with: clasp profile create <name>")
+		w.println("")
+		return nil
+	}
+
+	// Get active profile
+	globalCfg, _ := pm.GetGlobalConfig()
+	activeProfile := "default"
+	if globalCfg != nil && globalCfg.ActiveProfile != "" {
+		activeProfile = globalCfg.ActiveProfile
+	}
+
+	w.println("")
+	w.println("Available Profiles:")
+	w.println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+	for _, profile := range profiles {
+		isActive := profile.Name == activeProfile
+		w.print(FormatProfileInfo(profile, isActive))
+	}
+
+	w.println("")
+	w.println("* = active profile")
+	w.println("")
+
+	return nil
+}
+
+// RunProfileShow displays details for a specific or active profile.
+func (w *Wizard) RunProfileShow(name string) error {
+	pm := NewProfileManager()
+
+	var profile *Profile
+	var err error
+
+	if name == "" {
+		profile, err = pm.GetActiveProfile()
+		if err != nil {
+			return fmt.Errorf("no active profile found: %w", err)
+		}
+	} else {
+		profile, err = pm.GetProfile(name)
+		if err != nil {
+			return fmt.Errorf("profile '%s' not found", name)
+		}
+	}
+
+	w.println("")
+	w.print(FormatProfileDetails(profile))
+	w.println("")
+
+	return nil
+}
+
+// RunProfileUse switches to a different profile.
+func (w *Wizard) RunProfileUse(name string) error {
+	pm := NewProfileManager()
+
+	if !pm.ProfileExists(name) {
+		return fmt.Errorf("profile '%s' not found", name)
+	}
+
+	if err := pm.SetActiveProfile(name); err != nil {
+		return fmt.Errorf("failed to switch profile: %w", err)
+	}
+
+	profile, _ := pm.GetProfile(name)
+
+	w.println("")
+	w.printf("Switched to profile: %s\n", name)
+	if profile.Description != "" {
+		w.printf("  %s\n", profile.Description)
+	}
+	w.printf("  Provider: %s, Model: %s\n", profile.Provider, profile.DefaultModel)
+	w.println("")
+
+	return nil
+}
+
+// RunProfileDelete removes a profile.
+func (w *Wizard) RunProfileDelete(name string) error {
+	pm := NewProfileManager()
+
+	if !pm.ProfileExists(name) {
+		return fmt.Errorf("profile '%s' not found", name)
+	}
+
+	// Confirm deletion
+	w.printf("Delete profile '%s'? This cannot be undone. [y/N]: ", name)
+	confirm, err := w.reader.ReadString('\n')
+	if err != nil {
+		return err
+	}
+	confirm = strings.TrimSpace(strings.ToLower(confirm))
+	if confirm != "y" && confirm != "yes" {
+		w.println("Deletion cancelled.")
+		return nil
+	}
+
+	if err := pm.DeleteProfile(name); err != nil {
+		return err
+	}
+
+	w.println("")
+	w.printf("Profile '%s' deleted.\n", name)
+	w.println("")
+
+	return nil
+}
+
+// RunProfileExport exports a profile to a file.
+func (w *Wizard) RunProfileExport(name, outputPath string) error {
+	pm := NewProfileManager()
+
+	data, err := pm.ExportProfile(name)
+	if err != nil {
+		return err
+	}
+
+	if outputPath == "" {
+		outputPath = name + "-profile.json"
+	}
+
+	if err := os.WriteFile(outputPath, data, 0644); err != nil {
+		return fmt.Errorf("failed to write file: %w", err)
+	}
+
+	w.println("")
+	w.printf("Profile exported to: %s\n", outputPath)
+	w.println("Note: API keys are not included in exports for security.")
+	w.println("")
+
+	return nil
+}
+
+// RunProfileImport imports a profile from a file.
+func (w *Wizard) RunProfileImport(inputPath, newName string) error {
+	pm := NewProfileManager()
+
+	data, err := os.ReadFile(inputPath)
+	if err != nil {
+		return fmt.Errorf("failed to read file: %w", err)
+	}
+
+	if err := pm.ImportProfile(data, newName); err != nil {
+		return err
+	}
+
+	profileName := newName
+	if profileName == "" {
+		var profile Profile
+		json.Unmarshal(data, &profile)
+		profileName = profile.Name
+	}
+
+	w.println("")
+	w.printf("Profile '%s' imported successfully.\n", profileName)
+	w.println("Note: You'll need to configure the API key using:")
+	w.printf("  clasp profile edit %s\n", profileName)
+	w.println("")
+
+	return nil
+}
+
+// print outputs text without newline.
+func (w *Wizard) print(s string) {
+	fmt.Fprint(w.writer, s)
+}
