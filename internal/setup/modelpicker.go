@@ -47,18 +47,20 @@ func (m ModelInfo) Description() string {
 
 // ModelPicker is a Bubble Tea model for fuzzy model selection.
 type ModelPicker struct {
-	list         list.Model
-	filterInput  textinput.Model
-	models       []ModelInfo
-	filtered     []ModelInfo
-	selected     *ModelInfo
-	cancelled    bool
-	width        int
-	height       int
-	provider     string
-	tier         string // Optional: which tier we're selecting for (opus/sonnet/haiku)
-	showHelp     bool
-	err          error
+	list           list.Model
+	filterInput    textinput.Model
+	models         []ModelInfo
+	filtered       []ModelInfo
+	selected       *ModelInfo
+	cancelled      bool
+	width          int
+	height         int
+	provider       string
+	tier           string // Optional: which tier we're selecting for (opus/sonnet/haiku)
+	showHelp       bool
+	err            error
+	cursorBlink    bool   // For cursor animation
+	lastFilterText string // Track previous filter for change detection
 }
 
 // Styles for the model picker
@@ -88,6 +90,26 @@ var (
 	recommendedStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.Color("76")).
 				SetString("★ ")
+
+	filterLabelStyle = lipgloss.NewStyle().
+				Bold(true).
+				Foreground(lipgloss.Color("39")).
+				PaddingLeft(2)
+
+	filterInputStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("252"))
+
+	cursorStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("39")).
+			Bold(true)
+
+	separatorStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("241")).
+				PaddingLeft(2)
+
+	countStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("241")).
+			PaddingLeft(2)
 )
 
 // NewModelPicker creates a new fuzzy model picker.
@@ -112,20 +134,17 @@ func NewModelPicker(models []ModelInfo, provider, tier string) *ModelPicker {
 	}
 
 	l := list.New(items, delegate, 0, 0)
-	l.Title = fmt.Sprintf("Select model for %s", provider)
-	if tier != "" {
-		l.Title = fmt.Sprintf("Select %s tier model", tier)
-	}
-	l.SetShowStatusBar(true)
+	// Don't show the list's title - we render our own
+	l.SetShowTitle(false)
+	// Don't show the list's filter - we have our own visible filter input
+	l.SetFilteringEnabled(false)
+	l.SetShowStatusBar(false)
 	l.SetShowPagination(true)
-	l.SetShowHelp(true)
-	l.SetFilteringEnabled(true)
+	l.SetShowHelp(false) // We show our own help
 	l.DisableQuitKeybindings()
 
 	// Set styles
-	l.Styles.Title = titleStyle
 	l.Styles.PaginationStyle = paginationStyle
-	l.Styles.HelpStyle = helpStyle
 
 	return &ModelPicker{
 		list:        l,
@@ -185,11 +204,13 @@ func (m *ModelPicker) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	m.filterInput, cmd = m.filterInput.Update(msg)
 
 	// Apply filter if changed
-	if filter := m.filterInput.Value(); filter != m.list.FilterInput.Value() {
-		m.applyFilter(filter)
+	currentFilter := m.filterInput.Value()
+	if currentFilter != m.lastFilterText {
+		m.applyFilter(currentFilter)
+		m.lastFilterText = currentFilter
 	}
 
-	// Update list
+	// Update list (for navigation)
 	var listCmd tea.Cmd
 	m.list, listCmd = m.list.Update(msg)
 
@@ -236,7 +257,7 @@ func (m *ModelPicker) applyFilter(filter string) {
 	m.filtered = filtered
 }
 
-// View renders the model picker.
+// View renders the model picker with visible filter input.
 func (m *ModelPicker) View() string {
 	if m.err != nil {
 		return fmt.Sprintf("Error: %v\n", m.err)
@@ -244,16 +265,62 @@ func (m *ModelPicker) View() string {
 
 	var b strings.Builder
 
-	// Header
+	// Title
 	b.WriteString("\n")
+	title := fmt.Sprintf("Select model for %s", m.provider)
+	if m.tier != "" {
+		title = fmt.Sprintf("Select %s tier model", m.tier)
+	}
+	b.WriteString(titleStyle.Render(title))
+	b.WriteString("\n\n")
+
+	// Visible filter input line with cursor
+	filterText := m.filterInput.Value()
+	cursor := "▌" // Block cursor character
+	if filterText == "" {
+		// Show placeholder when empty
+		b.WriteString(filterLabelStyle.Render("Filter: "))
+		b.WriteString(cursorStyle.Render(cursor))
+		b.WriteString(helpStyle.Render(" Type to filter..."))
+	} else {
+		// Show filter text with cursor at end
+		b.WriteString(filterLabelStyle.Render("Filter: "))
+		b.WriteString(filterInputStyle.Render(filterText))
+		b.WriteString(cursorStyle.Render(cursor))
+	}
+	b.WriteString("\n")
+
+	// Separator line
+	separatorWidth := 50
+	if m.width > 0 && m.width < 80 {
+		separatorWidth = m.width - 4
+	}
+	separator := strings.Repeat("─", separatorWidth)
+	b.WriteString(separatorStyle.Render(separator))
+	b.WriteString("\n")
+
+	// Model list (without the list's built-in filter UI)
 	b.WriteString(m.list.View())
 
+	// Result count
+	b.WriteString("\n")
+	showingCount := len(m.filtered)
+	totalCount := len(m.models)
+	if filterText != "" {
+		b.WriteString(countStyle.Render(fmt.Sprintf("Showing %d of %d models", showingCount, totalCount)))
+	} else {
+		b.WriteString(countStyle.Render(fmt.Sprintf("Showing %d models  •  Type to filter", totalCount)))
+	}
+	b.WriteString("\n")
+
+	// Help section
 	if m.showHelp {
 		b.WriteString("\n")
 		b.WriteString(helpStyle.Render("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"))
 		b.WriteString(helpStyle.Render("Keyboard shortcuts:\n"))
 		b.WriteString(helpStyle.Render("  ↑/↓ or j/k    Navigate list\n"))
 		b.WriteString(helpStyle.Render("  Type          Filter models\n"))
+		b.WriteString(helpStyle.Render("  Backspace     Delete character\n"))
 		b.WriteString(helpStyle.Render("  Enter         Select model\n"))
 		b.WriteString(helpStyle.Render("  Esc           Clear filter / Cancel\n"))
 		b.WriteString(helpStyle.Render("  ?             Toggle help\n"))
