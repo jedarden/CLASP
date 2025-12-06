@@ -15,6 +15,13 @@ type AnthropicRequest struct {
 	Tools         []AnthropicTool    `json:"tools,omitempty"`
 	ToolChoice    interface{}        `json:"tool_choice,omitempty"`
 	Metadata      *Metadata          `json:"metadata,omitempty"`
+	Thinking      *ThinkingConfig    `json:"thinking,omitempty"` // Extended thinking configuration
+}
+
+// ThinkingConfig represents the Anthropic thinking/extended reasoning configuration.
+type ThinkingConfig struct {
+	Type         string `json:"type,omitempty"`          // "enabled"
+	BudgetTokens int    `json:"budget_tokens,omitempty"` // Token budget for reasoning
 }
 
 // AnthropicMessage represents a message in Anthropic format.
@@ -58,16 +65,29 @@ type Metadata struct {
 
 // OpenAIRequest represents an outgoing OpenAI Chat Completions API request.
 type OpenAIRequest struct {
-	Model         string          `json:"model"`
-	Messages      []OpenAIMessage `json:"messages"`
-	MaxTokens     int             `json:"max_tokens,omitempty"`
-	Stream        bool            `json:"stream,omitempty"`
-	Stop          []string        `json:"stop,omitempty"`
-	Temperature   *float64        `json:"temperature,omitempty"`
-	TopP          *float64        `json:"top_p,omitempty"`
-	Tools         []OpenAITool    `json:"tools,omitempty"`
-	ToolChoice    interface{}     `json:"tool_choice,omitempty"`
-	StreamOptions *StreamOptions  `json:"stream_options,omitempty"`
+	Model               string          `json:"model"`
+	Messages            []OpenAIMessage `json:"messages"`
+	MaxTokens           int             `json:"max_tokens,omitempty"`
+	MaxCompletionTokens int             `json:"max_completion_tokens,omitempty"` // For O1/O3 reasoning models
+	Stream              bool            `json:"stream,omitempty"`
+	Stop                []string        `json:"stop,omitempty"`
+	Temperature         *float64        `json:"temperature,omitempty"`
+	TopP                *float64        `json:"top_p,omitempty"`
+	Tools               []OpenAITool    `json:"tools,omitempty"`
+	ToolChoice          interface{}     `json:"tool_choice,omitempty"`
+	StreamOptions       *StreamOptions  `json:"stream_options,omitempty"`
+	ReasoningEffort     string          `json:"reasoning_effort,omitempty"` // O1/O3: "minimal", "low", "medium", "high"
+	// Provider-specific reasoning parameters (OpenRouter)
+	ThinkingConfig *OpenRouterThinkingConfig `json:"thinking_config,omitempty"`   // Gemini 2.5
+	ThinkingLevel  string                    `json:"thinking_level,omitempty"`    // Gemini 3
+	EnableThinking *bool                     `json:"enable_thinking,omitempty"`   // Qwen
+	ThinkingBudget int                       `json:"thinking_budget,omitempty"`   // Qwen
+	ReasoningSplit *bool                     `json:"reasoning_split,omitempty"`   // MiniMax
+}
+
+// OpenRouterThinkingConfig for Gemini 2.5 models.
+type OpenRouterThinkingConfig struct {
+	ThinkingBudget int `json:"thinking_budget"`
 }
 
 // OpenAIMessage represents a message in OpenAI format.

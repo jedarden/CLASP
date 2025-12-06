@@ -566,3 +566,402 @@ func TestExtractToolResults(t *testing.T) {
 		t.Errorf("results[0].Content = %q, want %q", results[0].Content, "Sunny, 72°F")
 	}
 }
+
+// Thinking parameter mapping tests
+
+func TestMapBudgetToReasoningEffort(t *testing.T) {
+	tests := []struct {
+		budgetTokens int
+		expected     string
+	}{
+		{1000, "minimal"},
+		{3999, "minimal"},
+		{4000, "low"},
+		{15999, "low"},
+		{16000, "medium"},
+		{31999, "medium"},
+		{32000, "high"},
+		{100000, "high"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.expected, func(t *testing.T) {
+			result := mapBudgetToReasoningEffort(tt.budgetTokens)
+			if result != tt.expected {
+				t.Errorf("mapBudgetToReasoningEffort(%d) = %q, want %q", tt.budgetTokens, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestIsO1OrO3Model(t *testing.T) {
+	tests := []struct {
+		model    string
+		expected bool
+	}{
+		{"o1", true},
+		{"o1-preview", true},
+		{"o1-mini", true},
+		{"o3", true},
+		{"o3-mini", true},
+		{"openai/o1", true},
+		{"openai/o3-mini", true},
+		{"gpt-4o", false},
+		{"gpt-4", false},
+		{"claude-3", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.model, func(t *testing.T) {
+			result := isO1OrO3Model(tt.model)
+			if result != tt.expected {
+				t.Errorf("isO1OrO3Model(%q) = %v, want %v", tt.model, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestIsGrokModel(t *testing.T) {
+	tests := []struct {
+		model    string
+		expected bool
+	}{
+		{"x-ai/grok-3-beta", true},
+		{"grok-3-mini", true},
+		{"x-ai/grok-2", true},
+		{"gpt-4o", false},
+		{"claude-3", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.model, func(t *testing.T) {
+			result := isGrokModel(tt.model)
+			if result != tt.expected {
+				t.Errorf("isGrokModel(%q) = %v, want %v", tt.model, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestIsGemini3Model(t *testing.T) {
+	tests := []struct {
+		model    string
+		expected bool
+	}{
+		{"gemini-3-pro", true},
+		{"google/gemini-3-ultra", true},
+		{"gemini-2.5-pro", false},
+		{"gpt-4o", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.model, func(t *testing.T) {
+			result := isGemini3Model(tt.model)
+			if result != tt.expected {
+				t.Errorf("isGemini3Model(%q) = %v, want %v", tt.model, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestIsGemini25Model(t *testing.T) {
+	tests := []struct {
+		model    string
+		expected bool
+	}{
+		{"gemini-2.5-pro", true},
+		{"google/gemini-2.5-flash", true},
+		{"gemini-2-5-pro", true},
+		{"gemini-3-pro", false},
+		{"gpt-4o", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.model, func(t *testing.T) {
+			result := isGemini25Model(tt.model)
+			if result != tt.expected {
+				t.Errorf("isGemini25Model(%q) = %v, want %v", tt.model, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestIsQwenModel(t *testing.T) {
+	tests := []struct {
+		model    string
+		expected bool
+	}{
+		{"qwen-2.5-72b", true},
+		{"qwen/qwen-2.5-coder", true},
+		{"gpt-4o", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.model, func(t *testing.T) {
+			result := isQwenModel(tt.model)
+			if result != tt.expected {
+				t.Errorf("isQwenModel(%q) = %v, want %v", tt.model, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestIsMiniMaxModel(t *testing.T) {
+	tests := []struct {
+		model    string
+		expected bool
+	}{
+		{"minimax-pro", true},
+		{"minimax/minimax-01", true},
+		{"gpt-4o", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.model, func(t *testing.T) {
+			result := isMiniMaxModel(tt.model)
+			if result != tt.expected {
+				t.Errorf("isMiniMaxModel(%q) = %v, want %v", tt.model, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestIsDeepSeekModel(t *testing.T) {
+	tests := []struct {
+		model    string
+		expected bool
+	}{
+		{"deepseek-r1", true},
+		{"deepseek/deepseek-v3", true},
+		{"deepseek-coder", true},
+		{"gpt-4o", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.model, func(t *testing.T) {
+			result := isDeepSeekModel(tt.model)
+			if result != tt.expected {
+				t.Errorf("isDeepSeekModel(%q) = %v, want %v", tt.model, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestApplyThinkingParameters_O1Model(t *testing.T) {
+	req := &models.AnthropicRequest{
+		Thinking: &models.ThinkingConfig{
+			Type:         "enabled",
+			BudgetTokens: 20000,
+		},
+	}
+	openAIReq := &models.OpenAIRequest{
+		MaxTokens: 4096,
+	}
+
+	applyThinkingParameters(req, openAIReq, "o1")
+
+	if openAIReq.ReasoningEffort != "medium" {
+		t.Errorf("ReasoningEffort = %q, want %q", openAIReq.ReasoningEffort, "medium")
+	}
+	if openAIReq.MaxTokens != 0 {
+		t.Errorf("MaxTokens should be cleared for O1 models, got %d", openAIReq.MaxTokens)
+	}
+	if openAIReq.MaxCompletionTokens != 4096 {
+		t.Errorf("MaxCompletionTokens = %d, want %d", openAIReq.MaxCompletionTokens, 4096)
+	}
+}
+
+func TestApplyThinkingParameters_O3Model(t *testing.T) {
+	req := &models.AnthropicRequest{
+		Thinking: &models.ThinkingConfig{
+			Type:         "enabled",
+			BudgetTokens: 50000,
+		},
+	}
+	openAIReq := &models.OpenAIRequest{
+		MaxTokens: 8000,
+	}
+
+	applyThinkingParameters(req, openAIReq, "o3-mini")
+
+	if openAIReq.ReasoningEffort != "high" {
+		t.Errorf("ReasoningEffort = %q, want %q", openAIReq.ReasoningEffort, "high")
+	}
+	if openAIReq.MaxCompletionTokens != 8000 {
+		t.Errorf("MaxCompletionTokens = %d, want %d", openAIReq.MaxCompletionTokens, 8000)
+	}
+}
+
+func TestApplyThinkingParameters_Grok(t *testing.T) {
+	req := &models.AnthropicRequest{
+		Thinking: &models.ThinkingConfig{
+			BudgetTokens: 25000,
+		},
+	}
+	openAIReq := &models.OpenAIRequest{}
+
+	applyThinkingParameters(req, openAIReq, "x-ai/grok-3-mini")
+
+	if openAIReq.ReasoningEffort != "high" {
+		t.Errorf("ReasoningEffort = %q, want %q", openAIReq.ReasoningEffort, "high")
+	}
+}
+
+func TestApplyThinkingParameters_Gemini25(t *testing.T) {
+	req := &models.AnthropicRequest{
+		Thinking: &models.ThinkingConfig{
+			BudgetTokens: 30000, // Over 24k limit
+		},
+	}
+	openAIReq := &models.OpenAIRequest{}
+
+	applyThinkingParameters(req, openAIReq, "google/gemini-2.5-pro")
+
+	if openAIReq.ThinkingConfig == nil {
+		t.Fatal("ThinkingConfig should be set")
+	}
+	if openAIReq.ThinkingConfig.ThinkingBudget != 24576 {
+		t.Errorf("ThinkingBudget = %d, want %d (capped)", openAIReq.ThinkingConfig.ThinkingBudget, 24576)
+	}
+}
+
+func TestApplyThinkingParameters_Gemini3(t *testing.T) {
+	tests := []struct {
+		budget   int
+		expected string
+	}{
+		{10000, "low"},
+		{20000, "high"},
+	}
+
+	for _, tt := range tests {
+		req := &models.AnthropicRequest{
+			Thinking: &models.ThinkingConfig{
+				BudgetTokens: tt.budget,
+			},
+		}
+		openAIReq := &models.OpenAIRequest{}
+
+		applyThinkingParameters(req, openAIReq, "gemini-3-pro")
+
+		if openAIReq.ThinkingLevel != tt.expected {
+			t.Errorf("ThinkingLevel with budget %d = %q, want %q", tt.budget, openAIReq.ThinkingLevel, tt.expected)
+		}
+	}
+}
+
+func TestApplyThinkingParameters_Qwen(t *testing.T) {
+	req := &models.AnthropicRequest{
+		Thinking: &models.ThinkingConfig{
+			BudgetTokens: 15000,
+		},
+	}
+	openAIReq := &models.OpenAIRequest{}
+
+	applyThinkingParameters(req, openAIReq, "qwen-2.5-72b")
+
+	if openAIReq.EnableThinking == nil || !*openAIReq.EnableThinking {
+		t.Error("EnableThinking should be true")
+	}
+	if openAIReq.ThinkingBudget != 15000 {
+		t.Errorf("ThinkingBudget = %d, want %d", openAIReq.ThinkingBudget, 15000)
+	}
+}
+
+func TestApplyThinkingParameters_MiniMax(t *testing.T) {
+	req := &models.AnthropicRequest{
+		Thinking: &models.ThinkingConfig{
+			BudgetTokens: 10000,
+		},
+	}
+	openAIReq := &models.OpenAIRequest{}
+
+	applyThinkingParameters(req, openAIReq, "minimax-pro")
+
+	if openAIReq.ReasoningSplit == nil || !*openAIReq.ReasoningSplit {
+		t.Error("ReasoningSplit should be true")
+	}
+}
+
+func TestApplyThinkingParameters_DeepSeek(t *testing.T) {
+	req := &models.AnthropicRequest{
+		Thinking: &models.ThinkingConfig{
+			BudgetTokens: 10000,
+		},
+	}
+	openAIReq := &models.OpenAIRequest{}
+
+	applyThinkingParameters(req, openAIReq, "deepseek-r1")
+
+	// DeepSeek should not set any thinking parameters
+	if openAIReq.ReasoningEffort != "" {
+		t.Errorf("ReasoningEffort should be empty for DeepSeek, got %q", openAIReq.ReasoningEffort)
+	}
+	if openAIReq.ThinkingConfig != nil {
+		t.Error("ThinkingConfig should be nil for DeepSeek")
+	}
+}
+
+func TestApplyThinkingParameters_NoThinking(t *testing.T) {
+	req := &models.AnthropicRequest{
+		Thinking: nil,
+	}
+	openAIReq := &models.OpenAIRequest{
+		MaxTokens: 4096,
+	}
+
+	applyThinkingParameters(req, openAIReq, "o1")
+
+	// Should not modify anything when thinking is nil
+	if openAIReq.ReasoningEffort != "" {
+		t.Errorf("ReasoningEffort should be empty, got %q", openAIReq.ReasoningEffort)
+	}
+	if openAIReq.MaxTokens != 4096 {
+		t.Errorf("MaxTokens should be unchanged, got %d", openAIReq.MaxTokens)
+	}
+}
+
+func TestApplyThinkingParameters_ZeroBudget(t *testing.T) {
+	req := &models.AnthropicRequest{
+		Thinking: &models.ThinkingConfig{
+			BudgetTokens: 0,
+		},
+	}
+	openAIReq := &models.OpenAIRequest{}
+
+	applyThinkingParameters(req, openAIReq, "o1")
+
+	// Should not apply parameters when budget is 0
+	if openAIReq.ReasoningEffort != "" {
+		t.Errorf("ReasoningEffort should be empty for zero budget, got %q", openAIReq.ReasoningEffort)
+	}
+}
+
+func TestTransformRequest_WithThinking(t *testing.T) {
+	req := &models.AnthropicRequest{
+		Model:     "claude-3-opus-20240229",
+		MaxTokens: 4096,
+		Messages: []models.AnthropicMessage{
+			{Role: "user", Content: "Solve this math problem step by step"},
+		},
+		Thinking: &models.ThinkingConfig{
+			Type:         "enabled",
+			BudgetTokens: 16000,
+		},
+	}
+
+	result, err := TransformRequest(req, "o1-preview")
+	if err != nil {
+		t.Fatalf("TransformRequest failed: %v", err)
+	}
+
+	if result.ReasoningEffort != "medium" {
+		t.Errorf("ReasoningEffort = %q, want %q", result.ReasoningEffort, "medium")
+	}
+	if result.MaxTokens != 0 {
+		t.Errorf("MaxTokens should be 0 for O1 models, got %d", result.MaxTokens)
+	}
+	if result.MaxCompletionTokens != 4096 {
+		t.Errorf("MaxCompletionTokens = %d, want %d", result.MaxCompletionTokens, 4096)
+	}
+}

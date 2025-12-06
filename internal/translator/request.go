@@ -114,7 +114,131 @@ func TransformRequest(req *models.AnthropicRequest, targetModel string) (*models
 		}
 	}
 
+	// Transform thinking/reasoning parameters based on target model
+	applyThinkingParameters(req, openAIReq, targetModel)
+
 	return openAIReq, nil
+}
+
+// applyThinkingParameters maps Anthropic thinking.budget_tokens to model-specific parameters.
+// This enables extended reasoning capabilities across different model providers.
+func applyThinkingParameters(req *models.AnthropicRequest, openAIReq *models.OpenAIRequest, targetModel string) {
+	if req.Thinking == nil || req.Thinking.BudgetTokens <= 0 {
+		return
+	}
+
+	budgetTokens := req.Thinking.BudgetTokens
+
+	// Detect model family and apply appropriate reasoning parameters
+	switch {
+	case isO1OrO3Model(targetModel):
+		// OpenAI O1/O3 models use reasoning_effort
+		openAIReq.ReasoningEffort = mapBudgetToReasoningEffort(budgetTokens)
+		// For O1/O3, we can also use max_completion_tokens instead of max_tokens
+		if openAIReq.MaxTokens > 0 {
+			openAIReq.MaxCompletionTokens = openAIReq.MaxTokens
+			openAIReq.MaxTokens = 0 // Clear max_tokens as O1/O3 prefer max_completion_tokens
+		}
+
+	case isGrokModel(targetModel):
+		// Grok 3 Mini supports reasoning_effort (low/high only)
+		if budgetTokens >= 20000 {
+			openAIReq.ReasoningEffort = "high"
+		} else {
+			openAIReq.ReasoningEffort = "low"
+		}
+
+	case isGemini3Model(targetModel):
+		// Gemini 3 uses thinking_level (low/high)
+		if budgetTokens >= 16000 {
+			openAIReq.ThinkingLevel = "high"
+		} else {
+			openAIReq.ThinkingLevel = "low"
+		}
+
+	case isGemini25Model(targetModel):
+		// Gemini 2.5 uses thinking_config with budget cap at 24k
+		budget := budgetTokens
+		if budget > 24576 {
+			budget = 24576
+		}
+		openAIReq.ThinkingConfig = &models.OpenRouterThinkingConfig{
+			ThinkingBudget: budget,
+		}
+
+	case isQwenModel(targetModel):
+		// Qwen uses enable_thinking and thinking_budget
+		enabled := true
+		openAIReq.EnableThinking = &enabled
+		openAIReq.ThinkingBudget = budgetTokens
+
+	case isMiniMaxModel(targetModel):
+		// MiniMax uses reasoning_split
+		enabled := true
+		openAIReq.ReasoningSplit = &enabled
+
+	case isDeepSeekModel(targetModel):
+		// DeepSeek R1 doesn't support reasoning params via API
+		// Just strip the thinking parameter (no-op)
+	}
+}
+
+// mapBudgetToReasoningEffort converts budget_tokens to OpenAI reasoning_effort.
+func mapBudgetToReasoningEffort(budgetTokens int) string {
+	switch {
+	case budgetTokens < 4000:
+		return "minimal"
+	case budgetTokens < 16000:
+		return "low"
+	case budgetTokens < 32000:
+		return "medium"
+	default:
+		return "high"
+	}
+}
+
+// isO1OrO3Model checks if the model is an OpenAI O1 or O3 reasoning model.
+func isO1OrO3Model(model string) bool {
+	m := strings.ToLower(model)
+	return strings.HasPrefix(m, "o1") || strings.HasPrefix(m, "o3") ||
+		strings.Contains(m, "openai/o1") || strings.Contains(m, "openai/o3")
+}
+
+// isGrokModel checks if the model is a Grok model (x-ai).
+func isGrokModel(model string) bool {
+	m := strings.ToLower(model)
+	return strings.Contains(m, "grok") || strings.HasPrefix(m, "x-ai/")
+}
+
+// isGemini3Model checks if the model is a Gemini 3 model.
+func isGemini3Model(model string) bool {
+	m := strings.ToLower(model)
+	return strings.Contains(m, "gemini-3") || strings.Contains(m, "gemini/3")
+}
+
+// isGemini25Model checks if the model is a Gemini 2.5 model.
+func isGemini25Model(model string) bool {
+	m := strings.ToLower(model)
+	return strings.Contains(m, "gemini-2.5") || strings.Contains(m, "gemini-2-5") ||
+		strings.Contains(m, "gemini/2.5")
+}
+
+// isQwenModel checks if the model is a Qwen model.
+func isQwenModel(model string) bool {
+	m := strings.ToLower(model)
+	return strings.Contains(m, "qwen") || strings.HasPrefix(m, "qwen/")
+}
+
+// isMiniMaxModel checks if the model is a MiniMax model.
+func isMiniMaxModel(model string) bool {
+	m := strings.ToLower(model)
+	return strings.Contains(m, "minimax")
+}
+
+// isDeepSeekModel checks if the model is a DeepSeek model.
+func isDeepSeekModel(model string) bool {
+	m := strings.ToLower(model)
+	return strings.Contains(m, "deepseek") || strings.HasPrefix(m, "deepseek/")
 }
 
 // transformMessages converts Anthropic messages to OpenAI format.
