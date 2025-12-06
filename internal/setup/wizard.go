@@ -482,22 +482,50 @@ func getDefaultModel(provider string) string {
 }
 
 func prioritizeModels(models []string, provider string) []string {
-	// Priority models by provider
+	// Priority models by provider (newest first)
 	var priority []string
 	switch provider {
 	case "openai":
+		// Order by recency - newest models first
 		priority = []string{
-			"gpt-4o", "gpt-4o-mini", "o1-preview", "o1-mini",
-			"gpt-4-turbo", "gpt-4", "gpt-3.5-turbo",
+			// 2025 models (newest)
+			"gpt-4.5-preview",
+			"o3-mini",
+			"o3-mini-2025-01-31",
+			// 2024 flagship models
+			"gpt-4o", "gpt-4o-2024-11-20", "gpt-4o-2024-08-06", "gpt-4o-2024-05-13",
+			"chatgpt-4o-latest",
+			"o1", "o1-2024-12-17",
+			"o1-preview", "o1-preview-2024-09-12",
+			"o1-mini", "o1-mini-2024-09-12",
+			// Cost-optimized
+			"gpt-4o-mini", "gpt-4o-mini-2024-07-18",
+			// Turbo (previous gen)
+			"gpt-4-turbo", "gpt-4-turbo-2024-04-09", "gpt-4-turbo-preview",
+			// GPT-4 base
+			"gpt-4", "gpt-4-0613",
+			// GPT-3.5
+			"gpt-3.5-turbo", "gpt-3.5-turbo-0125",
 		}
 	case "openrouter":
+		// Order by popularity and recency
 		priority = []string{
+			// Claude models (newest first)
 			"anthropic/claude-3.5-sonnet",
 			"anthropic/claude-3.5-haiku",
+			"anthropic/claude-3-opus",
+			"anthropic/claude-3-sonnet",
+			// OpenAI via OpenRouter
 			"openai/gpt-4o",
 			"openai/o1-preview",
+			"openai/o1-mini",
+			"openai/gpt-4o-mini",
+			// Google
 			"google/gemini-pro-1.5",
+			"google/gemini-flash-1.5",
+			// Meta
 			"meta-llama/llama-3.1-405b-instruct",
+			"meta-llama/llama-3.1-70b-instruct",
 		}
 	}
 
@@ -516,14 +544,63 @@ func prioritizeModels(models []string, provider string) []string {
 		}
 	}
 
-	// Add remaining models
+	// Sort remaining models by date suffix (newest first) then alphabetically
+	remaining := make([]string, 0)
 	for _, m := range models {
 		if !seen[m] {
-			result = append(result, m)
+			remaining = append(remaining, m)
 		}
 	}
+	sort.Slice(remaining, func(i, j int) bool {
+		// Extract date from model names (e.g., "gpt-4o-2024-11-20" -> "2024-11-20")
+		dateI := extractDateSuffix(remaining[i])
+		dateJ := extractDateSuffix(remaining[j])
 
+		// If both have dates, sort by date descending (newest first)
+		if dateI != "" && dateJ != "" {
+			return dateI > dateJ
+		}
+		// Models with dates come before those without
+		if dateI != "" && dateJ == "" {
+			return true
+		}
+		if dateI == "" && dateJ != "" {
+			return false
+		}
+		// Alphabetical for models without dates
+		return remaining[i] < remaining[j]
+	})
+
+	result = append(result, remaining...)
 	return result
+}
+
+// extractDateSuffix extracts a date suffix from a model name.
+// For example, "gpt-4o-2024-11-20" returns "2024-11-20".
+func extractDateSuffix(model string) string {
+	// Common date patterns in model names: YYYY-MM-DD, YYYYMMDD
+	parts := strings.Split(model, "-")
+	if len(parts) >= 3 {
+		// Check for YYYY-MM-DD at the end
+		last3 := parts[len(parts)-3:]
+		if len(last3[0]) == 4 && len(last3[1]) == 2 && len(last3[2]) == 2 {
+			// Check if all parts are numeric
+			if isNumeric(last3[0]) && isNumeric(last3[1]) && isNumeric(last3[2]) {
+				return last3[0] + "-" + last3[1] + "-" + last3[2]
+			}
+		}
+	}
+	return ""
+}
+
+// isNumeric checks if a string contains only digits.
+func isNumeric(s string) bool {
+	for _, c := range s {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return len(s) > 0
 }
 
 func (w *Wizard) saveConfig(cfg *ConfigFile) error {

@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -142,9 +143,22 @@ func (s *Server) Start() error {
 	// Apply logging middleware
 	handler = loggingMiddleware(handler)
 
+	// Auto-select port if default port is in use
+	port := s.cfg.Port
+	if !isPortAvailable(port) {
+		log.Printf("[CLASP] Port %d is in use, finding available port...", port)
+		newPort, err := findAvailablePort(port)
+		if err != nil {
+			return fmt.Errorf("failed to find available port: %w", err)
+		}
+		port = newPort
+		s.cfg.Port = port
+		log.Printf("[CLASP] Using port %d instead", port)
+	}
+
 	// Create server
 	s.server = &http.Server{
-		Addr:         fmt.Sprintf(":%d", s.cfg.Port),
+		Addr:         fmt.Sprintf(":%d", port),
 		Handler:      handler,
 		ReadTimeout:  30 * time.Second,
 		WriteTimeout: 120 * time.Second, // Long timeout for streaming
@@ -154,12 +168,12 @@ func (s *Server) Start() error {
 	// Start server in goroutine
 	errCh := make(chan error, 1)
 	go func() {
-		log.Printf("[CLASP] Starting proxy server on port %d", s.cfg.Port)
+		log.Printf("[CLASP] Starting proxy server on port %d", port)
 		log.Printf("[CLASP] Provider: %s", s.cfg.Provider)
 		if s.cfg.DefaultModel != "" {
 			log.Printf("[CLASP] Default model: %s", s.cfg.DefaultModel)
 		}
-		log.Printf("[CLASP] Set ANTHROPIC_BASE_URL=http://localhost:%d to use with Claude Code", s.cfg.Port)
+		log.Printf("[CLASP] Set ANTHROPIC_BASE_URL=http://localhost:%d to use with Claude Code", port)
 
 		if err := s.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			errCh <- err
@@ -177,6 +191,40 @@ func (s *Server) Start() error {
 		log.Printf("[CLASP] Received signal %v, shutting down...", sig)
 		return s.Shutdown()
 	}
+}
+
+// isPortAvailable checks if a port is available for binding.
+func isPortAvailable(port int) bool {
+	addr := fmt.Sprintf(":%d", port)
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		return false
+	}
+	ln.Close()
+	return true
+}
+
+// findAvailablePort finds an available port starting from the given port.
+// It tries the next 100 ports before giving up.
+func findAvailablePort(startPort int) (int, error) {
+	for port := startPort + 1; port <= startPort+100; port++ {
+		if isPortAvailable(port) {
+			return port, nil
+		}
+	}
+	// If all nearby ports are taken, let the OS assign one
+	ln, err := net.Listen("tcp", ":0")
+	if err != nil {
+		return 0, err
+	}
+	defer ln.Close()
+	return ln.Addr().(*net.TCPAddr).Port, nil
+}
+
+// GetPort returns the actual port the server is running on.
+// This is useful when auto-port selection is used.
+func (s *Server) GetPort() int {
+	return s.cfg.Port
 }
 
 // Shutdown gracefully shuts down the server.
