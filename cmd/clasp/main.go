@@ -51,6 +51,14 @@ func main() {
 				fmt.Println("Usage: clasp use <profile-name>")
 			}
 			return
+		case "help", "-h", "--help":
+			// Show help without starting the proxy
+			printHelp()
+			return
+		case "version", "-v":
+			// Show version without starting the proxy
+			fmt.Printf("CLASP %s\n", version)
+			return
 		}
 	}
 
