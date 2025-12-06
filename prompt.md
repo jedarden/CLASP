@@ -154,6 +154,11 @@ gh release create v0.x.x --generate-notes
 
 ### Protocol Translation
 
+CLASP must support TWO OpenAI endpoints based on the target model:
+
+#### Chat Completions API (`/v1/chat/completions`)
+For: gpt-4o, gpt-4o-mini, gpt-4-turbo, o1-preview, o1-mini, gpt-3.5-turbo
+
 **Anthropic Request → OpenAI Request:**
 ```
 POST /v1/messages → POST /v1/chat/completions
@@ -170,6 +175,45 @@ choices[0].delta.content → content_block_delta
 choices[0].delta.tool_calls → tool_use blocks
 finish_reason: stop → message_stop event
 finish_reason: tool_calls → message_stop (tool_use)
+```
+
+#### Responses API (`/v1/responses`) - NEW
+For: gpt-5, gpt-5.1-codex, and newer models
+
+OpenAI's new stateful API that unifies Chat Completions and Assistants.
+
+**Key differences:**
+- Stateful: uses `previous_response_id` to continue conversations
+- Preserves reasoning state across turns (critical for o1/reasoning models)
+- Returns polymorphic items (reasoning, message, function_call) instead of single message
+- Native MCP support and hosted tools
+
+**Anthropic Request → OpenAI Responses:**
+```
+POST /v1/messages → POST /v1/responses
+messages[] → input[]
+system → system message in input
+tools[] → tools[] (different format)
+```
+
+**OpenAI Responses → Anthropic Response:**
+```
+items[type=message] → content_block_delta
+items[type=function_call] → tool_use blocks
+items[type=reasoning] → (hidden, not exposed to client)
+```
+
+#### Model Endpoint Detection
+```go
+func getModelEndpoint(model string) string {
+    responsesModels := []string{"gpt-5", "codex"}
+    for _, prefix := range responsesModels {
+        if strings.Contains(model, prefix) {
+            return "/v1/responses"
+        }
+    }
+    return "/v1/chat/completions"
+}
 ```
 
 ### SSE Stream Events

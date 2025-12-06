@@ -317,30 +317,66 @@ func (h *Handler) HandleMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Transform request to OpenAI format
-	openAIReq, err := translator.TransformRequest(&anthropicReq, targetModel)
-	if err != nil {
-		atomic.AddInt64(&h.metrics.ErrorRequests, 1)
-		log.Printf("[CLASP] Error transforming request: %v", err)
-		h.writeErrorResponse(w, http.StatusInternalServerError, "api_error", "Error transforming request")
-		return
+	// Check if this model requires the Responses API
+	endpointType := translator.GetEndpointType(targetModel)
+	useResponsesAPI := endpointType == translator.EndpointResponses
+
+	// Set target model on provider for endpoint URL selection
+	if openaiProvider, ok := selectedProvider.(*provider.OpenAIProvider); ok {
+		openaiProvider.SetTargetModel(targetModel)
 	}
 
-	// Make upstream request
-	reqBody, err := json.Marshal(openAIReq)
-	if err != nil {
-		atomic.AddInt64(&h.metrics.ErrorRequests, 1)
-		log.Printf("[CLASP] Error marshaling request: %v", err)
-		h.writeErrorResponse(w, http.StatusInternalServerError, "api_error", "Error preparing request")
-		return
-	}
+	var reqBody []byte
+	if useResponsesAPI {
+		// Transform request to OpenAI Responses API format
+		responsesReq, err := translator.TransformRequestToResponses(&anthropicReq, targetModel, "")
+		if err != nil {
+			atomic.AddInt64(&h.metrics.ErrorRequests, 1)
+			log.Printf("[CLASP] Error transforming request to Responses API: %v", err)
+			h.writeErrorResponse(w, http.StatusInternalServerError, "api_error", "Error transforming request")
+			return
+		}
 
-	// Debug logging for outgoing request (secrets are masked)
-	if h.cfg.DebugRequests {
-		debugJSON, _ := json.MarshalIndent(openAIReq, "", "  ")
-		// Mask any secrets that might be in the request content
-		maskedJSON := secrets.MaskJSONSecrets(debugJSON)
-		log.Printf("[CLASP DEBUG] Outgoing OpenAI request:\n%s", string(maskedJSON))
+		reqBody, err = json.Marshal(responsesReq)
+		if err != nil {
+			atomic.AddInt64(&h.metrics.ErrorRequests, 1)
+			log.Printf("[CLASP] Error marshaling Responses request: %v", err)
+			h.writeErrorResponse(w, http.StatusInternalServerError, "api_error", "Error preparing request")
+			return
+		}
+
+		// Debug logging for outgoing request (secrets are masked)
+		if h.cfg.DebugRequests {
+			debugJSON, _ := json.MarshalIndent(responsesReq, "", "  ")
+			maskedJSON := secrets.MaskJSONSecrets(debugJSON)
+			log.Printf("[CLASP DEBUG] Outgoing OpenAI Responses API request:\n%s", string(maskedJSON))
+		}
+
+		log.Printf("[CLASP] Using Responses API for model: %s", targetModel)
+	} else {
+		// Transform request to OpenAI Chat Completions format
+		openAIReq, err := translator.TransformRequest(&anthropicReq, targetModel)
+		if err != nil {
+			atomic.AddInt64(&h.metrics.ErrorRequests, 1)
+			log.Printf("[CLASP] Error transforming request: %v", err)
+			h.writeErrorResponse(w, http.StatusInternalServerError, "api_error", "Error transforming request")
+			return
+		}
+
+		reqBody, err = json.Marshal(openAIReq)
+		if err != nil {
+			atomic.AddInt64(&h.metrics.ErrorRequests, 1)
+			log.Printf("[CLASP] Error marshaling request: %v", err)
+			h.writeErrorResponse(w, http.StatusInternalServerError, "api_error", "Error preparing request")
+			return
+		}
+
+		// Debug logging for outgoing request (secrets are masked)
+		if h.cfg.DebugRequests {
+			debugJSON, _ := json.MarshalIndent(openAIReq, "", "  ")
+			maskedJSON := secrets.MaskJSONSecrets(debugJSON)
+			log.Printf("[CLASP DEBUG] Outgoing OpenAI Chat Completions request:\n%s", string(maskedJSON))
+		}
 	}
 
 	// Execute request with retry logic
@@ -362,8 +398,21 @@ func (h *Handler) HandleMessages(w http.ResponseWriter, r *http.Request) {
 			// Re-transform request with fallback model if specified
 			if fallbackModel != "" {
 				targetModel = fallbackModel
-				openAIReq, _ = translator.TransformRequest(&anthropicReq, targetModel)
-				reqBody, _ = json.Marshal(openAIReq)
+				// Check if fallback model uses Responses API
+				fallbackEndpointType := translator.GetEndpointType(fallbackModel)
+				if fallbackEndpointType == translator.EndpointResponses {
+					responsesReq, _ := translator.TransformRequestToResponses(&anthropicReq, targetModel, "")
+					reqBody, _ = json.Marshal(responsesReq)
+					useResponsesAPI = true
+				} else {
+					openAIReq, _ := translator.TransformRequest(&anthropicReq, targetModel)
+					reqBody, _ = json.Marshal(openAIReq)
+					useResponsesAPI = false
+				}
+				// Update fallback provider endpoint type
+				if openaiProvider, ok := fallbackProvider.(*provider.OpenAIProvider); ok {
+					openaiProvider.SetTargetModel(targetModel)
+				}
 			}
 
 			// Try fallback provider
@@ -417,11 +466,24 @@ func (h *Handler) HandleMessages(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-CLASP-Fallback", "true")
 	}
 
+	// Add header to indicate Responses API was used
+	if useResponsesAPI {
+		w.Header().Set("X-CLASP-Responses-API", "true")
+	}
+
 	// Handle streaming vs non-streaming
 	if anthropicReq.Stream {
-		h.handleStreamingResponse(w, resp, targetModel)
+		if useResponsesAPI {
+			h.handleResponsesStreamingResponse(w, resp, targetModel)
+		} else {
+			h.handleStreamingResponse(w, resp, targetModel)
+		}
 	} else {
-		h.handleNonStreamingResponse(w, resp, targetModel, cacheKey, cacheable)
+		if useResponsesAPI {
+			h.handleResponsesNonStreamingResponse(w, resp, targetModel, cacheKey, cacheable)
+		} else {
+			h.handleNonStreamingResponse(w, resp, targetModel, cacheKey, cacheable)
+		}
 	}
 }
 
@@ -809,6 +871,193 @@ func (h *Handler) handleNonStreamingResponse(w http.ResponseWriter, resp *http.R
 	json.NewEncoder(w).Encode(anthropicResp)
 }
 
+// handleResponsesStreamingResponse handles SSE streaming responses from Responses API.
+func (h *Handler) handleResponsesStreamingResponse(w http.ResponseWriter, resp *http.Response, targetModel string) {
+	// Set SSE headers
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
+
+	// Flush headers
+	if f, ok := w.(http.Flusher); ok {
+		f.Flush()
+	}
+
+	// Create flush writer
+	fw := &flushWriter{w: w}
+	if f, ok := w.(http.Flusher); ok {
+		fw.flusher = f
+	}
+
+	// Generate message ID
+	messageID := generateMessageID()
+
+	// Process stream using Responses API processor
+	processor := translator.NewResponsesStreamProcessor(fw, messageID, targetModel)
+
+	// Set up cost tracking callback if cost tracker is available
+	if h.costTracker != nil {
+		processor.SetUsageCallback(func(inputTokens, outputTokens int) {
+			h.costTracker.RecordUsage(
+				h.provider.Name(),
+				targetModel,
+				inputTokens,
+				outputTokens,
+			)
+			log.Printf("[CLASP] Responses API streaming cost tracked: %d input tokens, %d output tokens", inputTokens, outputTokens)
+		})
+	}
+
+	if err := processor.ProcessStream(resp.Body); err != nil {
+		log.Printf("[CLASP] Error processing Responses API stream: %v", err)
+	}
+
+	// Log response ID for conversation continuation
+	if responseID := processor.GetResponseID(); responseID != "" {
+		log.Printf("[CLASP] Responses API response ID: %s", responseID)
+	}
+}
+
+// handleResponsesNonStreamingResponse handles non-streaming responses from Responses API.
+func (h *Handler) handleResponsesNonStreamingResponse(w http.ResponseWriter, resp *http.Response, targetModel string, cacheKey string, cacheable bool) {
+	// Read response body
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		log.Printf("[CLASP] Error reading Responses API response: %v", err)
+		http.Error(w, "Error reading upstream response", http.StatusBadGateway)
+		return
+	}
+
+	// Debug logging for raw response (secrets are masked)
+	if h.cfg.DebugResponses {
+		maskedBody := secrets.MaskJSONSecrets(body)
+		log.Printf("[CLASP DEBUG] Raw OpenAI Responses API response:\n%s", string(maskedBody))
+	}
+
+	// Parse Responses API response
+	var responsesResp models.ResponsesResponse
+	if err := json.Unmarshal(body, &responsesResp); err != nil {
+		log.Printf("[CLASP] Error parsing Responses API response: %v", err)
+		http.Error(w, "Error parsing upstream response", http.StatusBadGateway)
+		return
+	}
+
+	// Build Anthropic response from Responses API format
+	anthropicResp := models.AnthropicResponse{
+		ID:    responsesResp.ID,
+		Type:  "message",
+		Role:  "assistant",
+		Model: targetModel,
+	}
+
+	// Map usage
+	if responsesResp.Usage != nil {
+		anthropicResp.Usage = &models.AnthropicUsage{
+			InputTokens:  responsesResp.Usage.InputTokens,
+			OutputTokens: responsesResp.Usage.OutputTokens,
+		}
+	}
+
+	// Process output items
+	hasToolCalls := false
+	for _, item := range responsesResp.Output {
+		switch item.Type {
+		case "message":
+			// Extract text content from message
+			if content, ok := item.Content.(string); ok && content != "" {
+				anthropicResp.Content = append(anthropicResp.Content, models.AnthropicContentBlock{
+					Type: "text",
+					Text: content,
+				})
+			} else if contentParts, ok := item.Content.([]interface{}); ok {
+				// Handle array format content
+				for _, part := range contentParts {
+					if partMap, ok := part.(map[string]interface{}); ok {
+						if partType, ok := partMap["type"].(string); ok {
+							switch partType {
+							case "text":
+								if text, ok := partMap["text"].(string); ok && text != "" {
+									anthropicResp.Content = append(anthropicResp.Content, models.AnthropicContentBlock{
+										Type: "text",
+										Text: text,
+									})
+								}
+							case "refusal":
+								if refusal, ok := partMap["refusal"].(string); ok && refusal != "" {
+									anthropicResp.Content = append(anthropicResp.Content, models.AnthropicContentBlock{
+										Type: "text",
+										Text: "[Refused] " + refusal,
+									})
+								}
+							}
+						}
+					}
+				}
+			}
+		case "function_call":
+			hasToolCalls = true
+			var input interface{}
+			if err := json.Unmarshal([]byte(item.Arguments), &input); err != nil {
+				input = map[string]interface{}{}
+			}
+			anthropicResp.Content = append(anthropicResp.Content, models.AnthropicContentBlock{
+				Type:  "tool_use",
+				ID:    item.CallID,
+				Name:  item.Name,
+				Input: input,
+			})
+		case "reasoning":
+			// Include reasoning summary if available (thinking block)
+			if item.Summary != "" {
+				anthropicResp.Content = append(anthropicResp.Content, models.AnthropicContentBlock{
+					Type: "thinking",
+					Text: item.Summary,
+				})
+			}
+		}
+	}
+
+	// Determine stop reason
+	if responsesResp.Status == "completed" {
+		if hasToolCalls {
+			anthropicResp.StopReason = "tool_use"
+		} else {
+			anthropicResp.StopReason = "end_turn"
+		}
+	} else if responsesResp.Status == "failed" {
+		anthropicResp.StopReason = "end_turn"
+	}
+
+	// Debug logging for Anthropic response (secrets are masked)
+	if h.cfg.DebugResponses {
+		debugJSON, _ := json.MarshalIndent(anthropicResp, "", "  ")
+		maskedJSON := secrets.MaskJSONSecrets(debugJSON)
+		log.Printf("[CLASP DEBUG] Transformed Anthropic response from Responses API:\n%s", string(maskedJSON))
+	}
+
+	// Track costs
+	if h.costTracker != nil && anthropicResp.Usage != nil {
+		h.costTracker.RecordUsage(
+			h.provider.Name(),
+			targetModel,
+			anthropicResp.Usage.InputTokens,
+			anthropicResp.Usage.OutputTokens,
+		)
+	}
+
+	// Store in cache if cacheable
+	if h.cache != nil && cacheable && cacheKey != "" {
+		h.cache.Set(cacheKey, &anthropicResp)
+		log.Printf("[CLASP] Responses API response cached (key: %s...)", cacheKey[:16])
+	}
+
+	// Write response
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-CLASP-Cache", "MISS")
+	json.NewEncoder(w).Encode(anthropicResp)
+}
+
 // HandleHealth handles health check requests.
 func (h *Handler) HandleHealth(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
@@ -1182,7 +1431,7 @@ func (h *Handler) HandleRoot(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	response := map[string]interface{}{
 		"name":     "CLASP",
-		"version":  "0.16.14",
+		"version":  "0.23.0",
 		"provider": h.provider.Name(),
 		"status":   "running",
 		"endpoints": map[string]string{

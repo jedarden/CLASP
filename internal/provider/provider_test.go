@@ -65,6 +65,57 @@ func TestOpenAIProvider(t *testing.T) {
 		}
 	})
 
+	t.Run("GetEndpointURL returns Responses API for gpt-5 models", func(t *testing.T) {
+		p := NewOpenAIProvider("")
+		p.SetTargetModel("gpt-5")
+		expected := "https://api.openai.com/v1/responses"
+		if got := p.GetEndpointURL(); got != expected {
+			t.Errorf("Expected %s, got %s", expected, got)
+		}
+	})
+
+	t.Run("GetEndpointURLForModel returns correct endpoint", func(t *testing.T) {
+		p := NewOpenAIProvider("")
+
+		// gpt-4o should use Chat Completions
+		expected := "https://api.openai.com/v1/chat/completions"
+		if got := p.GetEndpointURLForModel("gpt-4o"); got != expected {
+			t.Errorf("Expected %s for gpt-4o, got %s", expected, got)
+		}
+
+		// gpt-5 should use Responses API
+		expected = "https://api.openai.com/v1/responses"
+		if got := p.GetEndpointURLForModel("gpt-5"); got != expected {
+			t.Errorf("Expected %s for gpt-5, got %s", expected, got)
+		}
+
+		// gpt-5.1-codex should use Responses API
+		if got := p.GetEndpointURLForModel("gpt-5.1-codex"); got != expected {
+			t.Errorf("Expected %s for gpt-5.1-codex, got %s", expected, got)
+		}
+	})
+
+	t.Run("SetTargetModel updates endpoint type", func(t *testing.T) {
+		p := NewOpenAIProvider("")
+
+		// Initially should use Chat Completions
+		if p.RequiresResponsesAPI() {
+			t.Error("Expected RequiresResponsesAPI to be false initially")
+		}
+
+		// After setting gpt-5 model
+		p.SetTargetModel("gpt-5")
+		if !p.RequiresResponsesAPI() {
+			t.Error("Expected RequiresResponsesAPI to be true after setting gpt-5")
+		}
+
+		// After switching back to gpt-4o
+		p.SetTargetModel("gpt-4o")
+		if p.RequiresResponsesAPI() {
+			t.Error("Expected RequiresResponsesAPI to be false after setting gpt-4o")
+		}
+	})
+
 	t.Run("TransformModelID strips openai prefix", func(t *testing.T) {
 		p := NewOpenAIProvider("")
 		if got := p.TransformModelID("openai/gpt-4o"); got != "gpt-4o" {
