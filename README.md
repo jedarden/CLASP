@@ -42,14 +42,24 @@ make build
 ### Via Docker
 
 ```bash
-# Run with Docker
+# Run with Docker (from GitHub Container Registry)
 docker run -d -p 8080:8080 \
   -e OPENAI_API_KEY=sk-... \
-  ghcr.io/jedarden/clasp-ai:latest
+  ghcr.io/jedarden/clasp:latest
+
+# With specific version
+docker run -d -p 8080:8080 \
+  -e OPENAI_API_KEY=sk-... \
+  ghcr.io/jedarden/clasp:0.24.8
 
 # Or with docker-compose
 docker-compose up -d
 ```
+
+**Available Docker tags:**
+- `latest` - Latest stable release
+- `0.24` - Latest 0.24.x release
+- `0.24.8` - Specific version
 
 ## Quick Start
 

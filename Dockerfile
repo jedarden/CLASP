@@ -1,5 +1,8 @@
 # Build stage
-FROM golang:1.21-alpine AS builder
+FROM golang:1.22-alpine AS builder
+
+# Build argument for version
+ARG VERSION=dev
 
 # Install build dependencies
 RUN apk add --no-cache git ca-certificates
@@ -13,9 +16,9 @@ RUN go mod download
 # Copy source code
 COPY . .
 
-# Build the binary
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
-    -ldflags="-s -w -X main.Version=$(git describe --tags --always --dirty 2>/dev/null || echo dev)" \
+# Build the binary with version injected
+RUN CGO_ENABLED=0 go build \
+    -ldflags="-s -w -X main.version=${VERSION}" \
     -o /clasp ./cmd/clasp
 
 # Runtime stage
