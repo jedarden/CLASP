@@ -369,6 +369,8 @@ func (pm *ProfileManager) ApplyProfileToEnv(profile *Profile) error {
 }
 
 // ExportProfile exports a profile to JSON.
+// API keys are never included in exports for security.
+// Instead, use api_key_env to reference environment variables.
 func (pm *ProfileManager) ExportProfile(name string) ([]byte, error) {
 	profile, err := pm.GetProfile(name)
 	if err != nil {
@@ -377,7 +379,31 @@ func (pm *ProfileManager) ExportProfile(name string) ([]byte, error) {
 
 	// Create a copy without sensitive data for export
 	exportProfile := *profile
-	exportProfile.APIKey = "" // Don't export API keys
+	exportProfile.APIKey = "" // Never export raw API keys
+
+	// Clear tier mapping API keys too
+	if exportProfile.TierMappings != nil {
+		for tier, mapping := range exportProfile.TierMappings {
+			mapping.APIKey = "" // Never export raw API keys
+			exportProfile.TierMappings[tier] = mapping
+		}
+	}
+
+	// If no api_key_env was set, suggest a reasonable default
+	if exportProfile.APIKeyEnv == "" && profile.APIKey != "" {
+		switch profile.Provider {
+		case "openai":
+			exportProfile.APIKeyEnv = "OPENAI_API_KEY"
+		case "azure":
+			exportProfile.APIKeyEnv = "AZURE_API_KEY"
+		case "openrouter":
+			exportProfile.APIKeyEnv = "OPENROUTER_API_KEY"
+		case "anthropic":
+			exportProfile.APIKeyEnv = "ANTHROPIC_API_KEY"
+		case "custom":
+			exportProfile.APIKeyEnv = "CUSTOM_API_KEY"
+		}
+	}
 
 	return json.MarshalIndent(exportProfile, "", "  ")
 }

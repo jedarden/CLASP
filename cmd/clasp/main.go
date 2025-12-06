@@ -23,7 +23,7 @@ import (
 )
 
 var (
-	version = "v0.16.12"
+	version = "v0.16.13"
 )
 
 func main() {
@@ -80,10 +80,10 @@ func main() {
 	listModels := flag.Bool("models", false, "List available models from provider")
 
 	// Claude Code management flags
-	launchClaude := flag.Bool("launch", false, "Start proxy and launch Claude Code")
+	launchClaude := flag.Bool("launch", false, "Start proxy and launch Claude Code (default behavior)")
 	updateClaude := flag.Bool("update-claude", false, "Update Claude Code to latest version")
 	claudeStatus := flag.Bool("claude-status", false, "Check Claude Code installation status")
-	proxyOnly := flag.Bool("proxy-only", false, "Run proxy only (no Claude Code launch)")
+	proxyOnly := flag.Bool("proxy-only", false, "Run proxy only without launching Claude Code")
 	verbose := flag.Bool("verbose", false, "Enable verbose output")
 
 	// Profile management flags
@@ -294,8 +294,14 @@ func main() {
 		log.Fatalf("[CLASP] Failed to create server: %v", err)
 	}
 
-	// If launching Claude Code, start proxy in background and then launch Claude
-	if *launchClaude && !*proxyOnly {
+	// By default, launch Claude Code with the proxy (unless -proxy-only is specified)
+	// The -launch flag is kept for backwards compatibility but is now the default behavior
+	shouldLaunchClaude := !*proxyOnly
+	if *launchClaude {
+		shouldLaunchClaude = true // Explicit -launch always launches
+	}
+
+	if shouldLaunchClaude {
 		printBanner()
 		fmt.Println("")
 
@@ -393,8 +399,8 @@ Usage: clasp [options] [-- claude-args...]
        clasp <command> [arguments]
 
 Quick Start:
-  clasp                     Start proxy with active profile
-  clasp -launch             Start proxy and launch Claude Code
+  clasp                     Start proxy AND launch Claude Code (default)
+  clasp -proxy-only         Start proxy only (no Claude Code)
   clasp status              Show current configuration status
   clasp use <profile>       Switch to a different profile
 
@@ -415,10 +421,10 @@ Setup & Configuration:
   -profile <name>           Use a specific profile for this session
 
 Claude Code Management:
-  -launch                   Start proxy and launch Claude Code (recommended)
+  -proxy-only               Run proxy only without launching Claude Code
+  -launch                   Explicit flag to launch Claude Code (now default)
   -claude-status            Check Claude Code installation status
   -update-claude            Update Claude Code to latest version
-  -proxy-only               Run proxy only without launching Claude Code
   -verbose                  Enable verbose output
 
 Options:
@@ -622,11 +628,14 @@ Examples:
   OPENAI_API_KEY=sk-xxx CLASP_MODEL_ALIASES="fast:gpt-4o-mini,smart:gpt-4o" clasp
 
 Claude Code Integration:
-  # Recommended: Use -launch to start proxy and Claude Code together
-  OPENAI_API_KEY=sk-xxx clasp -launch
+  # Default: clasp starts proxy and launches Claude Code together
+  OPENAI_API_KEY=sk-xxx clasp
 
   # Pass arguments to Claude Code after "--"
-  OPENAI_API_KEY=sk-xxx clasp -launch -- --resume
+  OPENAI_API_KEY=sk-xxx clasp -- --resume
+
+  # Run proxy only (no Claude Code launch)
+  OPENAI_API_KEY=sk-xxx clasp -proxy-only
 
   # Manual integration (set ANTHROPIC_BASE_URL to point to CLASP)
   ANTHROPIC_BASE_URL=http://localhost:8080 claude
@@ -801,8 +810,8 @@ func handleStatusCommand(args []string) {
 
 	fmt.Println("")
 	fmt.Println("Commands:")
-	fmt.Println("  clasp                    Start proxy")
-	fmt.Println("  clasp -launch            Start proxy and Claude Code")
+	fmt.Println("  clasp                    Start proxy and Claude Code (default)")
+	fmt.Println("  clasp -proxy-only        Start proxy only")
 	fmt.Println("  clasp profile list       Show all profiles")
 	fmt.Println("  clasp profile create     Create new profile")
 	fmt.Println("  clasp use <name>         Switch profile")
