@@ -17,6 +17,7 @@ import (
 
 	"github.com/jedarden/clasp/internal/config"
 	"github.com/jedarden/clasp/internal/provider"
+	"github.com/jedarden/clasp/internal/secrets"
 	"github.com/jedarden/clasp/internal/translator"
 	"github.com/jedarden/clasp/pkg/models"
 )
@@ -246,10 +247,12 @@ func (h *Handler) HandleMessages(w http.ResponseWriter, r *http.Request) {
 		log.Printf("[CLASP] Resolved model alias: %s -> %s", originalModel, anthropicReq.Model)
 	}
 
-	// Debug logging for incoming request
+	// Debug logging for incoming request (secrets are masked)
 	if h.cfg.DebugRequests {
 		debugJSON, _ := json.MarshalIndent(anthropicReq, "", "  ")
-		log.Printf("[CLASP DEBUG] Incoming Anthropic request:\n%s", string(debugJSON))
+		// Mask any secrets that might be in the request content
+		maskedJSON := secrets.MaskJSONSecrets(debugJSON)
+		log.Printf("[CLASP DEBUG] Incoming Anthropic request:\n%s", string(maskedJSON))
 	}
 
 	// Check cache for non-streaming requests
@@ -332,10 +335,12 @@ func (h *Handler) HandleMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Debug logging for outgoing request
+	// Debug logging for outgoing request (secrets are masked)
 	if h.cfg.DebugRequests {
 		debugJSON, _ := json.MarshalIndent(openAIReq, "", "  ")
-		log.Printf("[CLASP DEBUG] Outgoing OpenAI request:\n%s", string(debugJSON))
+		// Mask any secrets that might be in the request content
+		maskedJSON := secrets.MaskJSONSecrets(debugJSON)
+		log.Printf("[CLASP DEBUG] Outgoing OpenAI request:\n%s", string(maskedJSON))
 	}
 
 	// Execute request with retry logic
@@ -390,10 +395,12 @@ func (h *Handler) HandleMessages(w http.ResponseWriter, r *http.Request) {
 			h.circuitBreaker.RecordFailure()
 		}
 		body, _ := io.ReadAll(resp.Body)
-		log.Printf("[CLASP] Upstream error (%d): %s", resp.StatusCode, string(body))
+		// Mask any secrets in error response before logging
+		maskedBody := secrets.MaskAllSecrets(string(body))
+		log.Printf("[CLASP] Upstream error (%d): %s", resp.StatusCode, maskedBody)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(resp.StatusCode)
-		w.Write(body)
+		w.Write(body) // Send original response to client
 		return
 	}
 
@@ -431,9 +438,10 @@ func (h *Handler) handlePassthroughRequest(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	// Debug logging for passthrough request
+	// Debug logging for passthrough request (secrets are masked)
 	if h.cfg.DebugRequests {
-		log.Printf("[CLASP DEBUG] Passthrough to Anthropic API:\n%s", string(reqBody))
+		maskedJSON := secrets.MaskJSONSecrets(reqBody)
+		log.Printf("[CLASP DEBUG] Passthrough to Anthropic API:\n%s", string(maskedJSON))
 	}
 
 	// Execute request with retry logic
@@ -456,10 +464,12 @@ func (h *Handler) handlePassthroughRequest(w http.ResponseWriter, r *http.Reques
 			h.circuitBreaker.RecordFailure()
 		}
 		body, _ := io.ReadAll(resp.Body)
-		log.Printf("[CLASP] Anthropic API error (%d): %s", resp.StatusCode, string(body))
+		// Mask any secrets in error response before logging
+		maskedBody := secrets.MaskAllSecrets(string(body))
+		log.Printf("[CLASP] Anthropic API error (%d): %s", resp.StatusCode, maskedBody)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(resp.StatusCode)
-		w.Write(body)
+		w.Write(body) // Send original response to client
 		return
 	}
 
@@ -527,9 +537,10 @@ func (h *Handler) handlePassthroughNonStreaming(w http.ResponseWriter, resp *htt
 		return
 	}
 
-	// Debug logging
+	// Debug logging (secrets are masked)
 	if h.cfg.DebugResponses {
-		log.Printf("[CLASP DEBUG] Passthrough response:\n%s", string(body))
+		maskedBody := secrets.MaskJSONSecrets(body)
+		log.Printf("[CLASP DEBUG] Passthrough response:\n%s", string(maskedBody))
 	}
 
 	// Parse response for caching and cost tracking
@@ -695,9 +706,10 @@ func (h *Handler) handleNonStreamingResponse(w http.ResponseWriter, resp *http.R
 		return
 	}
 
-	// Debug logging for raw response
+	// Debug logging for raw response (secrets are masked)
 	if h.cfg.DebugResponses {
-		log.Printf("[CLASP DEBUG] Raw OpenAI response:\n%s", string(body))
+		maskedBody := secrets.MaskJSONSecrets(body)
+		log.Printf("[CLASP DEBUG] Raw OpenAI response:\n%s", string(maskedBody))
 	}
 
 	// Parse OpenAI response
@@ -768,10 +780,11 @@ func (h *Handler) handleNonStreamingResponse(w http.ResponseWriter, resp *http.R
 		}
 	}
 
-	// Debug logging for Anthropic response
+	// Debug logging for Anthropic response (secrets are masked)
 	if h.cfg.DebugResponses {
 		debugJSON, _ := json.MarshalIndent(anthropicResp, "", "  ")
-		log.Printf("[CLASP DEBUG] Transformed Anthropic response:\n%s", string(debugJSON))
+		maskedJSON := secrets.MaskJSONSecrets(debugJSON)
+		log.Printf("[CLASP DEBUG] Transformed Anthropic response:\n%s", string(maskedJSON))
 	}
 
 	// Track costs
@@ -1169,7 +1182,7 @@ func (h *Handler) HandleRoot(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	response := map[string]interface{}{
 		"name":     "CLASP",
-		"version":  "0.16.12",
+		"version":  "0.16.14",
 		"provider": h.provider.Name(),
 		"status":   "running",
 		"endpoints": map[string]string{

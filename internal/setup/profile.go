@@ -9,6 +9,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/jedarden/clasp/internal/secrets"
 )
 
 // Profile represents a saved CLASP configuration profile.
@@ -519,8 +521,8 @@ func FormatProfileDetails(profile *Profile) string {
 	if profile.APIKeyEnv != "" {
 		sb.WriteString(fmt.Sprintf("API Key:     ${%s}\n", profile.APIKeyEnv))
 	} else if profile.APIKey != "" {
-		// Mask the API key
-		masked := maskAPIKey(profile.APIKey)
+		// Mask the API key using centralized secrets package
+		masked := secrets.MaskAPIKey(profile.APIKey)
 		sb.WriteString(fmt.Sprintf("API Key:     %s\n", masked))
 	}
 
@@ -571,9 +573,7 @@ func FormatProfileDetails(profile *Profile) string {
 }
 
 // maskAPIKey masks an API key for display.
+// Deprecated: Use secrets.MaskAPIKey instead. This function is kept for backwards compatibility.
 func maskAPIKey(key string) string {
-	if len(key) <= 8 {
-		return "***"
-	}
-	return key[:4] + "..." + key[len(key)-4:]
+	return secrets.MaskAPIKey(key)
 }
