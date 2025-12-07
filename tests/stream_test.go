@@ -318,6 +318,73 @@ data: [DONE]
 	}
 }
 
+// TestResponsesStreamEvent_UnmarshalJSON tests the custom unmarshaler for handling
+// both string and object delta formats in OpenAI Responses API events.
+func TestResponsesStreamEvent_UnmarshalJSON(t *testing.T) {
+	tests := []struct {
+		name          string
+		jsonData      string
+		wantDeltaText string
+		wantDeltaObj  bool
+		wantDeltaType string
+	}{
+		{
+			name:          "output_text.delta with string delta",
+			jsonData:      `{"type":"response.output_text.delta","delta":"Hello, world!"}`,
+			wantDeltaText: "Hello, world!",
+			wantDeltaObj:  false,
+		},
+		{
+			name:          "content_part.delta with object delta",
+			jsonData:      `{"type":"response.content_part.delta","delta":{"type":"text_delta","text":"Hello"}}`,
+			wantDeltaText: "",
+			wantDeltaObj:  true,
+			wantDeltaType: "text_delta",
+		},
+		{
+			name:          "event without delta",
+			jsonData:      `{"type":"response.created","response":{"id":"resp_123"}}`,
+			wantDeltaText: "",
+			wantDeltaObj:  false,
+		},
+		{
+			name:          "refusal.delta with string delta",
+			jsonData:      `{"type":"response.refusal.delta","delta":"I cannot assist with that."}`,
+			wantDeltaText: "I cannot assist with that.",
+			wantDeltaObj:  false,
+		},
+		{
+			name:          "reasoning.delta with string delta",
+			jsonData:      `{"type":"response.reasoning_text.delta","delta":"Let me think..."}`,
+			wantDeltaText: "Let me think...",
+			wantDeltaObj:  false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var event models.ResponsesStreamEvent
+			err := json.Unmarshal([]byte(tt.jsonData), &event)
+			if err != nil {
+				t.Fatalf("UnmarshalJSON failed: %v", err)
+			}
+
+			if event.DeltaText != tt.wantDeltaText {
+				t.Errorf("DeltaText = %q, want %q", event.DeltaText, tt.wantDeltaText)
+			}
+
+			hasDeltaObj := event.Delta != nil
+			if hasDeltaObj != tt.wantDeltaObj {
+				t.Errorf("Delta object present = %v, want %v", hasDeltaObj, tt.wantDeltaObj)
+			}
+
+			if tt.wantDeltaObj && event.Delta != nil && event.Delta.Type != tt.wantDeltaType {
+				t.Errorf("Delta.Type = %q, want %q", event.Delta.Type, tt.wantDeltaType)
+			}
+		})
+	}
+}
+
 func BenchmarkStreamProcessor(b *testing.B) {
 	streamData := `data: {"id":"chatcmpl-123","object":"chat.completion.chunk","created":1234567890,"model":"gpt-4o","choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}]}
 

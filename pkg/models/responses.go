@@ -1,6 +1,11 @@
 // Package models defines shared types for the CLASP proxy.
 package models
 
+import (
+	"bytes"
+	"encoding/json"
+)
+
 // OpenAI Responses API Types
 // See: https://platform.openai.com/docs/api-reference/responses
 
@@ -167,12 +172,55 @@ type ResponsesStreamEvent struct {
 	ItemID         string `json:"item_id,omitempty"`
 	OutputIndex    int    `json:"output_index,omitempty"`
 	ContentIndex   int    `json:"content_index,omitempty"`
-	DeltaText      string `json:"delta,omitempty"`    // Direct delta text for output_text.delta
+	DeltaText      string `json:"-"` // Populated from delta field after checking type (not a direct JSON field)
 	Text           string `json:"text,omitempty"`     // Complete text for done events
 	SequenceNumber int    `json:"sequence_number,omitempty"`
 
 	// Part field for content_part events
 	Part *ResponsesOutputContentPart `json:"part,omitempty"`
+}
+
+// UnmarshalJSON implements custom JSON unmarshaling to handle the polymorphic delta field.
+// OpenAI's Responses API uses "delta" as both an object (for content_part.delta) and
+// a string (for output_text.delta, refusal.delta, etc.).
+func (e *ResponsesStreamEvent) UnmarshalJSON(data []byte) error {
+	// Define an alias to avoid infinite recursion
+	type Alias ResponsesStreamEvent
+
+	// First, try to unmarshal with delta as an object
+	aux := &struct {
+		*Alias
+		RawDelta json.RawMessage `json:"delta,omitempty"`
+	}{
+		Alias: (*Alias)(e),
+	}
+
+	if err := json.Unmarshal(data, aux); err != nil {
+		return err
+	}
+
+	// If we have a raw delta field, determine its type
+	if len(aux.RawDelta) > 0 {
+		// Check if delta is a string (starts with ")
+		trimmed := bytes.TrimSpace(aux.RawDelta)
+		if len(trimmed) > 0 && trimmed[0] == '"' {
+			// Delta is a string
+			var deltaStr string
+			if err := json.Unmarshal(aux.RawDelta, &deltaStr); err != nil {
+				return err
+			}
+			e.DeltaText = deltaStr
+		} else if len(trimmed) > 0 && trimmed[0] == '{' {
+			// Delta is an object
+			var deltaObj ResponsesDelta
+			if err := json.Unmarshal(aux.RawDelta, &deltaObj); err != nil {
+				return err
+			}
+			e.Delta = &deltaObj
+		}
+	}
+
+	return nil
 }
 
 // ResponsesDelta represents incremental content in streaming.
