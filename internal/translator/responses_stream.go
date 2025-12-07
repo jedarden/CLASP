@@ -23,6 +23,10 @@ type ResponsesStreamProcessor struct {
 	targetModel  string
 	responseID   string // Tracks the Responses API response ID
 
+	// Thinking/reasoning tracking
+	thinkingStarted    bool
+	thinkingBlockIndex int
+
 	// Content tracking
 	textStarted    bool
 	textBlockIndex int
@@ -129,29 +133,66 @@ func (sp *ResponsesStreamProcessor) processEvent(event *models.ResponsesStreamEv
 	defer sp.mu.Unlock()
 
 	switch event.Type {
+	// Response lifecycle events
 	case models.EventResponseCreated:
 		return sp.handleResponseCreated(event)
+	case models.EventResponseQueued, models.EventResponseInProgress:
+		// Informational events, no action needed
+		return nil
+	case models.EventResponseCompleted:
+		return sp.handleResponseCompleted(event)
+	case models.EventResponseFailed:
+		return sp.handleResponseFailed(event)
+	case models.EventResponseIncomplete:
+		return sp.handleResponseIncomplete(event)
 
+	// Output item events
 	case models.EventOutputItemAdded:
 		return sp.handleOutputItemAdded(event)
-
-	case models.EventContentPartDelta:
-		return sp.handleContentPartDelta(event)
-
-	case models.EventContentPartDone:
-		return sp.handleContentPartDone(event)
-
-	case models.EventFunctionCallArgs:
-		return sp.handleFunctionCallDelta(event)
-
 	case models.EventOutputItemDone:
 		return sp.handleOutputItemDone(event)
 
-	case models.EventResponseCompleted:
-		return sp.handleResponseCompleted(event)
+	// Content part events (legacy format)
+	case models.EventContentPartDelta:
+		return sp.handleContentPartDelta(event)
+	case models.EventContentPartDone:
+		return sp.handleContentPartDone(event)
+	case models.EventContentPartAdded:
+		// Content part initialization, handled by output_item.added
+		return nil
 
-	case models.EventResponseFailed:
-		return sp.handleResponseFailed(event)
+	// Primary text streaming events (newer format)
+	case models.EventOutputTextDelta:
+		return sp.handleOutputTextDelta(event)
+	case models.EventOutputTextDone:
+		// Final text, but we've already streamed the deltas
+		return nil
+
+	// Refusal events
+	case models.EventRefusalDelta:
+		return sp.handleRefusalDelta(event)
+	case models.EventRefusalDone:
+		return nil
+
+	// Reasoning events
+	case models.EventReasoningTextDelta, models.EventReasoningSummaryTextDelta:
+		return sp.handleReasoningDelta(event)
+	case models.EventReasoningTextDone, models.EventReasoningSummaryTextDone:
+		return nil
+	case models.EventReasoningSummaryPartAdded, models.EventReasoningSummaryPartDone:
+		return nil
+
+	// Function call events
+	case models.EventFunctionCallArgs:
+		return sp.handleFunctionCallDelta(event)
+	case models.EventFunctionCallDone:
+		// Function call complete, handled by output_item.done
+		return nil
+
+	// Rate limit event
+	case models.EventRateLimitsUpdated:
+		// Informational, no action needed
+		return nil
 	}
 
 	return nil
@@ -266,6 +307,23 @@ func (sp *ResponsesStreamProcessor) handleTextDelta(text string) error {
 		return nil
 	}
 
+	// Emit message_start if not already done
+	if sp.state == StateIdle {
+		if err := sp.emitMessageStart(); err != nil {
+			return err
+		}
+		sp.state = StateMessageStarted
+	}
+
+	// Close thinking block if transitioning from thinking to text
+	if sp.thinkingStarted && sp.state == StateThinkingContent {
+		if err := sp.emitContentBlockStop(sp.thinkingBlockIndex); err != nil {
+			return err
+		}
+		// Adjust text block index to follow thinking block
+		sp.textBlockIndex = sp.thinkingBlockIndex + 1
+	}
+
 	// Start text block if not started
 	if !sp.textStarted {
 		if err := sp.emitContentBlockStart(sp.textBlockIndex, "text", "", ""); err != nil {
@@ -341,13 +399,21 @@ func (sp *ResponsesStreamProcessor) handleResponseCompleted(event *models.Respon
 		sp.usage = event.Response.Usage
 	}
 
-	// Close any open blocks
+	// Close thinking block if still open
+	if sp.thinkingStarted && sp.state == StateThinkingContent {
+		if err := sp.emitContentBlockStop(sp.thinkingBlockIndex); err != nil {
+			return err
+		}
+	}
+
+	// Close text block if open
 	if sp.textStarted && sp.state == StateTextContent {
 		if err := sp.emitContentBlockStop(sp.textBlockIndex); err != nil {
 			return err
 		}
 	}
 
+	// Close any open function call blocks
 	for _, fcState := range sp.activeFuncCalls {
 		if fcState.started && !fcState.closed {
 			if err := sp.emitContentBlockStop(fcState.blockIndex); err != nil {
@@ -379,13 +445,142 @@ func (sp *ResponsesStreamProcessor) handleResponseFailed(event *models.Responses
 	return sp.emitMessageDelta("end_turn")
 }
 
-// calculateNextBlockIndex calculates the next content block index.
-func (sp *ResponsesStreamProcessor) calculateNextBlockIndex() int {
-	index := len(sp.activeFuncCalls)
-	if sp.textStarted {
-		index = sp.textBlockIndex + 1 + len(sp.activeFuncCalls)
+// handleResponseIncomplete handles the response.incomplete event.
+// This occurs when the response is cut short (max tokens, content filter, etc.)
+func (sp *ResponsesStreamProcessor) handleResponseIncomplete(event *models.ResponsesStreamEvent) error {
+	// Close any open blocks before emitting the incomplete status
+	if sp.textStarted && sp.state == StateTextContent {
+		if err := sp.emitContentBlockStop(sp.textBlockIndex); err != nil {
+			return err
+		}
 	}
-	return index
+
+	for _, fcState := range sp.activeFuncCalls {
+		if fcState.started && !fcState.closed {
+			if err := sp.emitContentBlockStop(fcState.blockIndex); err != nil {
+				return err
+			}
+			fcState.closed = true
+		}
+	}
+
+	// Use max_tokens as the stop reason for incomplete responses
+	return sp.emitMessageDelta("max_tokens")
+}
+
+// handleOutputTextDelta handles response.output_text.delta events.
+// This is the primary text streaming event in the Responses API.
+func (sp *ResponsesStreamProcessor) handleOutputTextDelta(event *models.ResponsesStreamEvent) error {
+	// The delta text can come from different fields depending on API version
+	var text string
+	if event.DeltaText != "" {
+		text = event.DeltaText
+	} else if event.Delta != nil && event.Delta.Text != "" {
+		text = event.Delta.Text
+	}
+
+	if text == "" {
+		return nil
+	}
+
+	return sp.handleTextDelta(text)
+}
+
+// handleRefusalDelta handles response.refusal.delta events.
+// Refusals are streamed as text with a prefix indicator.
+func (sp *ResponsesStreamProcessor) handleRefusalDelta(event *models.ResponsesStreamEvent) error {
+	var refusalText string
+	if event.DeltaText != "" {
+		refusalText = event.DeltaText
+	} else if event.Delta != nil && event.Delta.Refusal != "" {
+		refusalText = event.Delta.Refusal
+	}
+
+	if refusalText == "" {
+		return nil
+	}
+
+	// Prefix refusal text if this is the start
+	if !sp.textStarted {
+		refusalText = "[Refused] " + refusalText
+	}
+
+	return sp.handleTextDelta(refusalText)
+}
+
+// handleReasoningDelta handles reasoning_text.delta and reasoning_summary_text.delta events.
+// These are emitted as thinking blocks in the Anthropic format.
+func (sp *ResponsesStreamProcessor) handleReasoningDelta(event *models.ResponsesStreamEvent) error {
+	var reasoningText string
+	if event.DeltaText != "" {
+		reasoningText = event.DeltaText
+	} else if event.Delta != nil && event.Delta.Text != "" {
+		reasoningText = event.Delta.Text
+	}
+
+	if reasoningText == "" {
+		return nil
+	}
+
+	// Emit message_start if not already done
+	if sp.state == StateIdle {
+		if err := sp.emitMessageStart(); err != nil {
+			return err
+		}
+		sp.state = StateMessageStarted
+	}
+
+	// Start thinking block if not started
+	if !sp.thinkingStarted {
+		if err := sp.emitThinkingBlockStart(); err != nil {
+			return err
+		}
+		sp.thinkingStarted = true
+		sp.state = StateThinkingContent
+	}
+
+	// Emit thinking delta
+	return sp.emitThinkingBlockDelta(reasoningText)
+}
+
+// emitThinkingBlockStart emits a content_block_start event for thinking.
+func (sp *ResponsesStreamProcessor) emitThinkingBlockStart() error {
+	event := models.ContentBlockStartEvent{
+		Type:  models.EventContentBlockStart,
+		Index: sp.thinkingBlockIndex,
+		ContentBlock: models.ContentBlockStartData{
+			Type: "thinking",
+		},
+	}
+
+	return sp.writeEvent(models.EventContentBlockStart, event)
+}
+
+// emitThinkingBlockDelta emits a content_block_delta event for thinking.
+func (sp *ResponsesStreamProcessor) emitThinkingBlockDelta(text string) error {
+	event := models.ContentBlockDeltaEvent{
+		Type:  models.EventContentBlockDelta,
+		Index: sp.thinkingBlockIndex,
+		Delta: models.DeltaData{
+			Type:     "thinking_delta",
+			Thinking: text,
+		},
+	}
+
+	return sp.writeEvent(models.EventContentBlockDelta, event)
+}
+
+// calculateNextBlockIndex calculates the next content block index.
+// This accounts for thinking blocks at index 0, text blocks following, then tool calls.
+func (sp *ResponsesStreamProcessor) calculateNextBlockIndex() int {
+	baseIndex := 0
+	if sp.thinkingStarted {
+		baseIndex = 1 // Thinking block takes index 0
+	}
+	if sp.textStarted {
+		baseIndex = sp.textBlockIndex + 1
+	}
+	return baseIndex + len(sp.activeFuncCalls)
 }
 
 // finalize completes the stream processing.

@@ -153,13 +153,26 @@ type ResponsesError struct {
 }
 
 // ResponsesStreamEvent represents an SSE event from Responses API streaming.
+// This struct accommodates multiple event formats used by the Responses API.
 type ResponsesStreamEvent struct {
-	Type      string           `json:"type"` // "response.created", "response.output_item.added", etc.
-	Response  *ResponsesResponse `json:"response,omitempty"`
-	Item      *ResponsesItem     `json:"item,omitempty"`
-	Delta     *ResponsesDelta    `json:"delta,omitempty"`
-	Error     *ResponsesError    `json:"error,omitempty"`
-	Index     int                `json:"index,omitempty"`
+	Type           string             `json:"type"` // "response.created", "response.output_item.added", etc.
+	Response       *ResponsesResponse `json:"response,omitempty"`
+	Item           *ResponsesItem     `json:"item,omitempty"`
+	Delta          *ResponsesDelta    `json:"delta,omitempty"`
+	Error          *ResponsesError    `json:"error,omitempty"`
+	Index          int                `json:"index,omitempty"`
+
+	// Extended fields for output_text.delta and similar events
+	ResponseID     string `json:"response_id,omitempty"`
+	ItemID         string `json:"item_id,omitempty"`
+	OutputIndex    int    `json:"output_index,omitempty"`
+	ContentIndex   int    `json:"content_index,omitempty"`
+	DeltaText      string `json:"delta,omitempty"`    // Direct delta text for output_text.delta
+	Text           string `json:"text,omitempty"`     // Complete text for done events
+	SequenceNumber int    `json:"sequence_number,omitempty"`
+
+	// Part field for content_part events
+	Part *ResponsesOutputContentPart `json:"part,omitempty"`
 }
 
 // ResponsesDelta represents incremental content in streaming.
@@ -168,30 +181,65 @@ type ResponsesDelta struct {
 	Text    string `json:"text,omitempty"`
 	Refusal string `json:"refusal,omitempty"`
 	CallID  string `json:"call_id,omitempty"`
-	Delta   string `json:"delta,omitempty"` // For function call arguments
+	Delta   string `json:"delta,omitempty"` // For function call arguments or generic delta content
+}
+
+// ResponsesStreamEventExtended represents extended stream event fields for newer events.
+// Some events like response.output_text.delta have different structures.
+type ResponsesStreamEventExtended struct {
+	Type           string             `json:"type"`
+	ResponseID     string             `json:"response_id,omitempty"`
+	ItemID         string             `json:"item_id,omitempty"`
+	OutputIndex    int                `json:"output_index,omitempty"`
+	ContentIndex   int                `json:"content_index,omitempty"`
+	Delta          string             `json:"delta,omitempty"`          // Direct delta text for output_text.delta
+	Text           string             `json:"text,omitempty"`           // Complete text for done events
+	SequenceNumber int                `json:"sequence_number,omitempty"`
+	Response       *ResponsesResponse `json:"response,omitempty"`
+	Item           *ResponsesItem     `json:"item,omitempty"`
+	Error          *ResponsesError    `json:"error,omitempty"`
 }
 
 // Responses API SSE Event Types
 const (
 	// Response lifecycle events
-	EventResponseCreated   = "response.created"
+	EventResponseCreated    = "response.created"
 	EventResponseInProgress = "response.in_progress"
-	EventResponseCompleted = "response.completed"
-	EventResponseFailed    = "response.failed"
-	EventResponseCancelled = "response.cancelled"
+	EventResponseCompleted  = "response.completed"
+	EventResponseFailed     = "response.failed"
+	EventResponseCancelled  = "response.cancelled"
+	EventResponseIncomplete = "response.incomplete"
+	EventResponseQueued     = "response.queued"
 
 	// Output item events
-	EventOutputItemAdded   = "response.output_item.added"
-	EventOutputItemDone    = "response.output_item.done"
+	EventOutputItemAdded = "response.output_item.added"
+	EventOutputItemDone  = "response.output_item.done"
 
 	// Content events
-	EventContentPartAdded  = "response.content_part.added"
-	EventContentPartDelta  = "response.content_part.delta"
-	EventContentPartDone   = "response.content_part.done"
+	EventContentPartAdded = "response.content_part.added"
+	EventContentPartDelta = "response.content_part.delta"
+	EventContentPartDone  = "response.content_part.done"
+
+	// Text output events (primary text streaming)
+	EventOutputTextDelta          = "response.output_text.delta"
+	EventOutputTextDone           = "response.output_text.done"
+	EventOutputTextAnnotationAdd  = "response.output_text.annotation.added"
+
+	// Refusal events
+	EventRefusalDelta = "response.refusal.delta"
+	EventRefusalDone  = "response.refusal.done"
+
+	// Reasoning events
+	EventReasoningTextDelta        = "response.reasoning_text.delta"
+	EventReasoningTextDone         = "response.reasoning_text.done"
+	EventReasoningSummaryPartAdded = "response.reasoning_summary_part.added"
+	EventReasoningSummaryPartDone  = "response.reasoning_summary_part.done"
+	EventReasoningSummaryTextDelta = "response.reasoning_summary_text.delta"
+	EventReasoningSummaryTextDone  = "response.reasoning_summary_text.done"
 
 	// Function call events
-	EventFunctionCallArgs  = "response.function_call_arguments.delta"
-	EventFunctionCallDone  = "response.function_call_arguments.done"
+	EventFunctionCallArgs = "response.function_call_arguments.delta"
+	EventFunctionCallDone = "response.function_call_arguments.done"
 
 	// Rate limit event
 	EventRateLimitsUpdated = "rate_limits.updated"

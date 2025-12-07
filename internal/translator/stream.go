@@ -22,6 +22,7 @@ const (
 	StateTextContent
 	StateToolCall
 	StateDone
+	StateThinkingContent // Reasoning/thinking content for O1/O3 models
 )
 
 // UsageCallback is called when streaming completes with usage information.
