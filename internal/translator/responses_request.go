@@ -150,6 +150,32 @@ func contentPartsToResponsesInterface(parts []models.ResponsesContentPart) inter
 	return result
 }
 
+// translateToolCallID converts tool call IDs between Anthropic/Chat Completions format and Responses API format.
+// Anthropic/Chat Completions uses "call_xxx" prefix, while Responses API requires "fc_xxx" prefix.
+func translateToolCallID(id string) string {
+	if id == "" {
+		return id
+	}
+
+	// Convert Chat Completions "call_xxx" → Responses API "fc_xxx"
+	if strings.HasPrefix(id, "call_") {
+		return "fc_" + strings.TrimPrefix(id, "call_")
+	}
+
+	// Convert Anthropic "toolu_xxx" → Responses API "fc_xxx"
+	if strings.HasPrefix(id, "toolu_") {
+		return "fc_" + strings.TrimPrefix(id, "toolu_")
+	}
+
+	// Already in Responses API format
+	if strings.HasPrefix(id, "fc_") {
+		return id
+	}
+
+	// Generate ID with correct prefix for any other format
+	return "fc_" + id
+}
+
 // extractToolResultsForResponses extracts tool results and converts to function_call_output items.
 func extractToolResultsForResponses(content []models.ContentBlock) []models.ResponsesInput {
 	var results []models.ResponsesInput
@@ -157,9 +183,10 @@ func extractToolResultsForResponses(content []models.ContentBlock) []models.Resp
 	for _, block := range content {
 		if block.Type == "tool_result" {
 			// In Responses API, tool results are represented as function_call_output items
+			// The ID must use "fc_" prefix for Responses API compatibility
 			results = append(results, models.ResponsesInput{
 				Type:   "function_call_output",
-				CallID: block.ToolUseID,
+				CallID: translateToolCallID(block.ToolUseID),
 				Output: block.Content,
 			})
 		}
@@ -188,11 +215,13 @@ func transformAssistantMessageToInput(content []models.ContentBlock) []models.Re
 				textParts = nil
 			}
 			// Convert tool_use to function_call item
+			// IMPORTANT: The ID must use "fc_" prefix for Responses API compatibility
 			inputJSON, _ := json.Marshal(block.Input)
+			translatedID := translateToolCallID(block.ID)
 			inputs = append(inputs, models.ResponsesInput{
 				Type:      "function_call",
-				ID:        block.ID,
-				CallID:    block.ID,
+				ID:        translatedID,
+				CallID:    translatedID,
 				Name:      block.Name,
 				Arguments: string(inputJSON),
 			})

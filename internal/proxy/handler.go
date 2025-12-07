@@ -1001,9 +1001,11 @@ func (h *Handler) handleResponsesNonStreamingResponse(w http.ResponseWriter, res
 			if err := json.Unmarshal([]byte(item.Arguments), &input); err != nil {
 				input = map[string]interface{}{}
 			}
+			// Convert Responses API "fc_xxx" ID back to Anthropic "call_xxx" format
+			anthropicID := translator.TranslateResponsesIDToAnthropic(item.CallID)
 			anthropicResp.Content = append(anthropicResp.Content, models.AnthropicContentBlock{
 				Type:  "tool_use",
-				ID:    item.CallID,
+				ID:    anthropicID,
 				Name:  item.Name,
 				Input: input,
 			})
@@ -1431,7 +1433,7 @@ func (h *Handler) HandleRoot(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	response := map[string]interface{}{
 		"name":     "CLASP",
-		"version":  "0.24.0",
+		"version":  "0.27.0",
 		"provider": h.provider.Name(),
 		"status":   "running",
 		"endpoints": map[string]string{

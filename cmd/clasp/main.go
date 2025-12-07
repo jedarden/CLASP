@@ -24,7 +24,7 @@ import (
 )
 
 var (
-	version = "v0.26.0"
+	version = "v0.27.0"
 )
 
 func main() {
@@ -272,6 +272,12 @@ func main() {
 		cfg.Debug = true
 		cfg.DebugRequests = true
 		cfg.DebugResponses = true
+		// Enable file-based debug logging to ~/.clasp/logs/debug.log
+		if err := logging.EnableDebugLogging(); err != nil {
+			log.Printf("[CLASP] Warning: Could not enable debug file logging: %v", err)
+		} else {
+			log.Printf("[CLASP] Debug logging enabled: %s", logging.GetDebugLogPath())
+		}
 	}
 	if *rateLimit {
 		cfg.RateLimitEnabled = true
@@ -904,18 +910,39 @@ Profiles are stored in ~/.clasp/profiles/
 // handleLogsCommand handles the logs subcommand.
 func handleLogsCommand(args []string) {
 	logPath := logging.GetLogPath()
+	debugLogPath := logging.GetDebugLogPath()
 
 	if len(args) > 0 {
 		switch args[0] {
 		case "--path", "-p":
-			fmt.Println(logPath)
+			fmt.Printf("Main log:  %s\n", logPath)
+			fmt.Printf("Debug log: %s\n", debugLogPath)
 			return
 		case "--clear", "-c":
+			// Clear main log
 			if err := os.Remove(logPath); err != nil && !os.IsNotExist(err) {
-				fmt.Printf("Error clearing logs: %v\n", err)
-				os.Exit(1)
+				fmt.Printf("Error clearing main logs: %v\n", err)
+			} else {
+				fmt.Println("Main logs cleared.")
 			}
-			fmt.Println("Logs cleared.")
+			// Clear debug log
+			if err := os.Remove(debugLogPath); err != nil && !os.IsNotExist(err) {
+				fmt.Printf("Error clearing debug logs: %v\n", err)
+			} else {
+				fmt.Println("Debug logs cleared.")
+			}
+			return
+		case "--debug", "-d":
+			// Show debug logs
+			showLogFile(debugLogPath, "Debug")
+			return
+		case "--follow", "-f":
+			// Follow main log file
+			tailLogFile(logPath, "Main")
+			return
+		case "--follow-debug", "-fd":
+			// Follow debug log file
+			tailLogFile(debugLogPath, "Debug")
 			return
 		case "--help", "-h":
 			fmt.Print(`
@@ -924,35 +951,53 @@ CLASP Logs
 Usage: clasp logs [options]
 
 Options:
-  --path, -p      Show log file path
-  --clear, -c     Clear the log file
-  --help, -h      Show this help
+  --path, -p           Show log file paths
+  --clear, -c          Clear all log files
+  --debug, -d          Show debug log (request/response details)
+  --follow, -f         Follow main log file (like tail -f)
+  --follow-debug, -fd  Follow debug log file (like tail -f)
+  --help, -h           Show this help
 
-By default, shows the last 50 lines of the log file.
+By default, shows the last 50 lines of the main log file.
 
-Log Location: ~/.clasp/logs/clasp.log
+Log Locations:
+  Main log:  ~/.clasp/logs/clasp.log
+  Debug log: ~/.clasp/logs/debug.log
 
 When CLASP runs in Claude Code mode (the default), all proxy logs
-are written to this file instead of stdout to prevent TUI corruption.
+are written to these files instead of stdout to prevent TUI corruption.
+
+Debug logging captures full request/response payloads. Enable it with:
+  clasp --debug
 `)
 			return
 		}
 	}
 
+	// Default: show main log file
+	showLogFile(logPath, "Main")
+}
+
+// showLogFile displays the last 50 lines of a log file.
+func showLogFile(logPath string, logType string) {
 	// Check if log file exists
 	if _, err := os.Stat(logPath); os.IsNotExist(err) {
-		fmt.Println("No logs found yet.")
+		fmt.Printf("No %s logs found yet.\n", strings.ToLower(logType))
 		fmt.Printf("Log file location: %s\n", logPath)
 		fmt.Println("")
 		fmt.Println("Logs are created when CLASP runs in Claude Code mode.")
-		fmt.Println("Use 'clasp -proxy-only' to see logs in real-time on stdout.")
+		if logType == "Debug" {
+			fmt.Println("Enable debug logging with: clasp --debug")
+		} else {
+			fmt.Println("Use 'clasp -proxy-only' to see logs in real-time on stdout.")
+		}
 		return
 	}
 
 	// Read and display the last 50 lines
 	content, err := os.ReadFile(logPath)
 	if err != nil {
-		fmt.Printf("Error reading logs: %v\n", err)
+		fmt.Printf("Error reading %s logs: %v\n", strings.ToLower(logType), err)
 		os.Exit(1)
 	}
 
@@ -962,10 +1007,97 @@ are written to this file instead of stdout to prevent TUI corruption.
 		start = len(lines) - 50
 	}
 
-	fmt.Printf("=== CLASP Logs (%s) ===\n\n", logPath)
+	fmt.Printf("=== CLASP %s Logs (%s) ===\n\n", logType, logPath)
 	for _, line := range lines[start:] {
 		if line != "" {
 			fmt.Println(line)
+		}
+	}
+}
+
+// tailLogFile follows a log file and prints new content (like tail -f).
+func tailLogFile(logPath string, logType string) {
+	// Check if log file exists
+	if _, err := os.Stat(logPath); os.IsNotExist(err) {
+		fmt.Printf("No %s logs found yet. Waiting for log file to be created...\n", strings.ToLower(logType))
+		fmt.Printf("Log file location: %s\n", logPath)
+		fmt.Println("Press Ctrl+C to exit.")
+		fmt.Println("")
+	}
+
+	fmt.Printf("=== Following CLASP %s Logs (%s) ===\n", logType, logPath)
+	fmt.Println("Press Ctrl+C to exit.")
+	fmt.Println("")
+
+	// Setup signal handling for clean exit
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+
+	// Track file position
+	var lastPos int64 = 0
+	var lastSize int64 = 0
+
+	// If file exists, seek to end to only show new content
+	if info, err := os.Stat(logPath); err == nil {
+		lastPos = info.Size()
+		lastSize = info.Size()
+		// Show last 10 lines initially
+		if content, err := os.ReadFile(logPath); err == nil {
+			lines := strings.Split(string(content), "\n")
+			start := 0
+			if len(lines) > 10 {
+				start = len(lines) - 10
+			}
+			for _, line := range lines[start:] {
+				if line != "" {
+					fmt.Println(line)
+				}
+			}
+		}
+	}
+
+	// Poll for new content
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-sigChan:
+			fmt.Println("\nStopped following logs.")
+			return
+		case <-ticker.C:
+			info, err := os.Stat(logPath)
+			if err != nil {
+				continue // File doesn't exist yet
+			}
+
+			// File was truncated/rotated
+			if info.Size() < lastSize {
+				lastPos = 0
+				fmt.Println("--- Log file rotated ---")
+			}
+			lastSize = info.Size()
+
+			// No new content
+			if info.Size() <= lastPos {
+				continue
+			}
+
+			// Read new content
+			f, err := os.Open(logPath)
+			if err != nil {
+				continue
+			}
+
+			f.Seek(lastPos, 0)
+			buf := make([]byte, info.Size()-lastPos)
+			n, err := f.Read(buf)
+			f.Close()
+
+			if err == nil && n > 0 {
+				fmt.Print(string(buf[:n]))
+				lastPos += int64(n)
+			}
 		}
 	}
 }

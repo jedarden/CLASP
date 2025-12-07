@@ -2,6 +2,7 @@ package translator
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/jedarden/clasp/pkg/models"
@@ -483,6 +484,181 @@ func TestTransformRequestToResponses_ReasoningJSONStructure(t *testing.T) {
 
 	// Log the actual JSON for debugging
 	t.Logf("Generated JSON: %s", string(jsonData))
+}
+
+func TestTranslateToolCallID(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "Empty string",
+			input:    "",
+			expected: "",
+		},
+		{
+			name:     "Chat Completions call_ prefix",
+			input:    "call_abc123xyz",
+			expected: "fc_abc123xyz",
+		},
+		{
+			name:     "Anthropic toolu_ prefix",
+			input:    "toolu_01ABCDEF",
+			expected: "fc_01ABCDEF",
+		},
+		{
+			name:     "Already fc_ prefix - no change",
+			input:    "fc_existingid",
+			expected: "fc_existingid",
+		},
+		{
+			name:     "Other format - adds fc_ prefix",
+			input:    "custom123",
+			expected: "fc_custom123",
+		},
+		{
+			name:     "Complex call_ ID",
+			input:    "call_9dKc3kP5QeGf8AvBnCmD",
+			expected: "fc_9dKc3kP5QeGf8AvBnCmD",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := translateToolCallID(tt.input)
+			if result != tt.expected {
+				t.Errorf("translateToolCallID(%q) = %q, want %q", tt.input, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestTranslateResponsesIDToAnthropic(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "Empty string",
+			input:    "",
+			expected: "",
+		},
+		{
+			name:     "Responses API fc_ prefix",
+			input:    "fc_abc123xyz",
+			expected: "call_abc123xyz",
+		},
+		{
+			name:     "Already call_ prefix - no change",
+			input:    "call_existing",
+			expected: "call_existing",
+		},
+		{
+			name:     "Already toolu_ prefix - no change",
+			input:    "toolu_01ABC",
+			expected: "toolu_01ABC",
+		},
+		{
+			name:     "Other format - adds call_ prefix",
+			input:    "custom123",
+			expected: "call_custom123",
+		},
+		{
+			name:     "Complex fc_ ID",
+			input:    "fc_9dKc3kP5QeGf8AvBnCmD",
+			expected: "call_9dKc3kP5QeGf8AvBnCmD",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := TranslateResponsesIDToAnthropic(tt.input)
+			if result != tt.expected {
+				t.Errorf("TranslateResponsesIDToAnthropic(%q) = %q, want %q", tt.input, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestToolCallIDRoundTrip(t *testing.T) {
+	// Test that converting call_ -> fc_ -> call_ preserves the original ID suffix
+	tests := []struct {
+		name    string
+		input   string
+	}{
+		{"Standard call ID", "call_abc123"},
+		{"Numeric call ID", "call_12345"},
+		{"Long call ID", "call_9dKc3kP5QeGf8AvBnCmD"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Anthropic -> Responses API
+			responsesID := translateToolCallID(tt.input)
+			if !strings.HasPrefix(responsesID, "fc_") {
+				t.Errorf("translateToolCallID(%q) = %q, expected fc_ prefix", tt.input, responsesID)
+			}
+
+			// Responses API -> Anthropic
+			anthropicID := TranslateResponsesIDToAnthropic(responsesID)
+			if !strings.HasPrefix(anthropicID, "call_") {
+				t.Errorf("TranslateResponsesIDToAnthropic(%q) = %q, expected call_ prefix", responsesID, anthropicID)
+			}
+
+			// Verify the suffix is preserved
+			originalSuffix := strings.TrimPrefix(tt.input, "call_")
+			finalSuffix := strings.TrimPrefix(anthropicID, "call_")
+			if originalSuffix != finalSuffix {
+				t.Errorf("Round-trip suffix mismatch: original %q, final %q", originalSuffix, finalSuffix)
+			}
+		})
+	}
+}
+
+func TestTransformRequestToResponses_ToolResultIDTranslation(t *testing.T) {
+	// Test that tool results have their IDs translated for Responses API
+	req := &models.AnthropicRequest{
+		Model: "claude-3-5-sonnet-20241022",
+		Messages: []models.AnthropicMessage{
+			{
+				Role: "user",
+				Content: []interface{}{
+					map[string]interface{}{
+						"type":        "tool_result",
+						"tool_use_id": "call_abc123",  // Chat Completions format
+						"content":     "Result from tool",
+					},
+				},
+			},
+		},
+		MaxTokens: 1024,
+	}
+
+	result, err := TransformRequestToResponses(req, "gpt-5", "")
+	if err != nil {
+		t.Fatalf("TransformRequestToResponses failed: %v", err)
+	}
+
+	// Find the function_call_output item
+	var foundFCOutput bool
+	for _, input := range result.Input {
+		if input.Type == "function_call_output" {
+			foundFCOutput = true
+			// The ID should be translated to fc_ format
+			if !strings.HasPrefix(input.CallID, "fc_") {
+				t.Errorf("function_call_output CallID = %q, expected fc_ prefix for Responses API", input.CallID)
+			}
+			if input.CallID != "fc_abc123" {
+				t.Errorf("function_call_output CallID = %q, expected %q", input.CallID, "fc_abc123")
+			}
+		}
+	}
+
+	if !foundFCOutput {
+		t.Error("Expected to find function_call_output item in result")
+	}
 }
 
 func TestTransformRequestToResponses_ContentTypes(t *testing.T) {

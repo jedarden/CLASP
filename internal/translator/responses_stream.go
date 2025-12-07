@@ -193,8 +193,10 @@ func (sp *ResponsesStreamProcessor) handleOutputItemAdded(event *models.Response
 		// Will be handled by content deltas
 	case "function_call":
 		// Start tracking the function call
+		// Convert Responses API "fc_xxx" back to "call_xxx" for Anthropic format
+		anthropicID := TranslateResponsesIDToAnthropic(event.Item.CallID)
 		fcState := &funcCallState{
-			id:         event.Item.CallID,
+			id:         anthropicID,
 			name:       event.Item.Name,
 			blockIndex: sp.calculateNextBlockIndex(),
 		}
@@ -217,6 +219,28 @@ func (sp *ResponsesStreamProcessor) handleOutputItemAdded(event *models.Response
 	}
 
 	return nil
+}
+
+// TranslateResponsesIDToAnthropic converts Responses API function call IDs back to Anthropic format.
+// Responses API uses "fc_xxx" prefix, Anthropic/Chat Completions uses "call_xxx".
+// This function is exported for use by the proxy handler.
+func TranslateResponsesIDToAnthropic(id string) string {
+	if id == "" {
+		return id
+	}
+
+	// Convert Responses API "fc_xxx" → Anthropic "call_xxx"
+	if strings.HasPrefix(id, "fc_") {
+		return "call_" + strings.TrimPrefix(id, "fc_")
+	}
+
+	// Already in Anthropic/Chat Completions format
+	if strings.HasPrefix(id, "call_") || strings.HasPrefix(id, "toolu_") {
+		return id
+	}
+
+	// Add call_ prefix for any other format
+	return "call_" + id
 }
 
 // handleContentPartDelta handles the response.content_part.delta event.
