@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -25,7 +26,7 @@ import (
 )
 
 var (
-	version = "v0.33.0"
+	version = "v0.34.0"
 )
 
 func main() {
@@ -808,12 +809,53 @@ func handleProfileCommand(args []string) {
 
 // handleStatusCommand shows current CLASP status.
 func handleStatusCommand(args []string) {
-	// Check for verbose flag
+	// Check for flags
 	verbose := false
-	for _, arg := range args {
-		if arg == "-v" || arg == "--verbose" {
+	showAll := false
+	cleanup := false
+	var port int
+
+	for i, arg := range args {
+		switch arg {
+		case "-v", "--verbose":
 			verbose = true
+		case "-a", "--all":
+			showAll = true
+		case "--cleanup":
+			cleanup = true
+		case "-p", "--port":
+			if i+1 < len(args) {
+				if p, err := strconv.Atoi(args[i+1]); err == nil {
+					port = p
+				}
+			}
 		}
+	}
+
+	// Handle cleanup command
+	if cleanup {
+		cleaned, err := statusline.CleanupStaleInstances()
+		if err != nil {
+			fmt.Printf("Error cleaning up stale instances: %v\n", err)
+			os.Exit(1)
+		}
+		if cleaned > 0 {
+			fmt.Printf("Cleaned up %d stale status file(s)\n", cleaned)
+		} else {
+			fmt.Println("No stale instances to clean up")
+		}
+		return
+	}
+
+	// Handle --all flag to show all instances
+	if showAll {
+		instances, err := statusline.ListAllInstances()
+		if err != nil {
+			fmt.Printf("Error listing instances: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Print(statusline.FormatAllInstancesTable(instances))
+		return
 	}
 
 	pm := setup.NewProfileManager()
@@ -826,22 +868,47 @@ func handleStatusCommand(args []string) {
 	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 	// Check if proxy is running (from status file)
-	proxyStatus, err := statusline.ReadStatusFromFile()
-	if err == nil && proxyStatus != nil && proxyStatus.Running {
-		// Show running proxy status
-		fmt.Println("")
-		fmt.Println("🟢 Proxy Running")
-		fmt.Println(statusline.FormatStatusLine(proxyStatus, verbose))
+	var proxyStatus *statusline.Status
+	var err error
+	if port > 0 {
+		proxyStatus, err = statusline.ReadStatusFromPort(port)
+	} else {
+		proxyStatus, err = statusline.ReadStatusFromFile()
+	}
 
-		if verbose {
-			fmt.Println("")
-			fmt.Printf("  Version:    %s\n", proxyStatus.Version)
-			fmt.Printf("  Started:    %s\n", proxyStatus.StartTime.Format("2006-01-02 15:04:05"))
-			if proxyStatus.Fallback != "" {
-				fmt.Printf("  Fallback:   %s\n", proxyStatus.Fallback)
+	if err == nil && proxyStatus != nil && proxyStatus.Running {
+		// Verify the process is still running
+		isRunning := false
+		if proxyStatus.PID > 0 {
+			process, err := os.FindProcess(proxyStatus.PID)
+			if err == nil {
+				err = process.Signal(syscall.Signal(0))
+				isRunning = err == nil
 			}
 		}
-		fmt.Println("")
+
+		if isRunning {
+			// Show running proxy status
+			fmt.Println("")
+			fmt.Println("🟢 Proxy Running")
+			fmt.Println(statusline.FormatStatusLine(proxyStatus, verbose))
+
+			if verbose {
+				fmt.Println("")
+				fmt.Printf("  Version:    %s\n", proxyStatus.Version)
+				fmt.Printf("  PID:        %d\n", proxyStatus.PID)
+				fmt.Printf("  Started:    %s\n", proxyStatus.StartTime.Format("2006-01-02 15:04:05"))
+				if proxyStatus.Fallback != "" {
+					fmt.Printf("  Fallback:   %s\n", proxyStatus.Fallback)
+				}
+			}
+			fmt.Println("")
+		} else {
+			fmt.Println("")
+			fmt.Println("⚪ Proxy Not Running (stale status file)")
+			fmt.Println("  Run 'clasp status --cleanup' to clean up stale files")
+			fmt.Println("")
+		}
 	} else {
 		fmt.Println("")
 		fmt.Println("⚪ Proxy Not Running")
@@ -898,6 +965,9 @@ func handleStatusCommand(args []string) {
 	fmt.Println("  clasp profile create     Create new profile")
 	fmt.Println("  clasp use <name>         Switch profile")
 	fmt.Println("  clasp status -v          Show verbose status with metrics")
+	fmt.Println("  clasp status --all       Show all running CLASP instances")
+	fmt.Println("  clasp status -p <port>   Show status for specific port")
+	fmt.Println("  clasp status --cleanup   Remove stale status files")
 	fmt.Println("")
 }
 

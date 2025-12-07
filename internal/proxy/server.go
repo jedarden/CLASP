@@ -184,6 +184,9 @@ func (s *Server) Start() error {
 
 	// Update status line with initial status
 	if s.statusManager != nil {
+		// Set the port for per-instance status files
+		s.statusManager.SetPort(port)
+
 		// Configure status line on first run
 		if !s.statusManager.IsConfigured() {
 			if err := s.statusManager.Setup(); err != nil {
@@ -191,6 +194,11 @@ func (s *Server) Start() error {
 			} else {
 				log.Printf("[CLASP] Status line configured for Claude Code")
 			}
+		}
+
+		// Clean up stale status files from previous instances
+		if cleaned, err := statusline.CleanupStaleInstances(); err == nil && cleaned > 0 {
+			log.Printf("[CLASP] Cleaned up %d stale status file(s)", cleaned)
 		}
 
 		// Write initial status
