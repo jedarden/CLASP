@@ -40,6 +40,10 @@ type StreamProcessor struct {
 	textStarted    bool
 	textBlockIndex int
 
+	// Thinking/reasoning tracking (for O1/O3 models)
+	thinkingStarted    bool
+	thinkingBlockIndex int
+
 	// Tool call tracking
 	toolCallIndex   int
 	activeToolCalls map[int]*toolCallState
@@ -69,13 +73,14 @@ type toolCallState struct {
 // NewStreamProcessor creates a new stream processor.
 func NewStreamProcessor(writer io.Writer, messageID, targetModel string) *StreamProcessor {
 	return &StreamProcessor{
-		writer:          writer,
-		messageID:       messageID,
-		targetModel:     targetModel,
-		state:           StateIdle,
-		textBlockIndex:  0,
-		toolCallIndex:   0,
-		activeToolCalls: make(map[int]*toolCallState),
+		writer:             writer,
+		messageID:          messageID,
+		targetModel:        targetModel,
+		state:              StateIdle,
+		textBlockIndex:     0,
+		thinkingBlockIndex: -1, // Thinking comes before text if present
+		toolCallIndex:      0,
+		activeToolCalls:    make(map[int]*toolCallState),
 	}
 }
 
@@ -181,6 +186,14 @@ func (sp *StreamProcessor) processChunk(chunk *models.OpenAIStreamChunk) error {
 func (sp *StreamProcessor) processChoice(choice *models.StreamChoice) error {
 	delta := &choice.Delta
 
+	// Handle reasoning/thinking content first (for O1/O3 models)
+	// Thinking comes before regular text output
+	if delta.Reasoning != "" {
+		if err := sp.handleThinkingContent(delta.Reasoning); err != nil {
+			return err
+		}
+	}
+
 	// Handle text content
 	if delta.Content != "" {
 		if err := sp.handleTextContent(delta.Content); err != nil {
@@ -198,6 +211,25 @@ func (sp *StreamProcessor) processChoice(choice *models.StreamChoice) error {
 	}
 
 	return nil
+}
+
+// handleThinkingContent handles reasoning/thinking content from O1/O3 models.
+// This is emitted as a "thinking" content block in Anthropic format.
+func (sp *StreamProcessor) handleThinkingContent(thinking string) error {
+	// Start thinking block if not started
+	if !sp.thinkingStarted {
+		// Thinking block comes at index 0, text starts at index 1
+		sp.thinkingBlockIndex = 0
+		sp.textBlockIndex = 1 // Shift text block to index 1
+
+		if err := sp.emitThinkingBlockStart(sp.thinkingBlockIndex); err != nil {
+			return err
+		}
+		sp.thinkingStarted = true
+	}
+
+	// Emit thinking delta
+	return sp.emitThinkingBlockDelta(sp.thinkingBlockIndex, thinking)
 }
 
 // handleTextContent handles text content from the stream.
@@ -289,6 +321,13 @@ func (sp *StreamProcessor) handleToolCall(tc *models.OpenAIToolCall) error {
 
 // handleFinishReason handles the finish reason from the stream.
 func (sp *StreamProcessor) handleFinishReason(reason string) error {
+	// Close any open thinking block first (thinking comes before text)
+	if sp.thinkingStarted {
+		if err := sp.emitContentBlockStop(sp.thinkingBlockIndex); err != nil {
+			return err
+		}
+	}
+
 	// Close any open text block
 	if sp.textStarted && sp.state == StateTextContent {
 		if err := sp.emitContentBlockStop(sp.textBlockIndex); err != nil {
@@ -392,6 +431,34 @@ func (sp *StreamProcessor) emitContentBlockDelta(index int, deltaType, text, par
 		event.Delta.Text = text
 	} else if deltaType == "input_json_delta" {
 		event.Delta.PartialJSON = partialJSON
+	}
+
+	return sp.writeEvent(models.EventContentBlockDelta, event)
+}
+
+// emitThinkingBlockStart emits a content_block_start event for a thinking block.
+func (sp *StreamProcessor) emitThinkingBlockStart(index int) error {
+	event := models.ContentBlockStartEvent{
+		Type:  models.EventContentBlockStart,
+		Index: index,
+		ContentBlock: models.ContentBlockStartData{
+			Type:     "thinking",
+			Thinking: "",
+		},
+	}
+
+	return sp.writeEvent(models.EventContentBlockStart, event)
+}
+
+// emitThinkingBlockDelta emits a content_block_delta event for thinking content.
+func (sp *StreamProcessor) emitThinkingBlockDelta(index int, thinking string) error {
+	event := models.ContentBlockDeltaEvent{
+		Type:  models.EventContentBlockDelta,
+		Index: index,
+		Delta: models.DeltaData{
+			Type:     "thinking_delta",
+			Thinking: thinking,
+		},
 	}
 
 	return sp.writeEvent(models.EventContentBlockDelta, event)

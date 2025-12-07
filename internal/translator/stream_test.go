@@ -687,9 +687,9 @@ func TestProcessGrokXML_NoXML(t *testing.T) {
 
 func TestProcessGrokXML_MultipleToolCalls(t *testing.T) {
 	sp := NewStreamProcessor(&bytes.Buffer{}, "msg_123", "x-ai/grok-3-beta")
-	
+
 	text := `<xai:function_call name="func1"><xai:parameter name="a">1</xai:parameter></xai:function_call> and <xai:function_call name="func2"><xai:parameter name="b">2</xai:parameter></xai:function_call>`
-	
+
 	cleanedText, toolCalls := sp.processGrokXML(text)
 
 	if len(toolCalls) != 2 {
@@ -703,5 +703,217 @@ func TestProcessGrokXML_MultipleToolCalls(t *testing.T) {
 	}
 	if strings.Contains(cleanedText, "<xai:function_call") {
 		t.Error("Cleaned text should not contain XML")
+	}
+}
+
+// Thinking/Reasoning block tests (for O1/O3 models)
+
+func TestStreamProcessor_ProcessStream_ThinkingContent(t *testing.T) {
+	var buf bytes.Buffer
+	sp := NewStreamProcessor(&buf, "msg_123", "o1-preview")
+
+	// Stream with reasoning content (as provided by some providers)
+	input := `data: {"choices":[{"delta":{"reasoning":"Let me think about this..."}}]}
+
+data: {"choices":[{"delta":{"reasoning":" I should analyze the problem."}}]}
+
+data: {"choices":[{"delta":{"content":"Here's my answer."}}]}
+
+data: {"choices":[{"delta":{},"finish_reason":"stop"}]}
+
+data: [DONE]
+`
+	err := sp.ProcessStream(strings.NewReader(input))
+	if err != nil {
+		t.Fatalf("ProcessStream failed: %v", err)
+	}
+
+	output := buf.String()
+
+	// Check for thinking block events
+	expectedEvents := []string{
+		"event: message_start",
+		"event: content_block_start",
+		"\"type\":\"thinking\"",
+		"event: content_block_delta",
+		"\"type\":\"thinking_delta\"",
+		"\"thinking\":\"Let me think about this...\"",
+		"\"thinking\":\" I should analyze the problem.\"",
+		"event: content_block_stop", // thinking block stop
+		"event: content_block_start", // text block start
+		"\"type\":\"text\"",
+		"\"text\":\"Here's my answer.\"",
+		"event: content_block_stop", // text block stop
+		"event: message_delta",
+		"event: message_stop",
+	}
+
+	for _, expected := range expectedEvents {
+		if !strings.Contains(output, expected) {
+			t.Errorf("Output missing %q", expected)
+		}
+	}
+}
+
+func TestStreamProcessor_ThinkingBlockIndex(t *testing.T) {
+	var buf bytes.Buffer
+	sp := NewStreamProcessor(&buf, "msg_123", "o1")
+
+	// Verify initial state
+	if sp.thinkingBlockIndex != -1 {
+		t.Errorf("thinkingBlockIndex initial = %d, want -1", sp.thinkingBlockIndex)
+	}
+	if sp.textBlockIndex != 0 {
+		t.Errorf("textBlockIndex initial = %d, want 0", sp.textBlockIndex)
+	}
+
+	// Process thinking content
+	err := sp.handleThinkingContent("Thinking...")
+	if err != nil {
+		t.Fatalf("handleThinkingContent failed: %v", err)
+	}
+
+	// After thinking starts, thinking is at 0, text shifts to 1
+	if sp.thinkingBlockIndex != 0 {
+		t.Errorf("thinkingBlockIndex after thinking = %d, want 0", sp.thinkingBlockIndex)
+	}
+	if sp.textBlockIndex != 1 {
+		t.Errorf("textBlockIndex after thinking = %d, want 1", sp.textBlockIndex)
+	}
+}
+
+func TestStreamProcessor_EmitThinkingBlockStart(t *testing.T) {
+	var buf bytes.Buffer
+	sp := NewStreamProcessor(&buf, "msg_123", "o1")
+
+	err := sp.emitThinkingBlockStart(0)
+	if err != nil {
+		t.Fatalf("emitThinkingBlockStart failed: %v", err)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "event: content_block_start") {
+		t.Error("Output missing event")
+	}
+	if !strings.Contains(output, "\"type\":\"thinking\"") {
+		t.Error("Output missing thinking type")
+	}
+	if !strings.Contains(output, "\"index\":0") {
+		t.Error("Output missing index")
+	}
+}
+
+func TestStreamProcessor_EmitThinkingBlockDelta(t *testing.T) {
+	var buf bytes.Buffer
+	sp := NewStreamProcessor(&buf, "msg_123", "o1")
+
+	err := sp.emitThinkingBlockDelta(0, "Step 1: analyze the problem")
+	if err != nil {
+		t.Fatalf("emitThinkingBlockDelta failed: %v", err)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "event: content_block_delta") {
+		t.Error("Output missing event")
+	}
+	if !strings.Contains(output, "\"type\":\"thinking_delta\"") {
+		t.Error("Output missing thinking_delta type")
+	}
+	if !strings.Contains(output, "\"thinking\":\"Step 1: analyze the problem\"") {
+		t.Error("Output missing thinking content")
+	}
+}
+
+func TestStreamProcessor_ProcessStream_ThinkingThenToolCall(t *testing.T) {
+	var buf bytes.Buffer
+	sp := NewStreamProcessor(&buf, "msg_123", "o1-preview")
+
+	// Stream with reasoning followed by tool call
+	input := `data: {"choices":[{"delta":{"reasoning":"I need to get the weather..."}}]}
+
+data: {"choices":[{"delta":{"content":"Let me check."}}]}
+
+data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_123","function":{"name":"get_weather","arguments":""}}]}}]}
+
+data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\"city\":\"NYC\"}"}}]}}]}
+
+data: {"choices":[{"delta":{},"finish_reason":"tool_calls"}]}
+
+data: [DONE]
+`
+	err := sp.ProcessStream(strings.NewReader(input))
+	if err != nil {
+		t.Fatalf("ProcessStream failed: %v", err)
+	}
+
+	output := buf.String()
+
+	// Should have all three block types in correct order
+	if !strings.Contains(output, "\"type\":\"thinking\"") {
+		t.Error("Output missing thinking block")
+	}
+	if !strings.Contains(output, "\"type\":\"text\"") {
+		t.Error("Output missing text block")
+	}
+	if !strings.Contains(output, "\"type\":\"tool_use\"") {
+		t.Error("Output missing tool_use block")
+	}
+	if !strings.Contains(output, "\"stop_reason\":\"tool_use\"") {
+		t.Error("Output missing tool_use stop reason")
+	}
+}
+
+func TestStreamProcessor_HandleFinishReason_ClosesThinkingBlock(t *testing.T) {
+	var buf bytes.Buffer
+	sp := NewStreamProcessor(&buf, "msg_123", "o1")
+
+	// Simulate thinking and text content
+	sp.state = StateMessageStarted
+	sp.thinkingStarted = true
+	sp.thinkingBlockIndex = 0
+	sp.textStarted = true
+	sp.textBlockIndex = 1
+	sp.state = StateTextContent
+
+	err := sp.handleFinishReason("stop")
+	if err != nil {
+		t.Fatalf("handleFinishReason failed: %v", err)
+	}
+
+	output := buf.String()
+
+	// Should emit two content_block_stop events (thinking and text)
+	stopCount := strings.Count(output, "event: content_block_stop")
+	if stopCount != 2 {
+		t.Errorf("Expected 2 content_block_stop events, got %d", stopCount)
+	}
+}
+
+func TestStreamProcessor_ThinkingOnlyNoText(t *testing.T) {
+	var buf bytes.Buffer
+	sp := NewStreamProcessor(&buf, "msg_123", "o1")
+
+	// Stream with only thinking, no regular content
+	input := `data: {"choices":[{"delta":{"reasoning":"Thinking deeply..."}}]}
+
+data: {"choices":[{"delta":{},"finish_reason":"stop"}]}
+
+data: [DONE]
+`
+	err := sp.ProcessStream(strings.NewReader(input))
+	if err != nil {
+		t.Fatalf("ProcessStream failed: %v", err)
+	}
+
+	output := buf.String()
+
+	if !strings.Contains(output, "\"type\":\"thinking\"") {
+		t.Error("Output missing thinking block")
+	}
+	if !strings.Contains(output, "event: content_block_stop") {
+		t.Error("Output missing content_block_stop")
+	}
+	if !strings.Contains(output, "event: message_stop") {
+		t.Error("Output missing message_stop")
 	}
 }

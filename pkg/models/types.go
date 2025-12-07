@@ -183,6 +183,14 @@ type StreamDelta struct {
 	Role      string           `json:"role,omitempty"`
 	Content   string           `json:"content,omitempty"`
 	ToolCalls []OpenAIToolCall `json:"tool_calls,omitempty"`
+	// Reasoning fields for O1/O3 models (returned by some providers)
+	Reasoning string `json:"reasoning,omitempty"` // Azure OpenAI
+}
+
+// ReasoningContent represents reasoning/thinking content in streaming.
+// Some providers return this in usage.completion_tokens_details.
+type ReasoningContent struct {
+	Content string `json:"content,omitempty"`
 }
 
 // Usage represents token usage information.
@@ -245,10 +253,11 @@ type ContentBlockStartEvent struct {
 
 // ContentBlockStartData represents the content_block in a start event.
 type ContentBlockStartData struct {
-	Type string `json:"type"`
-	Text string `json:"text,omitempty"`
-	ID   string `json:"id,omitempty"`
-	Name string `json:"name,omitempty"`
+	Type     string `json:"type"`
+	Text     string `json:"text,omitempty"`
+	ID       string `json:"id,omitempty"`
+	Name     string `json:"name,omitempty"`
+	Thinking string `json:"thinking,omitempty"` // For thinking blocks
 }
 
 // ContentBlockDeltaEvent represents a content_block_delta SSE event.
@@ -263,6 +272,7 @@ type DeltaData struct {
 	Type        string `json:"type"`
 	Text        string `json:"text,omitempty"`
 	PartialJSON string `json:"partial_json,omitempty"`
+	Thinking    string `json:"thinking,omitempty"` // For thinking_delta blocks
 }
 
 // ContentBlockStopEvent represents a content_block_stop SSE event.
