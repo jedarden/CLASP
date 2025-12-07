@@ -110,6 +110,9 @@ type Config struct {
 	CircuitBreakerRecovery     int   // Successes to close
 	CircuitBreakerTimeoutSec   int   // Timeout before half-open
 
+	// HTTP client settings
+	HTTPClientTimeoutSec int // Timeout for upstream requests (default: 300 = 5 minutes)
+
 	// Model aliasing - map custom model names to provider models
 	ModelAliases map[string]string
 }
@@ -145,6 +148,8 @@ func DefaultConfig() *Config {
 		CircuitBreakerThreshold:  5,  // Open after 5 failures
 		CircuitBreakerRecovery:   2,  // Close after 2 successes
 		CircuitBreakerTimeoutSec: 30, // Try again after 30 seconds
+		// HTTP client defaults
+		HTTPClientTimeoutSec: 300, // 5 minutes for reasoning models
 		// Model aliases (empty by default)
 		ModelAliases: make(map[string]string),
 	}
@@ -314,6 +319,15 @@ func LoadFromEnv() (*Config, error) {
 			return nil, fmt.Errorf("invalid CLASP_CIRCUIT_BREAKER_TIMEOUT: %w", err)
 		}
 		cfg.CircuitBreakerTimeoutSec = t
+	}
+
+	// HTTP client settings
+	if httpTimeout := os.Getenv("CLASP_HTTP_TIMEOUT"); httpTimeout != "" {
+		t, err := strconv.Atoi(httpTimeout)
+		if err != nil {
+			return nil, fmt.Errorf("invalid CLASP_HTTP_TIMEOUT: %w", err)
+		}
+		cfg.HTTPClientTimeoutSec = t
 	}
 
 	// Multi-provider routing settings

@@ -117,8 +117,10 @@ type ResponsesItem struct {
 	Role      string      `json:"role,omitempty"`
 	Content   interface{} `json:"content,omitempty"` // string or []ResponsesOutputContentPart
 
-	// Reasoning fields (encrypted, not readable)
-	Summary   string      `json:"summary,omitempty"`
+	// Reasoning fields
+	// Summary is an array of summary items, each with a text field
+	// Populated when using reasoning.summary: "auto" or "detailed"
+	Summary   []ResponsesSummaryItem `json:"summary,omitempty"`
 
 	// Function call fields
 	CallID    string      `json:"call_id,omitempty"`
@@ -126,6 +128,12 @@ type ResponsesItem struct {
 	Arguments string      `json:"arguments,omitempty"`
 	Status    string      `json:"status,omitempty"` // "in_progress", "completed", "failed"
 	Output    string      `json:"output,omitempty"` // For function_call_output
+}
+
+// ResponsesSummaryItem represents a single reasoning summary item.
+type ResponsesSummaryItem struct {
+	Type string `json:"type,omitempty"` // "summary_text"
+	Text string `json:"text,omitempty"`
 }
 
 // ResponsesOutputContentPart represents a content part in Responses output.

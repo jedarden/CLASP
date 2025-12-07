@@ -72,9 +72,15 @@ func NewHandler(cfg *config.Config) (*Handler, error) {
 		DisableCompression:  false,
 	}
 
+	// Use configurable timeout (default 5 minutes for reasoning models)
+	httpTimeout := time.Duration(cfg.HTTPClientTimeoutSec) * time.Second
+	if httpTimeout == 0 {
+		httpTimeout = 300 * time.Second // Fallback default
+	}
+
 	client := &http.Client{
 		Transport: transport,
-		Timeout:   120 * time.Second, // Long timeout for streaming
+		Timeout:   httpTimeout,
 	}
 
 	handler := &Handler{
@@ -1038,11 +1044,24 @@ func (h *Handler) handleResponsesNonStreamingResponse(w http.ResponseWriter, res
 			})
 		case "reasoning":
 			// Include reasoning summary if available (thinking block)
-			if item.Summary != "" {
-				anthropicResp.Content = append(anthropicResp.Content, models.AnthropicContentBlock{
-					Type: "thinking",
-					Text: item.Summary,
-				})
+			// Summary is an array of items with .Text fields
+			if len(item.Summary) > 0 {
+				// Concatenate all summary texts
+				var summaryText string
+				for _, summaryItem := range item.Summary {
+					if summaryItem.Text != "" {
+						if summaryText != "" {
+							summaryText += "\n"
+						}
+						summaryText += summaryItem.Text
+					}
+				}
+				if summaryText != "" {
+					anthropicResp.Content = append(anthropicResp.Content, models.AnthropicContentBlock{
+						Type: "thinking",
+						Text: summaryText,
+					})
+				}
 			}
 		}
 	}

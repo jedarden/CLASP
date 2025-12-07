@@ -26,7 +26,7 @@ import (
 )
 
 var (
-	version = "v0.34.3"
+	version = "v0.34.4"
 )
 
 func main() {
@@ -87,6 +87,7 @@ func main() {
 	cbThreshold := flag.Int("cb-threshold", 0, "Circuit breaker failure threshold (default: 5)")
 	cbRecovery := flag.Int("cb-recovery", 0, "Circuit breaker success recovery threshold (default: 2)")
 	cbTimeout := flag.Int("cb-timeout", 0, "Circuit breaker timeout in seconds (default: 30)")
+	httpTimeout := flag.Int("http-timeout", 0, "HTTP client timeout in seconds for upstream requests (default: 300)")
 	showVersion := flag.Bool("version", false, "Show version information")
 	help := flag.Bool("help", false, "Show help message")
 	runSetup := flag.Bool("setup", false, "Run interactive setup wizard")
@@ -337,6 +338,9 @@ func main() {
 	}
 	if *cbTimeout > 0 {
 		cfg.CircuitBreakerTimeoutSec = *cbTimeout
+	}
+	if *httpTimeout > 0 {
+		cfg.HTTPClientTimeoutSec = *httpTimeout
 	}
 
 	// Validate authentication configuration
@@ -613,6 +617,9 @@ Environment Variables:
     CLASP_CIRCUIT_BREAKER_THRESHOLD Failures before opening (default: 5)
     CLASP_CIRCUIT_BREAKER_RECOVERY  Successes to close (default: 2)
     CLASP_CIRCUIT_BREAKER_TIMEOUT   Timeout in seconds (default: 30)
+
+  HTTP Client:
+    CLASP_HTTP_TIMEOUT             Request timeout in seconds (default: 300 = 5 min)
 
   Model Aliasing (create custom model names):
     CLASP_ALIAS_<name>=<model>     Define a model alias (e.g., CLASP_ALIAS_FAST=gpt-4o-mini)
