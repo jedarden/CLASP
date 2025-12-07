@@ -6,19 +6,25 @@ package models
 
 // ResponsesRequest represents an OpenAI Responses API request.
 type ResponsesRequest struct {
-	Model              string              `json:"model"`
-	Input              []ResponsesInput    `json:"input"`
-	PreviousResponseID string              `json:"previous_response_id,omitempty"`
-	Tools              []ResponsesTool     `json:"tools,omitempty"`
-	ToolChoice         interface{}         `json:"tool_choice,omitempty"`
-	MaxOutputTokens    int                 `json:"max_output_tokens,omitempty"`
-	Stream             bool                `json:"stream,omitempty"`
-	Temperature        *float64            `json:"temperature,omitempty"`
-	TopP               *float64            `json:"top_p,omitempty"`
-	Background         bool                `json:"background,omitempty"`
-	Metadata           map[string]string   `json:"metadata,omitempty"`
-	ReasoningEffort    string              `json:"reasoning_effort,omitempty"`
-	Instructions       string              `json:"instructions,omitempty"`
+	Model              string               `json:"model"`
+	Input              []ResponsesInput     `json:"input"`
+	PreviousResponseID string               `json:"previous_response_id,omitempty"`
+	Tools              []ResponsesTool      `json:"tools,omitempty"`
+	ToolChoice         interface{}          `json:"tool_choice,omitempty"`
+	MaxOutputTokens    int                  `json:"max_output_tokens,omitempty"`
+	Stream             bool                 `json:"stream,omitempty"`
+	Temperature        *float64             `json:"temperature,omitempty"`
+	TopP               *float64             `json:"top_p,omitempty"`
+	Background         bool                 `json:"background,omitempty"`
+	Metadata           map[string]string    `json:"metadata,omitempty"`
+	Reasoning          *ResponsesReasoning  `json:"reasoning,omitempty"`
+	Instructions       string               `json:"instructions,omitempty"`
+}
+
+// ResponsesReasoning represents the nested reasoning configuration for Responses API.
+// The Responses API requires reasoning parameters under this nested object.
+type ResponsesReasoning struct {
+	Effort string `json:"effort,omitempty"` // "low", "medium", "high"
 }
 
 // ResponsesInput represents an input item in a Responses request.

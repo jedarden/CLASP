@@ -206,8 +206,12 @@ func TestTransformRequestToResponses_WithThinking(t *testing.T) {
 		t.Fatalf("TransformRequestToResponses failed: %v", err)
 	}
 
-	if result.ReasoningEffort != "high" {
-		t.Errorf("ReasoningEffort = %q, want %q", result.ReasoningEffort, "high")
+	// Responses API uses nested reasoning.effort, not top-level reasoning_effort
+	if result.Reasoning == nil {
+		t.Fatal("Reasoning should not be nil when thinking is enabled")
+	}
+	if result.Reasoning.Effort != "high" {
+		t.Errorf("Reasoning.Effort = %q, want %q", result.Reasoning.Effort, "high")
 	}
 }
 
@@ -425,6 +429,60 @@ func TestTransformRequestToResponses_ToolNameTopLevel(t *testing.T) {
 	if parsed["name"] != "get_weather" {
 		t.Errorf("JSON tool.name = %v, want 'get_weather' at top level", parsed["name"])
 	}
+}
+
+func TestTransformRequestToResponses_ReasoningJSONStructure(t *testing.T) {
+	// Test that reasoning is correctly nested in JSON output
+	req := &models.AnthropicRequest{
+		Model: "claude-3-5-sonnet-20241022",
+		Messages: []models.AnthropicMessage{
+			{Role: "user", Content: "Complex reasoning task"},
+		},
+		MaxTokens: 1024,
+		Thinking: &models.ThinkingConfig{
+			Type:         "enabled",
+			BudgetTokens: 10000, // Should map to "medium"
+		},
+	}
+
+	result, err := TransformRequestToResponses(req, "gpt-5.1-codex", "")
+	if err != nil {
+		t.Fatalf("TransformRequestToResponses failed: %v", err)
+	}
+
+	// Marshal to JSON
+	jsonData, err := json.Marshal(result)
+	if err != nil {
+		t.Fatalf("Failed to marshal result to JSON: %v", err)
+	}
+
+	// Parse and verify structure
+	var parsed map[string]interface{}
+	if err := json.Unmarshal(jsonData, &parsed); err != nil {
+		t.Fatalf("Failed to unmarshal JSON: %v", err)
+	}
+
+	// Verify "reasoning" is a nested object, not a top-level "reasoning_effort"
+	if _, hasOldField := parsed["reasoning_effort"]; hasOldField {
+		t.Error("Should NOT have top-level 'reasoning_effort' field - Responses API uses nested 'reasoning.effort'")
+	}
+
+	reasoning, hasReasoning := parsed["reasoning"].(map[string]interface{})
+	if !hasReasoning {
+		t.Fatal("JSON should have 'reasoning' object")
+	}
+
+	effort, hasEffort := reasoning["effort"].(string)
+	if !hasEffort {
+		t.Fatal("JSON 'reasoning' object should have 'effort' field")
+	}
+
+	if effort != "medium" {
+		t.Errorf("reasoning.effort = %q, want %q", effort, "medium")
+	}
+
+	// Log the actual JSON for debugging
+	t.Logf("Generated JSON: %s", string(jsonData))
 }
 
 func TestTransformRequestToResponses_ContentTypes(t *testing.T) {

@@ -273,6 +273,7 @@ func transformToolChoiceToResponses(choice interface{}) interface{} {
 }
 
 // applyThinkingParametersToResponses maps thinking parameters for Responses API.
+// The Responses API requires reasoning parameters under the nested "reasoning" object.
 func applyThinkingParametersToResponses(req *models.AnthropicRequest, responsesReq *models.ResponsesRequest, targetModel string) {
 	if req.Thinking == nil || req.Thinking.BudgetTokens <= 0 {
 		return
@@ -280,8 +281,11 @@ func applyThinkingParametersToResponses(req *models.AnthropicRequest, responsesR
 
 	budgetTokens := req.Thinking.BudgetTokens
 
-	// For GPT-5+ models via Responses API, use reasoning_effort
-	responsesReq.ReasoningEffort = mapBudgetToReasoningEffortResponses(budgetTokens)
+	// For GPT-5+ models via Responses API, use nested reasoning.effort
+	// The Responses API moved this from top-level "reasoning_effort" to "reasoning.effort"
+	responsesReq.Reasoning = &models.ResponsesReasoning{
+		Effort: mapBudgetToReasoningEffortResponses(budgetTokens),
+	}
 }
 
 // mapBudgetToReasoningEffortResponses converts budget_tokens to reasoning_effort for Responses API.
