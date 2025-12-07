@@ -1452,7 +1452,7 @@ func (h *Handler) HandleRoot(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	response := map[string]interface{}{
 		"name":     "CLASP",
-		"version":  "0.28.8",
+		"version":  "0.28.10",
 		"provider": h.provider.Name(),
 		"status":   "running",
 		"endpoints": map[string]string{
