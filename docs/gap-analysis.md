@@ -58,9 +58,9 @@ var responsesModels = []string{
 | Feature | CLASP | CCProxy | claude-code-proxy | anthropic-proxy |
 |---------|-------|---------|-------------------|-----------------|
 | LiteLLM Backend | ❌ | ✅ | ✅ | ❌ |
-| Google Gemini | ❌ | ✅ | ✅ | ❌ |
+| Google Gemini | ✅ | ✅ | ✅ | ❌ |
 | DeepSeek | ❌ | ✅ | ❌ | ❌ |
-| Ollama Local | ❌ | ✅ | ✅ | ❌ |
+| Ollama Local | ✅ | ✅ | ✅ | ❌ |
 | Provider Prefix | ❌ | ✅ | ✅ | ❌ |
 | Multi-Model Routing | ✅ | ✅ | ✅ | ❌ |
 | Response Caching | ✅ | ❌ | ❌ | ❌ |
@@ -179,9 +179,10 @@ CLASP_DEBUG=true clasp -model gpt-5.1-codex
 1. **Add LiteLLM integration** - Would enable 100+ providers
 2. **Implement prompt caching simulation** - Cache full responses by request hash
 3. **Dynamic model discovery** - Query providers for available models
-4. **Gemini provider** - Direct Google Gemini support
-5. **Local model support** - Ollama/LM Studio integration
-6. **Compaction support** - Multi-window context management
+4. **DeepSeek provider** - Direct DeepSeek support
+5. ~~**Local model support** - Ollama/LM Studio integration~~ ✅ Added in v0.36.0
+6. ~~**Gemini provider** - Direct Google Gemini support~~ ✅ Added in v0.37.0
+7. **Compaction support** - Multi-window context management
 
 ## Sources
 

@@ -351,6 +351,8 @@ func GetKnownModels(provider string) []ModelInfo {
 		return getAnthropicModels()
 	case "azure":
 		return getAzureModels()
+	case "gemini":
+		return getGeminiModels()
 	default:
 		return nil
 	}
@@ -405,6 +407,17 @@ func getAzureModels() []ModelInfo {
 		{ID: "gpt-4", Name: "GPT-4", Desc: "Original GPT-4", ContextSize: 8192},
 		{ID: "gpt-4-turbo", Name: "GPT-4 Turbo", Desc: "Extended context GPT-4", ContextSize: 128000},
 		{ID: "gpt-35-turbo", Name: "GPT-3.5 Turbo", Desc: "Fast and efficient", ContextSize: 16385},
+	}
+}
+
+func getGeminiModels() []ModelInfo {
+	return []ModelInfo{
+		{ID: "gemini-2.0-flash-exp", Name: "Gemini 2.0 Flash", Desc: "Latest experimental - fast & capable", ContextSize: 1048576, IsRecommended: true},
+		{ID: "gemini-2.0-flash-thinking-exp", Name: "Gemini 2.0 Flash Thinking", Desc: "Enhanced reasoning capabilities", ContextSize: 1048576, IsRecommended: true},
+		{ID: "gemini-1.5-pro", Name: "Gemini 1.5 Pro", Desc: "Production-ready pro model", ContextSize: 2097152},
+		{ID: "gemini-1.5-flash", Name: "Gemini 1.5 Flash", Desc: "Fast and efficient", ContextSize: 1048576},
+		{ID: "gemini-1.5-flash-8b", Name: "Gemini 1.5 Flash 8B", Desc: "Lightweight 8B model", ContextSize: 1048576},
+		{ID: "gemini-exp-1206", Name: "Gemini Experimental 1206", Desc: "Latest experimental features", ContextSize: 2097152},
 	}
 }
 

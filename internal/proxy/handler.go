@@ -196,6 +196,8 @@ func createProvider(cfg *config.Config) (provider.Provider, error) {
 		return provider.NewAnthropicProvider(""), nil
 	case config.ProviderOllama:
 		return provider.NewOllamaProvider(cfg.OllamaBaseURL), nil
+	case config.ProviderGemini:
+		return provider.NewGeminiProvider(cfg.GeminiAPIKey), nil
 	case config.ProviderCustom:
 		return provider.NewCustomProvider(cfg.CustomBaseURL), nil
 	default:
@@ -227,6 +229,11 @@ func createTierProvider(tierCfg *config.TierConfig) (provider.Provider, error) {
 			baseURL = "http://localhost:11434"
 		}
 		return provider.NewOllamaProviderWithKey(baseURL, tierCfg.APIKey), nil
+	case config.ProviderGemini:
+		if baseURL == "" {
+			baseURL = "https://generativelanguage.googleapis.com/v1beta"
+		}
+		return provider.NewGeminiProviderWithURL(baseURL, tierCfg.APIKey), nil
 	case config.ProviderCustom:
 		return provider.NewCustomProviderWithKey(baseURL, tierCfg.APIKey), nil
 	default:
@@ -1488,7 +1495,7 @@ func (h *Handler) HandleRoot(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	response := map[string]interface{}{
 		"name":     "CLASP",
-		"version":  "0.32.0",
+		"version":  "0.37.0",
 		"provider": h.provider.Name(),
 		"status":   "running",
 		"endpoints": map[string]string{

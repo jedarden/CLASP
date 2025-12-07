@@ -17,6 +17,7 @@ const (
 	ProviderOpenRouter ProviderType = "openrouter"
 	ProviderAnthropic  ProviderType = "anthropic"
 	ProviderOllama     ProviderType = "ollama"
+	ProviderGemini     ProviderType = "gemini"
 	ProviderCustom     ProviderType = "custom"
 )
 
@@ -44,6 +45,7 @@ type Config struct {
 	OpenRouterAPIKey string
 	AnthropicAPIKey  string
 	OllamaAPIKey     string // Optional, most Ollama instances don't need auth
+	GeminiAPIKey     string // Google AI Studio API key
 	CustomAPIKey     string
 
 	// Endpoints
@@ -53,6 +55,7 @@ type Config struct {
 	AzureAPIVersion      string
 	OpenRouterBaseURL    string
 	OllamaBaseURL        string // Default: http://localhost:11434
+	GeminiBaseURL        string // Default: https://generativelanguage.googleapis.com/v1beta
 	CustomBaseURL        string
 
 	// Model mapping
@@ -127,6 +130,7 @@ func DefaultConfig() *Config {
 		OpenAIBaseURL:      "https://api.openai.com/v1",
 		OpenRouterBaseURL:  "https://openrouter.ai/api/v1",
 		OllamaBaseURL:      "http://localhost:11434",
+		GeminiBaseURL:      "https://generativelanguage.googleapis.com/v1beta",
 		AzureAPIVersion:    "2024-02-15-preview",
 		Port:               8080,
 		LogLevel:           "info",
@@ -174,6 +178,7 @@ func LoadFromEnv() (*Config, error) {
 	cfg.OpenRouterAPIKey = os.Getenv("OPENROUTER_API_KEY")
 	cfg.AnthropicAPIKey = os.Getenv("ANTHROPIC_API_KEY")
 	cfg.OllamaAPIKey = os.Getenv("OLLAMA_API_KEY") // Optional
+	cfg.GeminiAPIKey = os.Getenv("GEMINI_API_KEY") // Google AI Studio key
 	cfg.CustomAPIKey = os.Getenv("CUSTOM_API_KEY")
 
 	// Endpoints
@@ -190,6 +195,9 @@ func LoadFromEnv() (*Config, error) {
 	}
 	if baseURL := os.Getenv("OLLAMA_BASE_URL"); baseURL != "" {
 		cfg.OllamaBaseURL = baseURL
+	}
+	if baseURL := os.Getenv("GEMINI_BASE_URL"); baseURL != "" {
+		cfg.GeminiBaseURL = baseURL
 	}
 	cfg.CustomBaseURL = os.Getenv("CUSTOM_BASE_URL")
 
@@ -396,6 +404,9 @@ func detectProvider(cfg *Config) ProviderType {
 	if cfg.AnthropicAPIKey != "" {
 		return ProviderAnthropic
 	}
+	if cfg.GeminiAPIKey != "" {
+		return ProviderGemini
+	}
 	// Ollama doesn't require API key, check if base URL is set or use detection
 	if cfg.OllamaBaseURL != "" && cfg.OllamaBaseURL != "http://localhost:11434" {
 		return ProviderOllama
@@ -440,6 +451,8 @@ func loadTierConfig(tier string, cfg *Config) *TierConfig {
 			tierCfg.APIKey = cfg.AnthropicAPIKey
 		case ProviderOllama:
 			tierCfg.APIKey = cfg.OllamaAPIKey // Usually empty
+		case ProviderGemini:
+			tierCfg.APIKey = cfg.GeminiAPIKey
 		case ProviderCustom:
 			tierCfg.APIKey = cfg.CustomAPIKey
 		}
@@ -454,6 +467,8 @@ func loadTierConfig(tier string, cfg *Config) *TierConfig {
 			tierCfg.BaseURL = cfg.OpenRouterBaseURL
 		case ProviderOllama:
 			tierCfg.BaseURL = cfg.OllamaBaseURL + "/v1"
+		case ProviderGemini:
+			tierCfg.BaseURL = cfg.GeminiBaseURL + "/openai"
 		case ProviderCustom:
 			tierCfg.BaseURL = cfg.CustomBaseURL
 		}
@@ -480,6 +495,8 @@ func loadTierConfig(tier string, cfg *Config) *TierConfig {
 				tierCfg.FallbackAPIKey = cfg.AnthropicAPIKey
 			case ProviderOllama:
 				tierCfg.FallbackAPIKey = cfg.OllamaAPIKey
+			case ProviderGemini:
+				tierCfg.FallbackAPIKey = cfg.GeminiAPIKey
 			case ProviderCustom:
 				tierCfg.FallbackAPIKey = cfg.CustomAPIKey
 			}
@@ -517,6 +534,10 @@ func (c *Config) Validate() error {
 	case ProviderOllama:
 		// Ollama doesn't require API key - it runs locally
 		// Base URL defaults to http://localhost:11434
+	case ProviderGemini:
+		if c.GeminiAPIKey == "" {
+			return fmt.Errorf("GEMINI_API_KEY is required for provider 'gemini'")
+		}
 	case ProviderCustom:
 		if c.CustomBaseURL == "" {
 			return fmt.Errorf("CUSTOM_BASE_URL is required for provider 'custom'")
@@ -541,6 +562,8 @@ func (c *Config) GetAPIKey() string {
 		return c.AnthropicAPIKey
 	case ProviderOllama:
 		return c.OllamaAPIKey // Usually empty for local Ollama
+	case ProviderGemini:
+		return c.GeminiAPIKey
 	case ProviderCustom:
 		return c.CustomAPIKey
 	default:
@@ -562,6 +585,9 @@ func (c *Config) GetBaseURL() string {
 	case ProviderOllama:
 		// Ollama exposes OpenAI-compatible API at /v1
 		return c.OllamaBaseURL + "/v1"
+	case ProviderGemini:
+		// Gemini uses OpenAI-compatible endpoint at /v1beta/openai
+		return c.GeminiBaseURL + "/openai"
 	case ProviderCustom:
 		return c.CustomBaseURL
 	default:
