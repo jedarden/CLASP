@@ -7,3 +7,4 @@ coverage.html
 .claude-flow/metrics/
 .swarm/
 /clasp
+bin/clasp
