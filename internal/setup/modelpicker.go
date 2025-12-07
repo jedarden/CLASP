@@ -362,6 +362,16 @@ func GetKnownModels(provider string) []ModelInfo {
 
 func getOpenAIModels() []ModelInfo {
 	return []ModelInfo{
+		// GPT-5 series (Responses API required)
+		{ID: "gpt-5", Name: "GPT-5", Desc: "Next-gen flagship (Responses API)", InputPrice: 5.0, OutputPrice: 15.0, ContextSize: 256000, IsRecommended: true},
+		{ID: "gpt-5-mini", Name: "GPT-5 Mini", Desc: "Smaller, faster GPT-5 (Responses API)", InputPrice: 1.0, OutputPrice: 4.0, ContextSize: 256000},
+		{ID: "gpt-5-turbo", Name: "GPT-5 Turbo", Desc: "Optimized GPT-5 (Responses API)", InputPrice: 3.0, OutputPrice: 12.0, ContextSize: 256000},
+		// GPT-5.1 Codex series (Responses API required)
+		{ID: "gpt-5.1-codex", Name: "GPT-5.1 Codex", Desc: "Code-optimized (Responses API)", InputPrice: 5.0, OutputPrice: 15.0, ContextSize: 256000, IsRecommended: true},
+		{ID: "gpt-5.1-codex-mini", Name: "GPT-5.1 Codex Mini", Desc: "Smaller codex (Responses API)", InputPrice: 1.0, OutputPrice: 4.0, ContextSize: 256000},
+		// Codex models (Responses API required)
+		{ID: "codex", Name: "Codex", Desc: "Code completion (Responses API)", InputPrice: 2.0, OutputPrice: 8.0, ContextSize: 128000},
+		{ID: "codex-mini", Name: "Codex Mini", Desc: "Smaller codex (Responses API)", InputPrice: 0.5, OutputPrice: 2.0, ContextSize: 128000},
 		// GPT-4.5 (newest)
 		{ID: "gpt-4.5-preview", Name: "GPT-4.5 Preview", Desc: "Most capable preview model", InputPrice: 75.0, OutputPrice: 150.0, ContextSize: 128000, IsRecommended: true},
 		// o3 series

@@ -583,17 +583,27 @@ func (w *Wizard) fetchModels(provider, apiKey, baseURL, azureEndpoint string) ([
 }
 
 // isChatModel filters for likely chat/completion models.
+// NOTE: This includes ALL OpenAI models including those requiring the Responses API
+// (GPT-5, codex). CLASP handles endpoint routing automatically.
 func isChatModel(id string) bool {
-	// Include GPT models
+	// Include GPT models (gpt-3.5, gpt-4, gpt-4o, gpt-4.5, gpt-5, gpt-5.1, etc.)
 	if strings.HasPrefix(id, "gpt-") {
 		return true
 	}
-	// Include o1 models
+	// Include o1 reasoning models
 	if strings.HasPrefix(id, "o1") {
+		return true
+	}
+	// Include o3 reasoning models
+	if strings.HasPrefix(id, "o3") {
 		return true
 	}
 	// Include chatgpt models
 	if strings.HasPrefix(id, "chatgpt") {
+		return true
+	}
+	// Include codex models (require Responses API)
+	if strings.HasPrefix(id, "codex") {
 		return true
 	}
 	return false
