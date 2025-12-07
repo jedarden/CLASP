@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"time"
 )
@@ -300,8 +301,28 @@ func (m *Manager) Launch(opts LaunchOptions) error {
 		fmt.Printf("[CLASP] Launching Claude Code (version %s)...\n", status.Version)
 	}
 
+	// Clear terminal before launching Claude Code for clean TUI
+	clearTerminal()
+
 	// Run the command
 	return cmd.Run()
+}
+
+// clearTerminal clears the terminal screen before launching Claude Code.
+// This provides a clean slate for Claude Code's TUI interface.
+func clearTerminal() {
+	switch runtime.GOOS {
+	case "windows":
+		cmd := exec.Command("cmd", "/c", "cls")
+		cmd.Stdout = os.Stdout
+		cmd.Run()
+	default:
+		// ANSI escape sequences work on macOS, Linux, and most terminals
+		// \033[H - Move cursor to home position (0,0)
+		// \033[2J - Clear entire screen
+		// \033[3J - Clear scrollback buffer (for complete clean slate)
+		fmt.Print("\033[H\033[2J\033[3J")
+	}
 }
 
 // LaunchWithProxy starts CLASP proxy and then launches Claude Code.
