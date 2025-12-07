@@ -42,6 +42,9 @@ func NewServerWithVersion(cfg *config.Config, version string) (*Server, error) {
 		return nil, fmt.Errorf("creating handler: %w", err)
 	}
 
+	// Pass version to handler for status endpoint
+	handler.SetVersion(version)
+
 	// Initialize status line manager
 	statusManager, err := statusline.NewManager()
 	if err != nil {

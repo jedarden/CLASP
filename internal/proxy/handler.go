@@ -37,6 +37,7 @@ type Handler struct {
 	costTracker      *CostTracker
 	tierProviders    map[config.ModelTier]provider.Provider
 	tierFallbacks    map[config.ModelTier]provider.Provider
+	version          string
 }
 
 // Metrics tracks request statistics.
@@ -171,6 +172,11 @@ func (h *Handler) SetQueue(queue *RequestQueue) {
 // SetCircuitBreaker sets the circuit breaker.
 func (h *Handler) SetCircuitBreaker(cb *CircuitBreaker) {
 	h.circuitBreaker = cb
+}
+
+// SetVersion sets the handler version (used for status endpoint).
+func (h *Handler) SetVersion(version string) {
+	h.version = version
 }
 
 // GetMetrics returns the current metrics.
@@ -1500,9 +1506,13 @@ func (h *Handler) HandleCosts(w http.ResponseWriter, r *http.Request) {
 // HandleRoot handles root path requests.
 func (h *Handler) HandleRoot(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	version := h.version
+	if version == "" {
+		version = "unknown"
+	}
 	response := map[string]interface{}{
 		"name":     "CLASP",
-		"version":  "0.38.0",
+		"version":  version,
 		"provider": h.provider.Name(),
 		"status":   "running",
 		"endpoints": map[string]string{
