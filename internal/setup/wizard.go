@@ -120,12 +120,26 @@ func (w *Wizard) Run() (*config.Config, error) {
 		}
 	}
 
-	// Step 4: Custom base URL
+	// Step 4: Custom base URL (or Ollama base URL)
 	var baseURL string
 	if provider == "custom" {
 		baseURL, err = w.promptInput("Custom Base URL", "http://localhost:11434/v1")
 		if err != nil {
 			return nil, err
+		}
+	} else if provider == "ollama" {
+		// Check if Ollama is running at default location
+		if isOllamaRunning() {
+			baseURL = "http://localhost:11434"
+			w.println("")
+			w.println("Using Ollama at http://localhost:11434")
+		} else {
+			w.println("")
+			w.println("Ollama not detected at localhost:11434.")
+			baseURL, err = w.promptInput("Ollama URL", "http://localhost:11434")
+			if err != nil {
+				return nil, err
+			}
 		}
 	}
 
@@ -262,11 +276,18 @@ func (w *Wizard) selectProvider() (string, error) {
 	w.println("  2) Azure OpenAI  - Azure-hosted OpenAI models")
 	w.println("  3) OpenRouter    - 200+ models from multiple providers")
 	w.println("  4) Anthropic     - Direct passthrough (no translation)")
-	w.println("  5) Custom        - Ollama, vLLM, LM Studio, etc.")
+	w.println("  5) Ollama        - Local models (free, private)")
+	w.println("  6) Custom        - vLLM, LM Studio, other OpenAI-compatible")
 	w.println("")
 
+	// Check if Ollama is running locally
+	if isOllamaRunning() {
+		w.println("  [Ollama detected at localhost:11434]")
+		w.println("")
+	}
+
 	for {
-		choice, err := w.promptInput("Enter choice [1-5]", "1")
+		choice, err := w.promptInput("Enter choice [1-6]", "1")
 		if err != nil {
 			return "", err
 		}
@@ -280,12 +301,25 @@ func (w *Wizard) selectProvider() (string, error) {
 			return "openrouter", nil
 		case "4", "anthropic":
 			return "anthropic", nil
-		case "5", "custom":
+		case "5", "ollama":
+			return "ollama", nil
+		case "6", "custom":
 			return "custom", nil
 		default:
-			w.println("Invalid choice. Please enter 1-5.")
+			w.println("Invalid choice. Please enter 1-6.")
 		}
 	}
+}
+
+// isOllamaRunning checks if Ollama is running locally.
+func isOllamaRunning() bool {
+	client := &http.Client{Timeout: 2 * time.Second}
+	resp, err := client.Get("http://localhost:11434/api/tags")
+	if err != nil {
+		return false
+	}
+	resp.Body.Close()
+	return resp.StatusCode == http.StatusOK
 }
 
 // configureClaudeCode prompts the user for Claude Code settings.
@@ -344,6 +378,11 @@ func (w *Wizard) promptAPIKey(provider string) (string, error) {
 		prompt = "OpenRouter API Key (sk-or-...)"
 	case "anthropic":
 		prompt = "Anthropic API Key (sk-ant-...)"
+	case "ollama":
+		// Ollama doesn't need an API key for local use
+		w.println("")
+		w.println("Ollama runs locally and doesn't require an API key.")
+		return "not-required", nil
 	case "custom":
 		prompt = "API Key (optional, press Enter to skip)"
 	default:
@@ -422,6 +461,12 @@ func (w *Wizard) fetchModels(provider, apiKey, baseURL, azureEndpoint string) ([
 	case "openrouter":
 		url = "https://openrouter.ai/api/v1/models"
 		headers = map[string]string{"Authorization": "Bearer " + apiKey}
+	case "ollama":
+		// Ollama has its own /api/tags endpoint
+		if baseURL == "" {
+			baseURL = "http://localhost:11434"
+		}
+		return w.fetchOllamaModels(baseURL)
 	case "custom":
 		if baseURL == "" {
 			return nil, fmt.Errorf("no base URL provided")
@@ -517,6 +562,50 @@ func isChatModel(id string) bool {
 	return false
 }
 
+// fetchOllamaModels fetches models from Ollama's native API.
+func (w *Wizard) fetchOllamaModels(baseURL string) ([]string, error) {
+	baseURL = strings.TrimSuffix(baseURL, "/v1")
+	baseURL = strings.TrimSuffix(baseURL, "/")
+
+	resp, err := w.client.Get(baseURL + "/api/tags")
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to Ollama: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("Ollama returned status %d", resp.StatusCode)
+	}
+
+	var tagsResp struct {
+		Models []struct {
+			Name string `json:"name"`
+		} `json:"models"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&tagsResp); err != nil {
+		return nil, fmt.Errorf("failed to decode Ollama response: %w", err)
+	}
+
+	if len(tagsResp.Models) == 0 {
+		// Return recommended models if none installed
+		return []string{
+			"llama3.2",
+			"codellama",
+			"deepseek-coder",
+			"mistral",
+			"qwen2.5-coder",
+		}, nil
+	}
+
+	models := make([]string, 0, len(tagsResp.Models))
+	for _, m := range tagsResp.Models {
+		models = append(models, m.Name)
+	}
+
+	return models, nil
+}
+
 func (w *Wizard) selectModel(provider string, models []string) (string, error) {
 	return w.selectModelWithTier(provider, models, "")
 }
@@ -563,6 +652,8 @@ func getDefaultModel(provider string) string {
 		return "anthropic/claude-3.5-sonnet"
 	case "anthropic":
 		return "claude-3-5-sonnet-20241022"
+	case "ollama":
+		return "llama3.2"
 	case "custom":
 		return "llama3.1"
 	default:
@@ -603,6 +694,11 @@ func (w *Wizard) setEnvVars(cfg *ConfigFile) {
 		os.Setenv("OPENROUTER_API_KEY", cfg.APIKey)
 	case "anthropic":
 		os.Setenv("ANTHROPIC_API_KEY", cfg.APIKey)
+	case "ollama":
+		// Ollama doesn't require API key, just base URL
+		if cfg.BaseURL != "" {
+			os.Setenv("OLLAMA_BASE_URL", cfg.BaseURL)
+		}
 	case "custom":
 		os.Setenv("CUSTOM_API_KEY", cfg.APIKey)
 		os.Setenv("CUSTOM_BASE_URL", cfg.BaseURL)
@@ -650,6 +746,11 @@ func ApplyConfigToEnv() error {
 		os.Setenv("OPENROUTER_API_KEY", cfg.APIKey)
 	case "anthropic":
 		os.Setenv("ANTHROPIC_API_KEY", cfg.APIKey)
+	case "ollama":
+		// Ollama doesn't require API key, just base URL
+		if cfg.BaseURL != "" {
+			os.Setenv("OLLAMA_BASE_URL", cfg.BaseURL)
+		}
 	case "custom":
 		if cfg.APIKey != "" {
 			os.Setenv("CUSTOM_API_KEY", cfg.APIKey)

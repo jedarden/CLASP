@@ -194,6 +194,8 @@ func createProvider(cfg *config.Config) (provider.Provider, error) {
 		return provider.NewAzureProvider(cfg.AzureEndpoint, cfg.AzureDeploymentName, cfg.AzureAPIVersion), nil
 	case config.ProviderAnthropic:
 		return provider.NewAnthropicProvider(""), nil
+	case config.ProviderOllama:
+		return provider.NewOllamaProvider(cfg.OllamaBaseURL), nil
 	case config.ProviderCustom:
 		return provider.NewCustomProvider(cfg.CustomBaseURL), nil
 	default:
@@ -220,6 +222,11 @@ func createTierProvider(tierCfg *config.TierConfig) (provider.Provider, error) {
 			baseURL = "https://api.anthropic.com"
 		}
 		return provider.NewAnthropicProviderWithKey(baseURL, tierCfg.APIKey), nil
+	case config.ProviderOllama:
+		if baseURL == "" {
+			baseURL = "http://localhost:11434"
+		}
+		return provider.NewOllamaProviderWithKey(baseURL, tierCfg.APIKey), nil
 	case config.ProviderCustom:
 		return provider.NewCustomProviderWithKey(baseURL, tierCfg.APIKey), nil
 	default:
