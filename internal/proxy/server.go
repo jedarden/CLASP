@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/jedarden/clasp/internal/config"
+	"github.com/jedarden/clasp/internal/statusline"
 )
 
 // Server represents the CLASP proxy server.
@@ -25,18 +26,34 @@ type Server struct {
 	authConfig     *AuthConfig
 	queue          *RequestQueue
 	circuitBreaker *CircuitBreaker
+	statusManager  *statusline.Manager
+	version        string
 }
 
 // NewServer creates a new proxy server.
 func NewServer(cfg *config.Config) (*Server, error) {
+	return NewServerWithVersion(cfg, "unknown")
+}
+
+// NewServerWithVersion creates a new proxy server with version info for status line.
+func NewServerWithVersion(cfg *config.Config, version string) (*Server, error) {
 	handler, err := NewHandler(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("creating handler: %w", err)
 	}
 
+	// Initialize status line manager
+	statusManager, err := statusline.NewManager()
+	if err != nil {
+		log.Printf("[CLASP] Warning: Could not initialize status line: %v", err)
+		// Continue without status line support
+	}
+
 	s := &Server{
-		cfg:     cfg,
-		handler: handler,
+		cfg:           cfg,
+		handler:       handler,
+		statusManager: statusManager,
+		version:       version,
 	}
 
 	// Initialize rate limiter if enabled
@@ -165,6 +182,45 @@ func (s *Server) Start() error {
 		IdleTimeout:  120 * time.Second,
 	}
 
+	// Update status line with initial status
+	if s.statusManager != nil {
+		// Configure status line on first run
+		if !s.statusManager.IsConfigured() {
+			if err := s.statusManager.Setup(); err != nil {
+				log.Printf("[CLASP] Warning: Could not configure status line: %v", err)
+			} else {
+				log.Printf("[CLASP] Status line configured for Claude Code")
+			}
+		}
+
+		// Write initial status
+		model := s.cfg.DefaultModel
+		if model == "" {
+			model = "auto"
+		}
+		status := statusline.Status{
+			Running:      true,
+			Port:         port,
+			Provider:     string(s.cfg.Provider),
+			Model:        model,
+			Requests:     0,
+			Errors:       0,
+			CostUSD:      0,
+			StartTime:    time.Now(),
+			Version:      s.version,
+			CacheEnabled: s.cache != nil,
+		}
+		if s.cfg.FallbackProvider != "" {
+			status.Fallback = string(s.cfg.FallbackProvider)
+		}
+		if err := s.statusManager.UpdateStatus(status); err != nil {
+			log.Printf("[CLASP] Warning: Could not update status: %v", err)
+		}
+
+		// Start metrics update goroutine
+		go s.updateStatusPeriodically()
+	}
+
 	// Start server in goroutine
 	errCh := make(chan error, 1)
 	go func() {
@@ -229,6 +285,13 @@ func (s *Server) GetPort() int {
 
 // Shutdown gracefully shuts down the server.
 func (s *Server) Shutdown() error {
+	// Mark status as stopped
+	if s.statusManager != nil {
+		if err := s.statusManager.ClearStatus(); err != nil {
+			log.Printf("[CLASP] Warning: Could not clear status: %v", err)
+		}
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
@@ -238,6 +301,59 @@ func (s *Server) Shutdown() error {
 
 	log.Printf("[CLASP] Server stopped")
 	return nil
+}
+
+// updateStatusPeriodically updates the status file with current metrics every 5 seconds.
+func (s *Server) updateStatusPeriodically() {
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		if s.server == nil {
+			return
+		}
+
+		// Get metrics from handler
+		metrics := s.handler.GetMetrics()
+		costs := s.handler.GetCostTracker()
+
+		// Calculate average latency
+		var avgLatency float64
+		if metrics.TotalRequests > 0 {
+			avgLatency = float64(metrics.TotalLatencyMs) / float64(metrics.TotalRequests)
+		}
+
+		// Get cache hit rate if available
+		var cacheHitRate float64
+		if s.cache != nil {
+			_, _, hits, misses, _ := s.cache.Stats()
+			total := hits + misses
+			if total > 0 {
+				cacheHitRate = float64(hits) / float64(total)
+			}
+		}
+
+		// Update status
+		if err := s.statusManager.UpdateMetrics(
+			metrics.TotalRequests,
+			metrics.ErrorRequests,
+			costs.GetTotalCostUSD(),
+			avgLatency,
+		); err != nil {
+			// Silently ignore update errors
+			continue
+		}
+
+		// Update cache stats
+		if s.cache != nil {
+			s.statusManager.UpdateCacheStats(true, cacheHitRate)
+		}
+	}
+}
+
+// GetHandler returns the handler for testing and metrics access.
+func (s *Server) GetHandler() *Handler {
+	return s.handler
 }
 
 // loggingMiddleware logs incoming requests.

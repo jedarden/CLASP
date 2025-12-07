@@ -20,11 +20,12 @@ import (
 	"github.com/jedarden/clasp/internal/logging"
 	"github.com/jedarden/clasp/internal/proxy"
 	"github.com/jedarden/clasp/internal/setup"
+	"github.com/jedarden/clasp/internal/statusline"
 	"github.com/joho/godotenv"
 )
 
 var (
-	version = "v0.32.0"
+	version = "v0.33.0"
 )
 
 func main() {
@@ -339,8 +340,8 @@ func main() {
 		log.Fatalf("[CLASP] Authentication enabled but no API key provided. Set CLASP_AUTH_API_KEY or use -auth-api-key flag.")
 	}
 
-	// Create server
-	server, err := proxy.NewServer(cfg)
+	// Create server with version for status line
+	server, err := proxy.NewServerWithVersion(cfg, version)
 	if err != nil {
 		log.Fatalf("[CLASP] Failed to create server: %v", err)
 	}
@@ -807,45 +808,68 @@ func handleProfileCommand(args []string) {
 
 // handleStatusCommand shows current CLASP status.
 func handleStatusCommand(args []string) {
-	pm := setup.NewProfileManager()
-
-	// Get active profile
-	activeProfile, err := pm.GetActiveProfile()
-	if err != nil {
-		// No profile, check for legacy config
-		if setup.NeedsSetup() {
-			fmt.Println("")
-			fmt.Println("CLASP is not configured.")
-			fmt.Println("Run 'clasp -setup' or 'clasp profile create' to get started.")
-			fmt.Println("")
-			return
+	// Check for verbose flag
+	verbose := false
+	for _, arg := range args {
+		if arg == "-v" || arg == "--verbose" {
+			verbose = true
 		}
 	}
+
+	pm := setup.NewProfileManager()
+
+	// Get active profile (may be nil if not configured)
+	activeProfile, _ := pm.GetActiveProfile()
 
 	fmt.Println("")
 	fmt.Printf("CLASP %s\n", version)
 	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
+	// Check if proxy is running (from status file)
+	proxyStatus, err := statusline.ReadStatusFromFile()
+	if err == nil && proxyStatus != nil && proxyStatus.Running {
+		// Show running proxy status
+		fmt.Println("")
+		fmt.Println("🟢 Proxy Running")
+		fmt.Println(statusline.FormatStatusLine(proxyStatus, verbose))
+
+		if verbose {
+			fmt.Println("")
+			fmt.Printf("  Version:    %s\n", proxyStatus.Version)
+			fmt.Printf("  Started:    %s\n", proxyStatus.StartTime.Format("2006-01-02 15:04:05"))
+			if proxyStatus.Fallback != "" {
+				fmt.Printf("  Fallback:   %s\n", proxyStatus.Fallback)
+			}
+		}
+		fmt.Println("")
+	} else {
+		fmt.Println("")
+		fmt.Println("⚪ Proxy Not Running")
+		fmt.Println("")
+	}
+
+	// Show profile configuration
+	fmt.Println("Configuration:")
 	if activeProfile != nil {
-		fmt.Printf("Profile:    %s\n", activeProfile.Name)
-		fmt.Printf("Provider:   %s\n", activeProfile.Provider)
+		fmt.Printf("  Profile:    %s\n", activeProfile.Name)
+		fmt.Printf("  Provider:   %s\n", activeProfile.Provider)
 
 		if activeProfile.DefaultModel != "" {
-			fmt.Printf("Model:      %s\n", activeProfile.DefaultModel)
+			fmt.Printf("  Model:      %s\n", activeProfile.DefaultModel)
 		}
 
 		// Show tier mappings if configured
 		if len(activeProfile.TierMappings) > 0 {
 			fmt.Println("")
-			fmt.Println("Model Routing:")
+			fmt.Println("  Model Routing:")
 			for tier, mapping := range activeProfile.TierMappings {
-				fmt.Printf("  %s → %s\n", tier, mapping.Model)
+				fmt.Printf("    %s → %s\n", tier, mapping.Model)
 			}
 		}
 
 		// Show configured port
 		if activeProfile.Port > 0 {
-			fmt.Printf("\nPort:       %d\n", activeProfile.Port)
+			fmt.Printf("\n  Port:       %d\n", activeProfile.Port)
 		}
 
 		// Show features
@@ -860,10 +884,10 @@ func handleStatusCommand(args []string) {
 			features = append(features, "circuit-breaker")
 		}
 		if len(features) > 0 {
-			fmt.Printf("\nFeatures:   %s\n", strings.Join(features, ", "))
+			fmt.Printf("\n  Features:   %s\n", strings.Join(features, ", "))
 		}
 	} else {
-		fmt.Println("No profile configured.")
+		fmt.Println("  No profile configured.")
 	}
 
 	fmt.Println("")
@@ -873,6 +897,7 @@ func handleStatusCommand(args []string) {
 	fmt.Println("  clasp profile list       Show all profiles")
 	fmt.Println("  clasp profile create     Create new profile")
 	fmt.Println("  clasp use <name>         Switch profile")
+	fmt.Println("  clasp status -v          Show verbose status with metrics")
 	fmt.Println("")
 }
 

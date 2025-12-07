@@ -167,6 +167,16 @@ func (h *Handler) SetCircuitBreaker(cb *CircuitBreaker) {
 	h.circuitBreaker = cb
 }
 
+// GetMetrics returns the current metrics.
+func (h *Handler) GetMetrics() *Metrics {
+	return h.metrics
+}
+
+// GetCostTracker returns the cost tracker.
+func (h *Handler) GetCostTracker() *CostTracker {
+	return h.costTracker
+}
+
 // createProvider creates the appropriate provider based on config.
 func createProvider(cfg *config.Config) (provider.Provider, error) {
 	switch cfg.Provider {
