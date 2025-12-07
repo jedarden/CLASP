@@ -444,3 +444,192 @@ func prettyJSON(v interface{}) string {
 	b, _ := json.MarshalIndent(v, "", "  ")
 	return string(b)
 }
+
+func TestTransformRequest_ComputerUseTools(t *testing.T) {
+	tests := []struct {
+		name           string
+		toolType       string
+		expectedName   string
+		expectedParams []string // Expected parameter names
+	}{
+		{
+			name:           "computer tool",
+			toolType:       models.ToolTypeComputer,
+			expectedName:   "computer",
+			expectedParams: []string{"action", "coordinate", "text"},
+		},
+		{
+			name:           "text editor tool",
+			toolType:       models.ToolTypeTextEditor,
+			expectedName:   "str_replace_editor",
+			expectedParams: []string{"command", "path", "file_text", "old_str", "new_str"},
+		},
+		{
+			name:           "bash tool",
+			toolType:       models.ToolTypeBash,
+			expectedName:   "bash",
+			expectedParams: []string{"command", "restart"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := &models.AnthropicRequest{
+				Model:     "claude-3-5-sonnet-20241022",
+				MaxTokens: 1024,
+				Messages: []models.AnthropicMessage{
+					{Role: "user", Content: "Use the computer"},
+				},
+				Tools: []models.AnthropicTool{
+					{
+						Type:        tt.toolType,
+						Name:        "original_name",
+						Description: "original description",
+						InputSchema: map[string]interface{}{"type": "object"},
+					},
+				},
+			}
+
+			result, err := translator.TransformRequest(req, "gpt-4o")
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			if len(result.Tools) != 1 {
+				t.Fatalf("expected 1 tool, got %d", len(result.Tools))
+			}
+
+			tool := result.Tools[0]
+			if tool.Function.Name != tt.expectedName {
+				t.Errorf("expected tool name '%s', got '%s'", tt.expectedName, tool.Function.Name)
+			}
+
+			// Verify the transformed parameters exist
+			params, ok := tool.Function.Parameters.(map[string]interface{})
+			if !ok {
+				t.Fatalf("expected parameters to be a map, got %T", tool.Function.Parameters)
+			}
+
+			props, ok := params["properties"].(map[string]interface{})
+			if !ok {
+				t.Fatalf("expected properties to be a map")
+			}
+
+			for _, expectedParam := range tt.expectedParams {
+				if _, ok := props[expectedParam]; !ok {
+					t.Errorf("expected parameter '%s' to exist", expectedParam)
+				}
+			}
+		})
+	}
+}
+
+func TestTransformRequest_WithCacheControl(t *testing.T) {
+	// Test that cache_control is gracefully handled (stripped during transformation)
+	content := []interface{}{
+		map[string]interface{}{
+			"type": "text",
+			"text": "Hello",
+			"cache_control": map[string]interface{}{
+				"type": "ephemeral",
+			},
+		},
+	}
+
+	req := &models.AnthropicRequest{
+		Model:     "claude-3-5-sonnet-20241022",
+		MaxTokens: 1024,
+		Messages: []models.AnthropicMessage{
+			{
+				Role:    "user",
+				Content: content,
+			},
+		},
+		Tools: []models.AnthropicTool{
+			{
+				Name:        "Read",
+				Description: "Read a file",
+				InputSchema: map[string]interface{}{"type": "object"},
+				CacheControl: &models.CacheControl{Type: "ephemeral"},
+			},
+		},
+	}
+
+	result, err := translator.TransformRequest(req, "gpt-4o")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Verify the request still works - cache_control should be ignored
+	if len(result.Messages) != 1 {
+		t.Fatalf("expected 1 message, got %d", len(result.Messages))
+	}
+
+	if len(result.Tools) != 1 {
+		t.Fatalf("expected 1 tool, got %d", len(result.Tools))
+	}
+
+	// OpenAI tools shouldn't have cache_control (it's not in the OpenAI format)
+	// The fact that we got here without error means the transformation worked
+}
+
+func TestTransformRequest_MixedToolTypes(t *testing.T) {
+	// Test mixing computer use tools with regular tools
+	req := &models.AnthropicRequest{
+		Model:     "claude-3-5-sonnet-20241022",
+		MaxTokens: 1024,
+		Messages: []models.AnthropicMessage{
+			{Role: "user", Content: "Do something"},
+		},
+		Tools: []models.AnthropicTool{
+			{
+				Name:        "Read",
+				Description: "Read a file",
+				InputSchema: map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"path": map[string]interface{}{"type": "string"},
+					},
+				},
+			},
+			{
+				Type:        models.ToolTypeBash,
+				Name:        "bash",
+				Description: "Run bash",
+				InputSchema: map[string]interface{}{"type": "object"},
+			},
+		},
+	}
+
+	result, err := translator.TransformRequest(req, "gpt-4o")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(result.Tools) != 2 {
+		t.Fatalf("expected 2 tools, got %d", len(result.Tools))
+	}
+
+	// First tool should remain "Read" (regular tool)
+	if result.Tools[0].Function.Name != "Read" {
+		t.Errorf("expected first tool name 'Read', got '%s'", result.Tools[0].Function.Name)
+	}
+
+	// Second tool should be transformed to "bash" (computer use tool)
+	if result.Tools[1].Function.Name != "bash" {
+		t.Errorf("expected second tool name 'bash', got '%s'", result.Tools[1].Function.Name)
+	}
+
+	// Verify bash tool has the command parameter
+	params, ok := result.Tools[1].Function.Parameters.(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected bash parameters to be a map")
+	}
+	props, ok := params["properties"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected bash properties to be a map")
+	}
+	if _, ok := props["command"]; !ok {
+		t.Error("bash tool should have 'command' parameter")
+	}
+}

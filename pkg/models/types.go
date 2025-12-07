@@ -42,6 +42,14 @@ type ContentBlock struct {
 	// Tool result fields
 	ToolUseID string `json:"tool_use_id,omitempty"`
 	Content   string `json:"content,omitempty"`
+	// Cache control (Anthropic-specific, stripped during translation)
+	CacheControl *CacheControl `json:"cache_control,omitempty"`
+}
+
+// CacheControl represents Anthropic's prompt caching configuration.
+// This is stripped during translation as OpenAI doesn't support prompt caching.
+type CacheControl struct {
+	Type string `json:"type"` // "ephemeral"
 }
 
 // ImageSource represents an image source in Anthropic format.
@@ -56,7 +64,18 @@ type AnthropicTool struct {
 	Name        string      `json:"name"`
 	Description string      `json:"description,omitempty"`
 	InputSchema interface{} `json:"input_schema"`
+	// Type field for computer use tools (e.g., "computer_20241024", "text_editor_20250124", "bash_20241022")
+	Type string `json:"type,omitempty"`
+	// Cache control (Anthropic-specific, stripped during translation)
+	CacheControl *CacheControl `json:"cache_control,omitempty"`
 }
+
+// Computer use tool type constants
+const (
+	ToolTypeComputer   = "computer_20241024"
+	ToolTypeTextEditor = "text_editor_20250124"
+	ToolTypeBash       = "bash_20241022"
+)
 
 // Metadata represents request metadata.
 type Metadata struct {

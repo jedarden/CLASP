@@ -569,20 +569,135 @@ func transformTools(tools []models.AnthropicTool) []models.OpenAITool {
 	result := make([]models.OpenAITool, len(tools))
 
 	for i, tool := range tools {
+		// Handle computer use tools (have a "type" field like "computer_20241024")
+		toolName := tool.Name
+		toolDescription := tool.Description
+		toolParams := tool.InputSchema
+
+		if isComputerUseTool(tool.Type) {
+			// Transform computer use tool to generic function
+			toolName, toolDescription, toolParams = transformComputerUseTool(tool)
+		}
+
 		// Clean up input schema (remove format: "uri" which OpenAI doesn't support)
-		params := cleanupSchema(tool.InputSchema)
+		params := cleanupSchema(toolParams)
 
 		result[i] = models.OpenAITool{
 			Type: "function",
 			Function: models.OpenAIFunction{
-				Name:        tool.Name,
-				Description: tool.Description,
+				Name:        toolName,
+				Description: toolDescription,
 				Parameters:  params,
 			},
 		}
 	}
 
 	return result
+}
+
+// isComputerUseTool checks if the tool type is a computer use tool.
+func isComputerUseTool(toolType string) bool {
+	switch toolType {
+	case models.ToolTypeComputer, models.ToolTypeTextEditor, models.ToolTypeBash:
+		return true
+	default:
+		return false
+	}
+}
+
+// transformComputerUseTool transforms Anthropic computer use tools to generic function format.
+// This allows proxying computer use workflows through OpenAI-compatible endpoints.
+func transformComputerUseTool(tool models.AnthropicTool) (name, description string, params interface{}) {
+	switch tool.Type {
+	case models.ToolTypeComputer:
+		// Computer tool: screen capture, mouse, keyboard actions
+		return "computer",
+			"Control the computer - take screenshots, move mouse, click, type text, and execute keyboard shortcuts",
+			map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"action": map[string]interface{}{
+						"type":        "string",
+						"enum":        []string{"screenshot", "mouse_move", "left_click", "right_click", "double_click", "middle_click", "left_click_drag", "type", "key", "scroll"},
+						"description": "The action to perform",
+					},
+					"coordinate": map[string]interface{}{
+						"type":        "array",
+						"items":       map[string]interface{}{"type": "integer"},
+						"description": "Screen coordinates [x, y] for mouse actions",
+					},
+					"text": map[string]interface{}{
+						"type":        "string",
+						"description": "Text to type (for 'type' action) or key combination (for 'key' action)",
+					},
+				},
+				"required": []string{"action"},
+			}
+
+	case models.ToolTypeTextEditor:
+		// Text editor tool: view, edit, create files
+		return "str_replace_editor",
+			"View, create, and edit files using a text editor. Supports viewing file contents, creating new files, and making precise text replacements.",
+			map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"command": map[string]interface{}{
+						"type":        "string",
+						"enum":        []string{"view", "create", "str_replace", "insert", "undo_edit"},
+						"description": "The editor command to execute",
+					},
+					"path": map[string]interface{}{
+						"type":        "string",
+						"description": "File path to operate on",
+					},
+					"file_text": map[string]interface{}{
+						"type":        "string",
+						"description": "File content for 'create' command",
+					},
+					"old_str": map[string]interface{}{
+						"type":        "string",
+						"description": "String to find for 'str_replace' command",
+					},
+					"new_str": map[string]interface{}{
+						"type":        "string",
+						"description": "Replacement string for 'str_replace' command",
+					},
+					"insert_line": map[string]interface{}{
+						"type":        "integer",
+						"description": "Line number for 'insert' command",
+					},
+					"view_range": map[string]interface{}{
+						"type":        "array",
+						"items":       map[string]interface{}{"type": "integer"},
+						"description": "Line range [start, end] for 'view' command",
+					},
+				},
+				"required": []string{"command", "path"},
+			}
+
+	case models.ToolTypeBash:
+		// Bash tool: execute shell commands
+		return "bash",
+			"Execute bash shell commands on the system. Use for running scripts, system administration, file operations, and other command-line tasks.",
+			map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"command": map[string]interface{}{
+						"type":        "string",
+						"description": "The bash command to execute",
+					},
+					"restart": map[string]interface{}{
+						"type":        "boolean",
+						"description": "Whether to restart the bash session before executing",
+					},
+				},
+				"required": []string{"command"},
+			}
+
+	default:
+		// Unknown tool type, pass through as-is
+		return tool.Name, tool.Description, tool.InputSchema
+	}
 }
 
 // cleanupSchema removes unsupported schema properties.
