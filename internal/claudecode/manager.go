@@ -57,12 +57,33 @@ func (m *Manager) SetInstallOptions(opts InstallOptions) {
 }
 
 // CheckInstallation checks if Claude Code is installed and its version.
+// Priority: 1) Bundled in node_modules 2) Global npm 3) npx fallback
 func (m *Manager) CheckInstallation() (*InstallStatus, error) {
 	status := &InstallStatus{
 		LastChecked: time.Now().Unix(),
 	}
 
-	// Check for claude command
+	// First, check for Claude Code bundled with clasp-ai (in node_modules)
+	bundledPath := m.findBundledClaude()
+	if bundledPath != "" {
+		status.Installed = true
+		status.Path = bundledPath
+		status.InstallMethod = "bundled"
+
+		// Get version
+		version, err := m.getClaudeVersion(bundledPath)
+		if err == nil {
+			status.Version = version
+		}
+
+		if m.verbose {
+			fmt.Printf("[CLASP] Using bundled Claude Code at %s (version %s)\n", bundledPath, status.Version)
+		}
+
+		return status, nil
+	}
+
+	// Check for global claude command
 	claudePath, err := exec.LookPath("claude")
 	if err == nil {
 		status.Installed = true
@@ -108,6 +129,46 @@ func (m *Manager) CheckInstallation() (*InstallStatus, error) {
 	}
 
 	return status, nil
+}
+
+// findBundledClaude looks for Claude Code in the clasp-ai package's node_modules.
+func (m *Manager) findBundledClaude() string {
+	// Get the path to the current executable
+	exePath, err := os.Executable()
+	if err != nil {
+		return ""
+	}
+
+	// Resolve any symlinks
+	exePath, err = filepath.EvalSymlinks(exePath)
+	if err != nil {
+		return ""
+	}
+
+	// Get the directory containing the executable
+	exeDir := filepath.Dir(exePath)
+
+	// Look for node_modules/.bin/claude relative to package root
+	// The executable is in bin/, so package root is one level up
+	packageRoot := filepath.Dir(exeDir)
+
+	// Check multiple possible locations
+	possiblePaths := []string{
+		// When installed via npm (clasp-ai/node_modules/.bin/claude)
+		filepath.Join(packageRoot, "node_modules", ".bin", "claude"),
+		// When installed globally (../node_modules/@anthropic-ai/claude-code/...)
+		filepath.Join(packageRoot, "..", "@anthropic-ai", "claude-code", "cli.js"),
+		// In global node_modules
+		filepath.Join(filepath.Dir(packageRoot), "@anthropic-ai", "claude-code", "cli.js"),
+	}
+
+	for _, path := range possiblePaths {
+		if _, err := os.Stat(path); err == nil {
+			return path
+		}
+	}
+
+	return ""
 }
 
 // getClaudeVersion retrieves the version of Claude Code.
@@ -254,11 +315,22 @@ func (m *Manager) Launch(opts LaunchOptions) error {
 	// Determine the command to run
 	var cmd *exec.Cmd
 
-	if status.InstallMethod == "npx" {
+	switch status.InstallMethod {
+	case "bundled":
+		// Use bundled Claude Code - check if it's a JS file or binary
+		if strings.HasSuffix(status.Path, ".js") {
+			// Run with node
+			args := append([]string{status.Path}, opts.Args...)
+			cmd = exec.Command("node", args...)
+		} else {
+			// Direct binary or symlink
+			cmd = exec.Command(status.Path, opts.Args...)
+		}
+	case "npx":
 		// Use npx to run Claude Code
 		args := append([]string{"-y", "@anthropic-ai/claude-code"}, opts.Args...)
 		cmd = exec.Command("npx", args...)
-	} else {
+	default:
 		// Use installed claude command
 		cmd = exec.Command(status.Path, opts.Args...)
 	}

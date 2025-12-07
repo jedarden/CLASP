@@ -4,6 +4,7 @@ A high-performance Go proxy that translates Claude/Anthropic API calls to OpenAI
 
 ## Features
 
+- **Bundled Claude Code**: Automatically includes Claude Code as a dependency - single `npx clasp-ai` installs everything
 - **Multi-Provider Support**: OpenAI, Azure OpenAI, OpenRouter (200+ models), and custom endpoints (Ollama, vLLM, LM Studio)
 - **Full Protocol Translation**: Anthropic Messages API ↔ OpenAI Chat Completions API
 - **SSE Streaming**: Real-time token streaming with state machine processing
