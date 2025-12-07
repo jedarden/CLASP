@@ -18,6 +18,7 @@ const (
 	ProviderAnthropic  ProviderType = "anthropic"
 	ProviderOllama     ProviderType = "ollama"
 	ProviderGemini     ProviderType = "gemini"
+	ProviderDeepSeek   ProviderType = "deepseek"
 	ProviderCustom     ProviderType = "custom"
 )
 
@@ -46,6 +47,7 @@ type Config struct {
 	AnthropicAPIKey  string
 	OllamaAPIKey     string // Optional, most Ollama instances don't need auth
 	GeminiAPIKey     string // Google AI Studio API key
+	DeepSeekAPIKey   string // DeepSeek API key
 	CustomAPIKey     string
 
 	// Endpoints
@@ -56,6 +58,7 @@ type Config struct {
 	OpenRouterBaseURL    string
 	OllamaBaseURL        string // Default: http://localhost:11434
 	GeminiBaseURL        string // Default: https://generativelanguage.googleapis.com/v1beta
+	DeepSeekBaseURL      string // Default: https://api.deepseek.com
 	CustomBaseURL        string
 
 	// Model mapping
@@ -131,6 +134,7 @@ func DefaultConfig() *Config {
 		OpenRouterBaseURL:  "https://openrouter.ai/api/v1",
 		OllamaBaseURL:      "http://localhost:11434",
 		GeminiBaseURL:      "https://generativelanguage.googleapis.com/v1beta",
+		DeepSeekBaseURL:    "https://api.deepseek.com",
 		AzureAPIVersion:    "2024-02-15-preview",
 		Port:               8080,
 		LogLevel:           "info",
@@ -179,6 +183,7 @@ func LoadFromEnv() (*Config, error) {
 	cfg.AnthropicAPIKey = os.Getenv("ANTHROPIC_API_KEY")
 	cfg.OllamaAPIKey = os.Getenv("OLLAMA_API_KEY") // Optional
 	cfg.GeminiAPIKey = os.Getenv("GEMINI_API_KEY") // Google AI Studio key
+	cfg.DeepSeekAPIKey = os.Getenv("DEEPSEEK_API_KEY") // DeepSeek API key
 	cfg.CustomAPIKey = os.Getenv("CUSTOM_API_KEY")
 
 	// Endpoints
@@ -198,6 +203,9 @@ func LoadFromEnv() (*Config, error) {
 	}
 	if baseURL := os.Getenv("GEMINI_BASE_URL"); baseURL != "" {
 		cfg.GeminiBaseURL = baseURL
+	}
+	if baseURL := os.Getenv("DEEPSEEK_BASE_URL"); baseURL != "" {
+		cfg.DeepSeekBaseURL = baseURL
 	}
 	cfg.CustomBaseURL = os.Getenv("CUSTOM_BASE_URL")
 
@@ -407,6 +415,9 @@ func detectProvider(cfg *Config) ProviderType {
 	if cfg.GeminiAPIKey != "" {
 		return ProviderGemini
 	}
+	if cfg.DeepSeekAPIKey != "" {
+		return ProviderDeepSeek
+	}
 	// Ollama doesn't require API key, check if base URL is set or use detection
 	if cfg.OllamaBaseURL != "" && cfg.OllamaBaseURL != "http://localhost:11434" {
 		return ProviderOllama
@@ -453,6 +464,8 @@ func loadTierConfig(tier string, cfg *Config) *TierConfig {
 			tierCfg.APIKey = cfg.OllamaAPIKey // Usually empty
 		case ProviderGemini:
 			tierCfg.APIKey = cfg.GeminiAPIKey
+		case ProviderDeepSeek:
+			tierCfg.APIKey = cfg.DeepSeekAPIKey
 		case ProviderCustom:
 			tierCfg.APIKey = cfg.CustomAPIKey
 		}
@@ -469,6 +482,8 @@ func loadTierConfig(tier string, cfg *Config) *TierConfig {
 			tierCfg.BaseURL = cfg.OllamaBaseURL + "/v1"
 		case ProviderGemini:
 			tierCfg.BaseURL = cfg.GeminiBaseURL + "/openai"
+		case ProviderDeepSeek:
+			tierCfg.BaseURL = cfg.DeepSeekBaseURL + "/v1"
 		case ProviderCustom:
 			tierCfg.BaseURL = cfg.CustomBaseURL
 		}
@@ -497,6 +512,8 @@ func loadTierConfig(tier string, cfg *Config) *TierConfig {
 				tierCfg.FallbackAPIKey = cfg.OllamaAPIKey
 			case ProviderGemini:
 				tierCfg.FallbackAPIKey = cfg.GeminiAPIKey
+			case ProviderDeepSeek:
+				tierCfg.FallbackAPIKey = cfg.DeepSeekAPIKey
 			case ProviderCustom:
 				tierCfg.FallbackAPIKey = cfg.CustomAPIKey
 			}
@@ -538,6 +555,10 @@ func (c *Config) Validate() error {
 		if c.GeminiAPIKey == "" {
 			return fmt.Errorf("GEMINI_API_KEY is required for provider 'gemini'")
 		}
+	case ProviderDeepSeek:
+		if c.DeepSeekAPIKey == "" {
+			return fmt.Errorf("DEEPSEEK_API_KEY is required for provider 'deepseek'")
+		}
 	case ProviderCustom:
 		if c.CustomBaseURL == "" {
 			return fmt.Errorf("CUSTOM_BASE_URL is required for provider 'custom'")
@@ -564,6 +585,8 @@ func (c *Config) GetAPIKey() string {
 		return c.OllamaAPIKey // Usually empty for local Ollama
 	case ProviderGemini:
 		return c.GeminiAPIKey
+	case ProviderDeepSeek:
+		return c.DeepSeekAPIKey
 	case ProviderCustom:
 		return c.CustomAPIKey
 	default:
@@ -588,6 +611,9 @@ func (c *Config) GetBaseURL() string {
 	case ProviderGemini:
 		// Gemini uses OpenAI-compatible endpoint at /v1beta/openai
 		return c.GeminiBaseURL + "/openai"
+	case ProviderDeepSeek:
+		// DeepSeek uses standard OpenAI-compatible /v1 endpoint
+		return c.DeepSeekBaseURL + "/v1"
 	case ProviderCustom:
 		return c.CustomBaseURL
 	default:

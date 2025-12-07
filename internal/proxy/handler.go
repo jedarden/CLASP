@@ -198,6 +198,8 @@ func createProvider(cfg *config.Config) (provider.Provider, error) {
 		return provider.NewOllamaProvider(cfg.OllamaBaseURL), nil
 	case config.ProviderGemini:
 		return provider.NewGeminiProvider(cfg.GeminiAPIKey), nil
+	case config.ProviderDeepSeek:
+		return provider.NewDeepSeekProvider(cfg.DeepSeekAPIKey), nil
 	case config.ProviderCustom:
 		return provider.NewCustomProvider(cfg.CustomBaseURL), nil
 	default:
@@ -234,6 +236,11 @@ func createTierProvider(tierCfg *config.TierConfig) (provider.Provider, error) {
 			baseURL = "https://generativelanguage.googleapis.com/v1beta"
 		}
 		return provider.NewGeminiProviderWithURL(baseURL, tierCfg.APIKey), nil
+	case config.ProviderDeepSeek:
+		if baseURL == "" {
+			baseURL = "https://api.deepseek.com"
+		}
+		return provider.NewDeepSeekProviderWithURL(baseURL, tierCfg.APIKey), nil
 	case config.ProviderCustom:
 		return provider.NewCustomProviderWithKey(baseURL, tierCfg.APIKey), nil
 	default:

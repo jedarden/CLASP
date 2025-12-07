@@ -353,6 +353,8 @@ func GetKnownModels(provider string) []ModelInfo {
 		return getAzureModels()
 	case "gemini":
 		return getGeminiModels()
+	case "deepseek":
+		return getDeepSeekModels()
 	default:
 		return nil
 	}
@@ -418,6 +420,14 @@ func getGeminiModels() []ModelInfo {
 		{ID: "gemini-1.5-flash", Name: "Gemini 1.5 Flash", Desc: "Fast and efficient", ContextSize: 1048576},
 		{ID: "gemini-1.5-flash-8b", Name: "Gemini 1.5 Flash 8B", Desc: "Lightweight 8B model", ContextSize: 1048576},
 		{ID: "gemini-exp-1206", Name: "Gemini Experimental 1206", Desc: "Latest experimental features", ContextSize: 2097152},
+	}
+}
+
+func getDeepSeekModels() []ModelInfo {
+	return []ModelInfo{
+		{ID: "deepseek-chat", Name: "DeepSeek Chat", Desc: "General purpose chat model - fast and capable", InputPrice: 0.14, OutputPrice: 0.28, ContextSize: 64000, IsRecommended: true},
+		{ID: "deepseek-coder", Name: "DeepSeek Coder", Desc: "Optimized for code generation and understanding", InputPrice: 0.14, OutputPrice: 0.28, ContextSize: 64000, IsRecommended: true},
+		{ID: "deepseek-reasoner", Name: "DeepSeek Reasoner", Desc: "Enhanced reasoning capabilities for complex tasks", InputPrice: 0.55, OutputPrice: 2.19, ContextSize: 64000},
 	}
 }
 

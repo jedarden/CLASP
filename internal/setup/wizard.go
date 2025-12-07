@@ -64,6 +64,7 @@ func NeedsSetup() bool {
 		os.Getenv("OPENROUTER_API_KEY") != "" ||
 		os.Getenv("ANTHROPIC_API_KEY") != "" ||
 		os.Getenv("GEMINI_API_KEY") != "" ||
+		os.Getenv("DEEPSEEK_API_KEY") != "" ||
 		os.Getenv("CUSTOM_API_KEY") != "" {
 		return false
 	}
@@ -249,6 +250,8 @@ func (w *Wizard) Run() (*config.Config, error) {
 		cfg.AnthropicAPIKey = apiKey
 	case "gemini":
 		cfg.GeminiAPIKey = apiKey
+	case "deepseek":
+		cfg.DeepSeekAPIKey = apiKey
 	case "custom":
 		cfg.CustomAPIKey = apiKey
 		cfg.CustomBaseURL = baseURL
@@ -281,7 +284,8 @@ func (w *Wizard) selectProvider() (string, error) {
 	w.println("  4) Anthropic     - Direct passthrough (no translation)")
 	w.println("  5) Ollama        - Local models (free, private)")
 	w.println("  6) Gemini        - Google AI Studio (Gemini 2.0, 1.5 Pro)")
-	w.println("  7) Custom        - vLLM, LM Studio, other OpenAI-compatible")
+	w.println("  7) DeepSeek      - DeepSeek Chat, Coder, Reasoner")
+	w.println("  8) Custom        - vLLM, LM Studio, other OpenAI-compatible")
 	w.println("")
 
 	// Check if Ollama is running locally
@@ -291,7 +295,7 @@ func (w *Wizard) selectProvider() (string, error) {
 	}
 
 	for {
-		choice, err := w.promptInput("Enter choice [1-7]", "1")
+		choice, err := w.promptInput("Enter choice [1-8]", "1")
 		if err != nil {
 			return "", err
 		}
@@ -309,10 +313,12 @@ func (w *Wizard) selectProvider() (string, error) {
 			return "ollama", nil
 		case "6", "gemini":
 			return "gemini", nil
-		case "7", "custom":
+		case "7", "deepseek":
+			return "deepseek", nil
+		case "8", "custom":
 			return "custom", nil
 		default:
-			w.println("Invalid choice. Please enter 1-7.")
+			w.println("Invalid choice. Please enter 1-8.")
 		}
 	}
 }
@@ -388,6 +394,10 @@ func (w *Wizard) promptAPIKey(provider string) (string, error) {
 		prompt = "Google AI Studio API Key"
 		w.println("")
 		w.println("Get your API key at: https://aistudio.google.com/apikey")
+	case "deepseek":
+		prompt = "DeepSeek API Key"
+		w.println("")
+		w.println("Get your API key at: https://platform.deepseek.com/api_keys")
 	case "ollama":
 		// Ollama doesn't need an API key for local use
 		w.println("")
@@ -503,6 +513,13 @@ func (w *Wizard) fetchModels(provider, apiKey, baseURL, azureEndpoint string) ([
 			"gemini-1.5-flash",
 			"gemini-1.5-flash-8b",
 			"gemini-exp-1206",
+		}, nil
+	case "deepseek":
+		// Return DeepSeek's known models
+		return []string{
+			"deepseek-chat",
+			"deepseek-coder",
+			"deepseek-reasoner",
 		}, nil
 	case "azure":
 		// Azure doesn't have a models endpoint, return common deployments
@@ -676,6 +693,8 @@ func getDefaultModel(provider string) string {
 		return "llama3.2"
 	case "gemini":
 		return "gemini-2.0-flash-exp"
+	case "deepseek":
+		return "deepseek-chat"
 	case "custom":
 		return "llama3.1"
 	default:
@@ -718,6 +737,8 @@ func (w *Wizard) setEnvVars(cfg *ConfigFile) {
 		os.Setenv("ANTHROPIC_API_KEY", cfg.APIKey)
 	case "gemini":
 		os.Setenv("GEMINI_API_KEY", cfg.APIKey)
+	case "deepseek":
+		os.Setenv("DEEPSEEK_API_KEY", cfg.APIKey)
 	case "ollama":
 		// Ollama doesn't require API key, just base URL
 		if cfg.BaseURL != "" {
@@ -772,6 +793,8 @@ func ApplyConfigToEnv() error {
 		os.Setenv("ANTHROPIC_API_KEY", cfg.APIKey)
 	case "gemini":
 		os.Setenv("GEMINI_API_KEY", cfg.APIKey)
+	case "deepseek":
+		os.Setenv("DEEPSEEK_API_KEY", cfg.APIKey)
 	case "ollama":
 		// Ollama doesn't require API key, just base URL
 		if cfg.BaseURL != "" {
