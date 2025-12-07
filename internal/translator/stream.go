@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/jedarden/clasp/internal/logging"
 	"github.com/jedarden/clasp/pkg/models"
 )
 
@@ -111,6 +112,8 @@ func (sp *StreamProcessor) ProcessStream(reader io.Reader) error {
 	buf := make([]byte, 0, 64*1024)
 	scanner.Buffer(buf, 1024*1024)
 
+	logging.LogDebugMessage("[STREAM] Starting Chat Completions SSE stream processing for model: %s", sp.targetModel)
+
 	for scanner.Scan() {
 		line := scanner.Text()
 
@@ -125,13 +128,17 @@ func (sp *StreamProcessor) ProcessStream(reader io.Reader) error {
 
 			// Handle [DONE] signal
 			if data == "[DONE]" {
+				logging.LogDebugMessage("[STREAM] Received [DONE] signal")
 				return sp.finalize()
 			}
+
+			// Debug log incoming OpenAI SSE event
+			logging.LogDebugSSE("INCOMING OpenAI", "chunk", data)
 
 			// Parse chunk
 			var chunk models.OpenAIStreamChunk
 			if err := json.Unmarshal([]byte(data), &chunk); err != nil {
-				// Log but continue on parse errors
+				logging.LogDebugMessage("[STREAM] Error parsing chunk: %v", err)
 				continue
 			}
 
@@ -510,6 +517,9 @@ func (sp *StreamProcessor) writeEvent(eventType string, data interface{}) error 
 	if err != nil {
 		return fmt.Errorf("marshaling event data: %w", err)
 	}
+
+	// Debug log outgoing Anthropic SSE event
+	logging.LogDebugSSE("OUTGOING Anthropic", eventType, string(jsonData))
 
 	return sp.writeSSE(eventType, string(jsonData))
 }

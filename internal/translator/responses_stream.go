@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/jedarden/clasp/internal/logging"
 	"github.com/jedarden/clasp/pkg/models"
 )
 
@@ -95,6 +96,8 @@ func (sp *ResponsesStreamProcessor) ProcessStream(reader io.Reader) error {
 	buf := make([]byte, 0, 64*1024)
 	scanner.Buffer(buf, 1024*1024)
 
+	logging.LogDebugMessage("[STREAM] Starting Responses API SSE stream processing for model: %s", sp.targetModel)
+
 	for scanner.Scan() {
 		line := scanner.Text()
 
@@ -106,11 +109,16 @@ func (sp *ResponsesStreamProcessor) ProcessStream(reader io.Reader) error {
 			data := strings.TrimPrefix(line, "data: ")
 
 			if data == "[DONE]" {
+				logging.LogDebugMessage("[STREAM] Received [DONE] signal (Responses API)")
 				return sp.finalize()
 			}
 
+			// Debug log incoming Responses API SSE event
+			logging.LogDebugSSE("INCOMING Responses API", "event", data)
+
 			var event models.ResponsesStreamEvent
 			if err := json.Unmarshal([]byte(data), &event); err != nil {
+				logging.LogDebugMessage("[STREAM] Error parsing Responses API event: %v", err)
 				continue
 			}
 
@@ -714,6 +722,9 @@ func (sp *ResponsesStreamProcessor) writeEvent(eventType string, data interface{
 	if err != nil {
 		return fmt.Errorf("marshaling event data: %w", err)
 	}
+
+	// Debug log outgoing Anthropic SSE event
+	logging.LogDebugSSE("OUTGOING Anthropic", eventType, string(jsonData))
 
 	return sp.writeSSE(eventType, string(jsonData))
 }

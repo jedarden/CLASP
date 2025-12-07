@@ -274,7 +274,10 @@ func main() {
 		cfg.Debug = true
 		cfg.DebugRequests = true
 		cfg.DebugResponses = true
-		// Enable file-based debug logging to ~/.clasp/logs/debug.log
+	}
+
+	// Enable debug file logging if debug is enabled (from either -debug flag or CLASP_DEBUG env var)
+	if cfg.Debug {
 		if err := logging.EnableDebugLogging(); err != nil {
 			log.Printf("[CLASP] Warning: Could not enable debug file logging: %v", err)
 		} else {
