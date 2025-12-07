@@ -486,6 +486,77 @@ func TestResponsesStreamProcessor_ErrorHandling(t *testing.T) {
 	}
 }
 
+// TestResponsesStreamProcessor_FunctionCallIDTranslation verifies that function call IDs
+// are properly translated between Responses API format (fc_xxx) and Anthropic format (call_xxx).
+// This was a bug where handleOutputItemDone failed to close tool blocks because it compared
+// the translated Anthropic ID with the raw Responses API ID.
+func TestResponsesStreamProcessor_FunctionCallIDTranslation(t *testing.T) {
+	var buf bytes.Buffer
+	sp := NewResponsesStreamProcessor(&buf, "msg_test", "gpt-5")
+
+	// Output item added with function_call type (Responses API uses fc_ prefix)
+	itemAddedEvent := &models.ResponsesStreamEvent{
+		Type: models.EventOutputItemAdded,
+		Item: &models.ResponsesItem{
+			Type:   "function_call",
+			CallID: "fc_abc123xyz", // Responses API format
+			Name:   "search_files",
+		},
+	}
+	if err := sp.processEvent(itemAddedEvent); err != nil {
+		t.Fatalf("processEvent (item added) failed: %v", err)
+	}
+
+	// Function call arguments delta
+	argsEvent := &models.ResponsesStreamEvent{
+		Type: models.EventFunctionCallArgs,
+		Delta: &models.ResponsesDelta{
+			Delta: `{"query": "test"}`,
+		},
+	}
+	if err := sp.processEvent(argsEvent); err != nil {
+		t.Fatalf("processEvent (args) failed: %v", err)
+	}
+
+	// Output item done - this should close the function call block
+	// The CallID is in Responses API format (fc_xxx), but internally we stored
+	// the translated Anthropic format (call_xxx). The fix ensures we translate
+	// the incoming ID before comparison.
+	itemDoneEvent := &models.ResponsesStreamEvent{
+		Type: models.EventOutputItemDone,
+		Item: &models.ResponsesItem{
+			Type:   "function_call",
+			CallID: "fc_abc123xyz", // Same Responses API format ID
+			Name:   "search_files",
+		},
+	}
+	if err := sp.processEvent(itemDoneEvent); err != nil {
+		t.Fatalf("processEvent (item done) failed: %v", err)
+	}
+
+	output := buf.String()
+
+	// Verify the tool call block was started and closed properly
+	if !strings.Contains(output, "tool_use") {
+		t.Errorf("output should contain tool_use content block, got: %s", output)
+	}
+	if !strings.Contains(output, "search_files") {
+		t.Errorf("output should contain function name 'search_files', got: %s", output)
+	}
+
+	// Verify content_block_stop was emitted for the tool block
+	// Count content_block_stop events
+	stopCount := strings.Count(output, "content_block_stop")
+	if stopCount < 1 {
+		t.Errorf("expected at least 1 content_block_stop event (for tool_use), got %d\nOutput: %s", stopCount, output)
+	}
+
+	// Verify the ID is translated to Anthropic format in the output (call_xxx)
+	if !strings.Contains(output, "call_abc123xyz") {
+		t.Errorf("output should contain translated tool ID 'call_abc123xyz', got: %s", output)
+	}
+}
+
 // Helper to verify JSON structure in output
 func parseSSEEvents(output string) ([]map[string]interface{}, error) {
 	var events []map[string]interface{}

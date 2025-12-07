@@ -379,8 +379,11 @@ func (sp *ResponsesStreamProcessor) handleOutputItemDone(event *models.Responses
 		}
 	case "function_call":
 		// Close function call block
+		// Note: fcState.id is in Anthropic format (call_xxx), but event.Item.CallID is
+		// in Responses API format (fc_xxx). We need to translate for comparison.
+		translatedCallID := TranslateResponsesIDToAnthropic(event.Item.CallID)
 		for _, fcState := range sp.activeFuncCalls {
-			if fcState.started && !fcState.closed && fcState.id == event.Item.CallID {
+			if fcState.started && !fcState.closed && fcState.id == translatedCallID {
 				if err := sp.emitContentBlockStop(fcState.blockIndex); err != nil {
 					return err
 				}
