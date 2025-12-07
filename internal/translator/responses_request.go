@@ -243,12 +243,16 @@ func transformAssistantMessageToInput(content []models.ContentBlock) []models.Re
 // transformToolsToResponses converts Anthropic tools to Responses API format.
 // The Responses API uses a flattened tool structure where name, description, and parameters
 // are at the top level (not nested in a "function" object like Chat Completions API).
+//
+// IMPORTANT: We set Strict=false because Anthropic's tool schemas mark ALL parameters as
+// required, but Claude Code only provides values for truly required parameters. With strict
+// mode enabled, OpenAI rejects tool calls when optional parameters are missing.
 func transformToolsToResponses(tools []models.AnthropicTool) []models.ResponsesTool {
 	result := make([]models.ResponsesTool, len(tools))
 
 	for i, tool := range tools {
-		// Clean up input schema
-		params := cleanupSchema(tool.InputSchema)
+		// Clean up input schema and fix required array
+		params := cleanupSchemaForResponses(tool.InputSchema)
 
 		// Responses API uses a flattened structure with name at top level
 		result[i] = models.ResponsesTool{
@@ -262,11 +266,127 @@ func transformToolsToResponses(tools []models.AnthropicTool) []models.ResponsesT
 				Name:        tool.Name,
 				Description: tool.Description,
 				Parameters:  params,
+				Strict:      false, // CRITICAL: Don't use strict mode - Anthropic marks all params as required
 			},
 		}
 	}
 
 	return result
+}
+
+// cleanupSchemaForResponses prepares an Anthropic tool schema for the Responses API.
+// This includes removing unsupported format types and fixing the required array
+// to only include truly required parameters.
+func cleanupSchemaForResponses(schema interface{}) interface{} {
+	if schema == nil {
+		return nil
+	}
+
+	data, err := json.Marshal(schema)
+	if err != nil {
+		return schema
+	}
+
+	var schemaMap map[string]interface{}
+	if err := json.Unmarshal(data, &schemaMap); err != nil {
+		return schema
+	}
+
+	// Clean up the schema
+	cleanupSchemaMapForResponses(schemaMap)
+	return schemaMap
+}
+
+// cleanupSchemaMapForResponses recursively cleans up schema properties for Responses API.
+// Key fix: Only include truly required parameters (those without defaults and not nullable).
+func cleanupSchemaMapForResponses(schema map[string]interface{}) {
+	// Remove unsupported format types
+	if format, ok := schema["format"].(string); ok {
+		if format == "uri" {
+			delete(schema, "format")
+		}
+	}
+
+	// Process properties and fix required array
+	if props, ok := schema["properties"].(map[string]interface{}); ok {
+		// Identify truly required parameters
+		trulyRequired := identifyTrulyRequired(props, schema)
+		if len(trulyRequired) > 0 {
+			schema["required"] = trulyRequired
+		} else {
+			// If no truly required params, remove required array entirely
+			delete(schema, "required")
+		}
+
+		// Recurse into properties
+		for _, v := range props {
+			if propMap, ok := v.(map[string]interface{}); ok {
+				cleanupSchemaMapForResponses(propMap)
+			}
+		}
+	}
+
+	// Recurse into items (for arrays)
+	if items, ok := schema["items"].(map[string]interface{}); ok {
+		cleanupSchemaMapForResponses(items)
+	}
+}
+
+// identifyTrulyRequired determines which parameters are truly required.
+// A parameter is truly required if:
+// 1. It appears in the original required array
+// 2. It doesn't have a default value
+// 3. It's not nullable
+// 4. It doesn't have a description containing "optional" or "(optional)"
+func identifyTrulyRequired(props map[string]interface{}, schema map[string]interface{}) []string {
+	var trulyRequired []string
+
+	// Get original required array
+	originalRequired := make(map[string]bool)
+	if req, ok := schema["required"].([]interface{}); ok {
+		for _, r := range req {
+			if s, ok := r.(string); ok {
+				originalRequired[s] = true
+			}
+		}
+	}
+
+	for propName, propVal := range props {
+		propMap, ok := propVal.(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		// Skip if not in original required array
+		if !originalRequired[propName] {
+			continue
+		}
+
+		// Skip if it has a default value
+		if _, hasDefault := propMap["default"]; hasDefault {
+			continue
+		}
+
+		// Skip if nullable
+		if nullable, ok := propMap["nullable"].(bool); ok && nullable {
+			continue
+		}
+
+		// Skip if description indicates it's optional
+		if desc, ok := propMap["description"].(string); ok {
+			descLower := strings.ToLower(desc)
+			if strings.Contains(descLower, "optional") ||
+				strings.Contains(descLower, "(optional)") ||
+				strings.Contains(descLower, "if not specified") ||
+				strings.Contains(descLower, "defaults to") {
+				continue
+			}
+		}
+
+		trulyRequired = append(trulyRequired, propName)
+	}
+
+	return trulyRequired
 }
 
 // transformToolChoiceToResponses converts Anthropic tool_choice to Responses API format.

@@ -724,3 +724,237 @@ func TestTransformRequestToResponses_ContentTypes(t *testing.T) {
 		t.Errorf("Content[1].Type = %q, want %q (Responses API requires input_image for images)", part1.Type, "input_image")
 	}
 }
+
+func TestIdentifyTrulyRequired(t *testing.T) {
+	tests := []struct {
+		name     string
+		props    map[string]interface{}
+		schema   map[string]interface{}
+		expected []string
+	}{
+		{
+			name: "All truly required",
+			props: map[string]interface{}{
+				"name": map[string]interface{}{
+					"type":        "string",
+					"description": "The name",
+				},
+				"age": map[string]interface{}{
+					"type":        "integer",
+					"description": "The age",
+				},
+			},
+			schema: map[string]interface{}{
+				"required": []interface{}{"name", "age"},
+			},
+			expected: []string{"name", "age"},
+		},
+		{
+			name: "Has default - should be excluded",
+			props: map[string]interface{}{
+				"name": map[string]interface{}{
+					"type":        "string",
+					"description": "The name",
+				},
+				"count": map[string]interface{}{
+					"type":        "integer",
+					"description": "The count",
+					"default":     10,
+				},
+			},
+			schema: map[string]interface{}{
+				"required": []interface{}{"name", "count"},
+			},
+			expected: []string{"name"},
+		},
+		{
+			name: "Described as optional - should be excluded",
+			props: map[string]interface{}{
+				"name": map[string]interface{}{
+					"type":        "string",
+					"description": "The name",
+				},
+				"model": map[string]interface{}{
+					"type":        "string",
+					"description": "Optional model to use for this agent",
+				},
+			},
+			schema: map[string]interface{}{
+				"required": []interface{}{"name", "model"},
+			},
+			expected: []string{"name"},
+		},
+		{
+			name: "Nullable - should be excluded",
+			props: map[string]interface{}{
+				"name": map[string]interface{}{
+					"type":        "string",
+					"description": "The name",
+				},
+				"resume": map[string]interface{}{
+					"type":        "string",
+					"description": "Agent ID to resume",
+					"nullable":    true,
+				},
+			},
+			schema: map[string]interface{}{
+				"required": []interface{}{"name", "resume"},
+			},
+			expected: []string{"name"},
+		},
+		{
+			name: "Defaults to - should be excluded",
+			props: map[string]interface{}{
+				"name": map[string]interface{}{
+					"type":        "string",
+					"description": "The name",
+				},
+				"model": map[string]interface{}{
+					"type":        "string",
+					"description": "Model ID. Defaults to haiku for quick tasks.",
+				},
+			},
+			schema: map[string]interface{}{
+				"required": []interface{}{"name", "model"},
+			},
+			expected: []string{"name"},
+		},
+		{
+			name: "If not specified - should be excluded",
+			props: map[string]interface{}{
+				"name": map[string]interface{}{
+					"type":        "string",
+					"description": "The name",
+				},
+				"count": map[string]interface{}{
+					"type":        "integer",
+					"description": "Number of items. If not specified, uses 10.",
+				},
+			},
+			schema: map[string]interface{}{
+				"required": []interface{}{"name", "count"},
+			},
+			expected: []string{"name"},
+		},
+		{
+			name: "Not in original required - should be excluded",
+			props: map[string]interface{}{
+				"name": map[string]interface{}{
+					"type":        "string",
+					"description": "The name",
+				},
+				"extra": map[string]interface{}{
+					"type":        "string",
+					"description": "Extra info",
+				},
+			},
+			schema: map[string]interface{}{
+				"required": []interface{}{"name"},
+			},
+			expected: []string{"name"},
+		},
+		{
+			name:   "Empty properties",
+			props:  map[string]interface{}{},
+			schema: map[string]interface{}{},
+			expected: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := identifyTrulyRequired(tt.props, tt.schema)
+
+			// Compare slices (order may vary)
+			if len(result) != len(tt.expected) {
+				t.Errorf("identifyTrulyRequired returned %v, want %v", result, tt.expected)
+				return
+			}
+
+			// Check all expected values are present
+			resultMap := make(map[string]bool)
+			for _, r := range result {
+				resultMap[r] = true
+			}
+			for _, e := range tt.expected {
+				if !resultMap[e] {
+					t.Errorf("Expected %q in result, got %v", e, result)
+				}
+			}
+		})
+	}
+}
+
+func TestTransformToolsToResponses_StrictModeFalse(t *testing.T) {
+	// Test that tools are created with strict=false to avoid validation issues
+	// when Anthropic marks all parameters as required but Claude only provides truly required ones
+	tools := []models.AnthropicTool{
+		{
+			Name:        "Task",
+			Description: "Launch a task agent",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"description": map[string]interface{}{
+						"type":        "string",
+						"description": "Task description",
+					},
+					"model": map[string]interface{}{
+						"type":        "string",
+						"description": "Optional model to use",
+					},
+					"resume": map[string]interface{}{
+						"type":        "string",
+						"description": "Optional agent ID to resume",
+					},
+					"subagent_type": map[string]interface{}{
+						"type":        "string",
+						"description": "Type of specialized agent",
+					},
+				},
+				// Anthropic marks ALL as required, but model and resume are optional
+				"required": []interface{}{"description", "model", "resume", "subagent_type"},
+			},
+		},
+	}
+
+	result := transformToolsToResponses(tools)
+
+	if len(result) != 1 {
+		t.Fatalf("Expected 1 tool, got %d", len(result))
+	}
+
+	tool := result[0]
+
+	// Verify strict mode is false
+	if tool.Function == nil {
+		t.Fatal("Tool.Function should not be nil")
+	}
+	if tool.Function.Strict {
+		t.Error("Tool.Function.Strict should be false to allow lenient validation")
+	}
+
+	// Verify the required array has been cleaned up
+	params, ok := tool.Parameters.(map[string]interface{})
+	if !ok {
+		t.Fatal("Tool.Parameters should be a map")
+	}
+
+	requiredRaw, hasRequired := params["required"]
+	if hasRequired {
+		required, ok := requiredRaw.([]string)
+		if ok {
+			// Only description and subagent_type should be required
+			// (model and resume have "optional" in description)
+			for _, r := range required {
+				if r == "model" || r == "resume" {
+					t.Errorf("Parameter %q should NOT be in required array (it's optional)", r)
+				}
+			}
+		}
+	}
+
+	// Log for debugging
+	jsonData, _ := json.MarshalIndent(tool, "", "  ")
+	t.Logf("Generated tool JSON:\n%s", string(jsonData))
+}

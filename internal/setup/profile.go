@@ -42,9 +42,12 @@ type Profile struct {
 	Port int `json:"port,omitempty"`
 
 	// Feature flags
-	RateLimitEnabled     bool `json:"rate_limit_enabled,omitempty"`
-	CacheEnabled         bool `json:"cache_enabled,omitempty"`
+	RateLimitEnabled      bool `json:"rate_limit_enabled,omitempty"`
+	CacheEnabled          bool `json:"cache_enabled,omitempty"`
 	CircuitBreakerEnabled bool `json:"circuit_breaker_enabled,omitempty"`
+
+	// Claude Code settings
+	ClaudeCode *ClaudeCodeConfig `json:"claude_code,omitempty"`
 
 	// Timestamps
 	CreatedAt string `json:"created_at"`

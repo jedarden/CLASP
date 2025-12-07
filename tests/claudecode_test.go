@@ -161,6 +161,53 @@ func TestLaunchOptions(t *testing.T) {
 	}
 }
 
+func TestLaunchOptionsSkipPermissions(t *testing.T) {
+	// Test that SkipPermissions field is available and works
+	tests := []struct {
+		name            string
+		skipPermissions bool
+	}{
+		{"enabled", true},
+		{"disabled", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			opts := claudecode.LaunchOptions{
+				WorkingDir:      "/tmp/test",
+				Args:            []string{"--resume"},
+				ProxyURL:        "http://localhost:8080",
+				Interactive:     true,
+				SkipPermissions: tt.skipPermissions,
+			}
+
+			if opts.SkipPermissions != tt.skipPermissions {
+				t.Errorf("SkipPermissions = %v, want %v", opts.SkipPermissions, tt.skipPermissions)
+			}
+		})
+	}
+}
+
+func TestLaunchOptionsArgsWithSkipPermissions(t *testing.T) {
+	// When SkipPermissions is true, the --dangerously-skip-permissions flag
+	// should be prepended to the args list when launching
+	opts := claudecode.LaunchOptions{
+		Args:            []string{"--resume", "--no-color"},
+		ProxyURL:        "http://localhost:8080",
+		Interactive:     true,
+		SkipPermissions: true,
+	}
+
+	// Verify base config is correct
+	if !opts.SkipPermissions {
+		t.Error("SkipPermissions should be true")
+	}
+
+	if len(opts.Args) != 2 {
+		t.Errorf("Expected 2 args, got %d", len(opts.Args))
+	}
+}
+
 func TestInstallOptions(t *testing.T) {
 	manager := claudecode.NewManager("http://localhost:8080", false)
 

@@ -26,7 +26,7 @@ import (
 )
 
 var (
-	version = "v0.34.6"
+	version = "v0.35.0"
 )
 
 func main() {
@@ -100,6 +100,8 @@ func main() {
 	claudeStatus := flag.Bool("claude-status", false, "Check Claude Code installation status")
 	proxyOnly := flag.Bool("proxy-only", false, "Run proxy only without launching Claude Code")
 	verbose := flag.Bool("verbose", false, "Enable verbose output")
+	skipPermissions := flag.Bool("skip-permissions", false, "Auto-approve all Claude Code operations (--dangerously-skip-permissions)")
+	withPrompts := flag.Bool("with-prompts", false, "Force standard mode with confirmation prompts (overrides profile setting)")
 
 	// Profile management flags
 	profileName := flag.String("profile", "", "Use a specific profile")
@@ -413,13 +415,34 @@ func main() {
 			cancel()
 		}()
 
+		// Determine SkipPermissions setting
+		// Priority: CLI flag > profile setting > default (false)
+		shouldSkipPermissions := false
+
+		// First, check if profile has this setting
+		pm := setup.NewProfileManager()
+		if activeProfile, err := pm.GetActiveProfile(); err == nil && activeProfile != nil {
+			if activeProfile.ClaudeCode != nil {
+				shouldSkipPermissions = activeProfile.ClaudeCode.SkipPermissions
+			}
+		}
+
+		// CLI flags override profile setting
+		if *skipPermissions {
+			shouldSkipPermissions = true
+		}
+		if *withPrompts {
+			shouldSkipPermissions = false
+		}
+
 		// Launch Claude Code
 		manager := claudecode.NewManager(proxyURL, *verbose)
 		launchOpts := claudecode.LaunchOptions{
-			WorkingDir:  "",
-			Args:        claudeArgs,
-			ProxyURL:    proxyURL,
-			Interactive: true,
+			WorkingDir:      "",
+			Args:            claudeArgs,
+			ProxyURL:        proxyURL,
+			Interactive:     true,
+			SkipPermissions: shouldSkipPermissions,
 		}
 
 		claudeErrCh := make(chan error, 1)
@@ -492,6 +515,8 @@ Claude Code Management:
   -launch                   Explicit flag to launch Claude Code (now default)
   -claude-status            Check Claude Code installation status
   -update-claude            Update Claude Code to latest version
+  -skip-permissions         Auto-approve all operations (no confirmation prompts)
+  -with-prompts             Force standard mode with prompts (overrides profile)
   -verbose                  Enable verbose output
 
 Options:
@@ -707,6 +732,12 @@ Claude Code Integration:
   # Run proxy only (no Claude Code launch)
   OPENAI_API_KEY=sk-xxx clasp -proxy-only
 
+  # Auto-approve mode (no confirmation prompts - for trusted environments)
+  OPENAI_API_KEY=sk-xxx clasp -skip-permissions
+
+  # Force prompts even if profile has auto-approve enabled
+  OPENAI_API_KEY=sk-xxx clasp -with-prompts
+
   # Manual integration (set ANTHROPIC_BASE_URL to point to CLASP)
   ANTHROPIC_BASE_URL=http://localhost:8080 claude
 
@@ -715,6 +746,14 @@ Claude Code Integration:
 
   # Update Claude Code to latest version
   clasp -update-claude
+
+Permission Modes:
+  Auto-approve mode (-skip-permissions) uses Claude Code's --dangerously-skip-permissions
+  flag, which disables all confirmation prompts for file edits, commands, etc.
+  This is recommended for trusted development environments and CI/CD pipelines.
+
+  The permission mode can be configured in a profile during 'clasp profile create'
+  and overridden per-session with -skip-permissions or -with-prompts flags.
 
 For more information: https://github.com/jedarden/CLASP
 `, version)

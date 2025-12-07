@@ -292,12 +292,13 @@ func (m *Manager) EnsureInstalled() (*InstallStatus, error) {
 
 // LaunchOptions configures how Claude Code is launched.
 type LaunchOptions struct {
-	WorkingDir     string
-	Args           []string
-	ProxyURL       string
-	APIKey         string // Optional: pre-configured API key for the proxy
-	Interactive    bool
-	PassthroughEnv bool // Pass through all environment variables
+	WorkingDir      string
+	Args            []string
+	ProxyURL        string
+	APIKey          string // Optional: pre-configured API key for the proxy
+	Interactive     bool
+	PassthroughEnv  bool // Pass through all environment variables
+	SkipPermissions bool // Use --dangerously-skip-permissions flag
 }
 
 // Launch starts Claude Code with the CLASP proxy configuration.
@@ -312,6 +313,12 @@ func (m *Manager) Launch(opts LaunchOptions) error {
 		return fmt.Errorf("Claude Code installation failed")
 	}
 
+	// Build the arguments list, prepending --dangerously-skip-permissions if requested
+	args := opts.Args
+	if opts.SkipPermissions {
+		args = append([]string{"--dangerously-skip-permissions"}, args...)
+	}
+
 	// Determine the command to run
 	var cmd *exec.Cmd
 
@@ -320,19 +327,19 @@ func (m *Manager) Launch(opts LaunchOptions) error {
 		// Use bundled Claude Code - check if it's a JS file or binary
 		if strings.HasSuffix(status.Path, ".js") {
 			// Run with node
-			args := append([]string{status.Path}, opts.Args...)
-			cmd = exec.Command("node", args...)
+			nodeArgs := append([]string{status.Path}, args...)
+			cmd = exec.Command("node", nodeArgs...)
 		} else {
 			// Direct binary or symlink
-			cmd = exec.Command(status.Path, opts.Args...)
+			cmd = exec.Command(status.Path, args...)
 		}
 	case "npx":
 		// Use npx to run Claude Code
-		args := append([]string{"-y", "@anthropic-ai/claude-code"}, opts.Args...)
-		cmd = exec.Command("npx", args...)
+		npxArgs := append([]string{"-y", "@anthropic-ai/claude-code"}, args...)
+		cmd = exec.Command("npx", npxArgs...)
 	default:
 		// Use installed claude command
-		cmd = exec.Command(status.Path, opts.Args...)
+		cmd = exec.Command(status.Path, args...)
 	}
 
 	// Set working directory

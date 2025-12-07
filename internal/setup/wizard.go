@@ -19,15 +19,25 @@ import (
 
 // ConfigFile represents the saved configuration format.
 type ConfigFile struct {
-	Provider      string            `json:"provider"`
-	Model         string            `json:"model,omitempty"`
-	APIKey        string            `json:"api_key,omitempty"`
-	BaseURL       string            `json:"base_url,omitempty"`
-	AzureEndpoint string            `json:"azure_endpoint,omitempty"`
-	AzureDeployment string          `json:"azure_deployment,omitempty"`
-	ModelAliases  map[string]string `json:"model_aliases,omitempty"`
-	CreatedAt     string            `json:"created_at"`
-	UpdatedAt     string            `json:"updated_at"`
+	Provider         string            `json:"provider"`
+	Model            string            `json:"model,omitempty"`
+	APIKey           string            `json:"api_key,omitempty"`
+	BaseURL          string            `json:"base_url,omitempty"`
+	AzureEndpoint    string            `json:"azure_endpoint,omitempty"`
+	AzureDeployment  string            `json:"azure_deployment,omitempty"`
+	ModelAliases     map[string]string `json:"model_aliases,omitempty"`
+	CreatedAt        string            `json:"created_at"`
+	UpdatedAt        string            `json:"updated_at"`
+	// Claude Code settings
+	ClaudeCodeConfig *ClaudeCodeConfig `json:"claude_code,omitempty"`
+}
+
+// ClaudeCodeConfig represents Claude Code CLI configuration.
+type ClaudeCodeConfig struct {
+	// SkipPermissions enables --dangerously-skip-permissions flag (default: true)
+	SkipPermissions bool `json:"skip_permissions"`
+	// AdditionalArgs contains extra arguments to pass to Claude Code
+	AdditionalArgs []string `json:"additional_args,omitempty"`
 }
 
 // Wizard handles the interactive setup process.
@@ -177,19 +187,26 @@ func (w *Wizard) Run() (*config.Config, error) {
 		return nil, err
 	}
 
-	// Step 6: Save configuration
+	// Step 6: Configure Claude Code settings
+	claudeCodeConfig, err := w.configureClaudeCode()
+	if err != nil {
+		return nil, err
+	}
+
+	// Step 7: Save configuration
 	w.println("")
 	w.println("Saving configuration...")
 
 	configFile := &ConfigFile{
-		Provider:        provider,
-		Model:           model,
-		APIKey:          apiKey,
-		BaseURL:         baseURL,
-		AzureEndpoint:   azureEndpoint,
-		AzureDeployment: azureDeployment,
-		CreatedAt:       time.Now().Format(time.RFC3339),
-		UpdatedAt:       time.Now().Format(time.RFC3339),
+		Provider:         provider,
+		Model:            model,
+		APIKey:           apiKey,
+		BaseURL:          baseURL,
+		AzureEndpoint:    azureEndpoint,
+		AzureDeployment:  azureDeployment,
+		ClaudeCodeConfig: claudeCodeConfig,
+		CreatedAt:        time.Now().Format(time.RFC3339),
+		UpdatedAt:        time.Now().Format(time.RFC3339),
 	}
 
 	if err := w.saveConfig(configFile); err != nil {
@@ -269,6 +286,51 @@ func (w *Wizard) selectProvider() (string, error) {
 			w.println("Invalid choice. Please enter 1-5.")
 		}
 	}
+}
+
+// configureClaudeCode prompts the user for Claude Code settings.
+// By default, it enables --dangerously-skip-permissions for seamless operation.
+func (w *Wizard) configureClaudeCode() (*ClaudeCodeConfig, error) {
+	w.println("")
+	w.println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	w.println("Claude Code Configuration")
+	w.println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	w.println("")
+	w.println("CLASP launches Claude Code with automatic permissions enabled")
+	w.println("(--dangerously-skip-permissions) for seamless tool execution.")
+	w.println("")
+	w.println("This allows Claude Code to:")
+	w.println("  • Edit files without confirmation prompts")
+	w.println("  • Run shell commands automatically")
+	w.println("  • Use all tools without manual approval")
+	w.println("")
+	w.println("This is recommended for development workflows, but you can")
+	w.println("disable it for stricter permission control.")
+	w.println("")
+
+	// Default to skip permissions enabled
+	config := &ClaudeCodeConfig{
+		SkipPermissions: true,
+	}
+
+	w.printf("Enable automatic permissions? [Y/n]: ")
+	choice, err := w.reader.ReadString('\n')
+	if err != nil {
+		return nil, err
+	}
+
+	choice = strings.TrimSpace(strings.ToLower(choice))
+	if choice == "n" || choice == "no" {
+		config.SkipPermissions = false
+		w.println("")
+		w.println("Automatic permissions disabled.")
+		w.println("Claude Code will ask for confirmation before using tools.")
+	} else {
+		w.println("")
+		w.println("Automatic permissions enabled.")
+	}
+
+	return config, nil
 }
 
 func (w *Wizard) promptAPIKey(provider string) (string, error) {
@@ -758,6 +820,12 @@ func (w *Wizard) RunProfileCreate(profileName string) (*Profile, error) {
 		port, _ = strconv.Atoi(portStr)
 	}
 
+	// Configure Claude Code settings
+	claudeCodeCfg, err := w.configureClaudeCode()
+	if err != nil {
+		return nil, err
+	}
+
 	// Create profile
 	profile := &Profile{
 		Name:            profileName,
@@ -770,6 +838,7 @@ func (w *Wizard) RunProfileCreate(profileName string) (*Profile, error) {
 		DefaultModel:    model,
 		TierMappings:    tierMappings,
 		Port:            port,
+		ClaudeCode:      claudeCodeCfg,
 	}
 
 	// Save profile
