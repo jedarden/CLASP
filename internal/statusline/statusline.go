@@ -433,16 +433,8 @@ func ListAllInstances() ([]InstanceInfo, error) {
 			continue
 		}
 
-		// Check if the process is still running
-		isRunning := false
-		if status.PID > 0 {
-			// Try to send signal 0 to check if process exists
-			process, err := os.FindProcess(status.PID)
-			if err == nil {
-				err = process.Signal(syscall.Signal(0))
-				isRunning = err == nil
-			}
-		}
+		// Check if the process is still running (and not a zombie)
+		isRunning := isProcessAlive(status.PID)
 
 		uptime := ""
 		if !status.StartTime.IsZero() {
@@ -468,14 +460,7 @@ func ListAllInstances() ([]InstanceInfo, error) {
 	if data, err := os.ReadFile(legacyPath); err == nil {
 		var status Status
 		if json.Unmarshal(data, &status) == nil && status.Running {
-			isRunning := false
-			if status.PID > 0 {
-				process, err := os.FindProcess(status.PID)
-				if err == nil {
-					err = process.Signal(syscall.Signal(0))
-					isRunning = err == nil
-				}
-			}
+			isRunning := isProcessAlive(status.PID)
 
 			uptime := ""
 			if !status.StartTime.IsZero() {
@@ -517,6 +502,51 @@ func CleanupStaleInstances() (int, error) {
 	}
 
 	return cleaned, nil
+}
+
+// isProcessAlive checks if a process is running and not a zombie.
+// On Linux, zombie processes have state 'Z' in /proc/[pid]/stat.
+func isProcessAlive(pid int) bool {
+	if pid <= 0 {
+		return false
+	}
+
+	// First check if process exists via signal 0
+	process, err := os.FindProcess(pid)
+	if err != nil {
+		return false
+	}
+	if err := process.Signal(syscall.Signal(0)); err != nil {
+		return false
+	}
+
+	// On Linux, check /proc/[pid]/stat for zombie state
+	statPath := fmt.Sprintf("/proc/%d/stat", pid)
+	data, err := os.ReadFile(statPath)
+	if err != nil {
+		// If we can't read /proc, fall back to just the signal check (non-Linux)
+		return true
+	}
+
+	// /proc/[pid]/stat format: pid (comm) state ...
+	// The state is the third field after the command name in parentheses
+	content := string(data)
+	// Find the closing parenthesis of the command name
+	closeParenIdx := strings.LastIndex(content, ")")
+	if closeParenIdx == -1 || closeParenIdx+2 >= len(content) {
+		return true // Can't parse, assume alive
+	}
+
+	// State is the first field after ") "
+	remainder := strings.TrimSpace(content[closeParenIdx+1:])
+	fields := strings.Fields(remainder)
+	if len(fields) == 0 {
+		return true // Can't parse, assume alive
+	}
+
+	state := fields[0]
+	// 'Z' means zombie, 'X' means dead
+	return state != "Z" && state != "X"
 }
 
 // ReadStatusFromFile reads the status from the file (for external use like CLI).
