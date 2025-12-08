@@ -6,7 +6,10 @@
 BINARY_NAME=clasp
 BUILD_DIR=bin
 DIST_DIR=dist
-VERSION=$(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
+# Use git tag if on a tag, otherwise use the version from package.json
+GIT_TAG=$(shell git describe --tags --exact-match 2>/dev/null)
+PKG_VERSION=$(shell node -p "require('./package.json').version" 2>/dev/null || echo "dev")
+VERSION=$(if $(GIT_TAG),$(GIT_TAG),v$(PKG_VERSION))
 LDFLAGS=-ldflags "-s -w -X main.version=$(VERSION)"
 
 # Platforms for cross-compilation
