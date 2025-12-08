@@ -18,7 +18,7 @@ import (
 )
 
 // Version is the MCP server version
-const Version = "0.48.0"
+const Version = "0.48.9"
 
 // Server represents the MCP server
 type Server struct {

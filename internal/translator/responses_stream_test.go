@@ -557,6 +557,71 @@ func TestResponsesStreamProcessor_FunctionCallIDTranslation(t *testing.T) {
 	}
 }
 
+// TestResponsesStreamProcessor_FunctionCallArgumentsDelta tests that function call arguments
+// are properly streamed when the delta is a string (stored in DeltaText by the unmarshaller).
+// This test covers the fix for the bug where function_call_arguments.delta events were ignored
+// because event.Delta was nil (the delta is a string, not an object).
+func TestResponsesStreamProcessor_FunctionCallArgumentsDelta(t *testing.T) {
+	var buf bytes.Buffer
+	sp := NewResponsesStreamProcessor(&buf, "msg_test", "gpt-5")
+
+	// First: add the function call item (this is how Responses API works)
+	addEvent := &models.ResponsesStreamEvent{
+		Type: models.EventOutputItemAdded,
+		Item: &models.ResponsesItem{
+			Type:   "function_call",
+			ID:     "fc_test123",
+			CallID: "fc_test123",
+			Name:   "Task",
+		},
+	}
+	if err := sp.processEvent(addEvent); err != nil {
+		t.Fatalf("processEvent (output_item.added) failed: %v", err)
+	}
+
+	// Verify tool_use block was started
+	output := buf.String()
+	if !strings.Contains(output, "tool_use") {
+		t.Errorf("output should contain 'tool_use' block type, got: %s", output)
+	}
+	if !strings.Contains(output, "Task") {
+		t.Errorf("output should contain function name 'Task', got: %s", output)
+	}
+
+	// Then: stream function call arguments via DeltaText (the actual format)
+	// This simulates the real event format: {"delta": "{\"prompt\":", "type": "response.function_call_arguments.delta"}
+	deltaEvent1 := &models.ResponsesStreamEvent{
+		Type:      models.EventFunctionCallArgs,
+		DeltaText: "{\"prompt\":",
+	}
+	if err := sp.processEvent(deltaEvent1); err != nil {
+		t.Fatalf("processEvent (function_call_arguments.delta 1) failed: %v", err)
+	}
+
+	deltaEvent2 := &models.ResponsesStreamEvent{
+		Type:      models.EventFunctionCallArgs,
+		DeltaText: "\"Hello world\"}",
+	}
+	if err := sp.processEvent(deltaEvent2); err != nil {
+		t.Fatalf("processEvent (function_call_arguments.delta 2) failed: %v", err)
+	}
+
+	// Verify output contains the argument deltas as input_json_delta
+	// Note: The arguments appear JSON-escaped in the SSE output (inside partial_json)
+	output = buf.String()
+	if !strings.Contains(output, "input_json_delta") {
+		t.Errorf("output should contain 'input_json_delta', got: %s", output)
+	}
+	// The first chunk is JSON-escaped as: {\"prompt\":
+	if !strings.Contains(output, `{\"prompt\":`) {
+		t.Errorf("output should contain first argument chunk (escaped), got: %s", output)
+	}
+	// The second chunk is JSON-escaped as: \"Hello world\"}
+	if !strings.Contains(output, `\"Hello world\"}`) {
+		t.Errorf("output should contain second argument chunk (escaped), got: %s", output)
+	}
+}
+
 // Helper to verify JSON structure in output
 func parseSSEEvents(output string) ([]map[string]interface{}, error) {
 	var events []map[string]interface{}

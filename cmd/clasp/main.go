@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"strconv"
@@ -27,7 +28,7 @@ import (
 )
 
 var (
-	version = "v0.48.8"
+	version = "v0.48.9"
 )
 
 func main() {
@@ -75,6 +76,10 @@ func main() {
 		case "mcp":
 			// Start MCP server mode
 			handleMCPCommand(os.Args[2:])
+			return
+		case "update":
+			// Self-update to latest version
+			handleUpdateCommand(os.Args[2:])
 			return
 		}
 	}
@@ -510,6 +515,7 @@ Quick Start:
   clasp use <profile>       Switch to a different profile
   clasp doctor              Run diagnostics and troubleshooting
   clasp mcp                 Start as MCP server (for tool integration)
+  clasp update              Update CLASP to the latest version
 
 Profile Management:
   clasp profile create      Create new profile interactively
@@ -1423,6 +1429,178 @@ MCP Client Configuration:
 
   Or for HTTP mode:
   claude mcp add clasp-http --url http://localhost:8081/mcp
+
+For more information: https://github.com/jedarden/CLASP
+`, version)
+}
+
+// handleUpdateCommand handles the self-update command.
+func handleUpdateCommand(args []string) {
+	// Parse flags
+	checkOnly := false
+	forceUpdate := false
+
+	for _, arg := range args {
+		switch arg {
+		case "-c", "--check":
+			checkOnly = true
+		case "-f", "--force":
+			forceUpdate = true
+		case "-h", "--help":
+			printUpdateHelp()
+			return
+		}
+	}
+
+	fmt.Println("")
+	fmt.Printf("CLASP %s\n", version)
+	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	fmt.Println("")
+
+	// Check for latest version from npm
+	fmt.Println("Checking for updates...")
+	cmd := exec.Command("npm", "view", "clasp-ai", "version")
+	output, err := cmd.Output()
+	if err != nil {
+		fmt.Println("")
+		fmt.Println("❌ Could not check for updates.")
+		fmt.Println("")
+		fmt.Println("Make sure you have Node.js and npm installed:")
+		fmt.Println("  • Node.js: https://nodejs.org/")
+		fmt.Println("")
+		os.Exit(1)
+	}
+
+	latestVersion := strings.TrimSpace(string(output))
+	currentVersion := strings.TrimPrefix(version, "v")
+
+	fmt.Printf("  Current version: %s\n", version)
+	fmt.Printf("  Latest version:  v%s\n", latestVersion)
+	fmt.Println("")
+
+	// Compare versions
+	if currentVersion == latestVersion {
+		fmt.Println("✅ You're running the latest version!")
+		fmt.Println("")
+		return
+	}
+
+	if checkOnly {
+		fmt.Printf("🔄 Update available: %s → v%s\n", version, latestVersion)
+		fmt.Println("")
+		fmt.Println("Run 'clasp update' to update.")
+		fmt.Println("")
+		return
+	}
+
+	// Prompt for confirmation unless force flag is set
+	if !forceUpdate {
+		fmt.Printf("🔄 Update available: %s → v%s\n", version, latestVersion)
+		fmt.Println("")
+		fmt.Print("Do you want to update now? [y/N]: ")
+
+		var response string
+		fmt.Scanln(&response)
+		response = strings.ToLower(strings.TrimSpace(response))
+
+		if response != "y" && response != "yes" {
+			fmt.Println("")
+			fmt.Println("Update cancelled.")
+			fmt.Println("")
+			return
+		}
+	}
+
+	fmt.Println("")
+	fmt.Println("Updating CLASP...")
+	fmt.Println("")
+
+	// Determine update method based on how clasp was installed
+	// Check if we're running from npx cache or global install
+	execPath, err := os.Executable()
+	if err != nil {
+		execPath = ""
+	}
+
+	var updateCmd *exec.Cmd
+	if strings.Contains(execPath, ".npm/_npx") || strings.Contains(execPath, "npx") {
+		// Running via npx - clear npx cache for fresh install on next run
+		fmt.Println("Detected npx installation.")
+		fmt.Println("")
+		fmt.Println("To update, run:")
+		fmt.Println("  npx clasp-ai@latest")
+		fmt.Println("")
+		fmt.Println("The latest version will be automatically downloaded on next run.")
+		fmt.Println("")
+		return
+	}
+
+	// Try global npm update first
+	updateCmd = exec.Command("npm", "update", "-g", "clasp-ai")
+	updateCmd.Stdout = os.Stdout
+	updateCmd.Stderr = os.Stderr
+
+	if err := updateCmd.Run(); err != nil {
+		// Try alternative methods
+		fmt.Println("")
+		fmt.Println("⚠️  Global update failed. Trying alternative methods...")
+		fmt.Println("")
+
+		// Try npm install -g
+		updateCmd = exec.Command("npm", "install", "-g", "clasp-ai@latest")
+		updateCmd.Stdout = os.Stdout
+		updateCmd.Stderr = os.Stderr
+
+		if err := updateCmd.Run(); err != nil {
+			fmt.Println("")
+			fmt.Println("❌ Update failed.")
+			fmt.Println("")
+			fmt.Println("Try updating manually:")
+			fmt.Println("  npm install -g clasp-ai@latest")
+			fmt.Println("")
+			fmt.Println("If you encounter permission errors, try:")
+			fmt.Println("  sudo npm install -g clasp-ai@latest")
+			fmt.Println("")
+			os.Exit(1)
+		}
+	}
+
+	fmt.Println("")
+	fmt.Printf("✅ Successfully updated to v%s!\n", latestVersion)
+	fmt.Println("")
+	fmt.Println("Restart CLASP to use the new version.")
+	fmt.Println("")
+}
+
+// printUpdateHelp prints help for the update command.
+func printUpdateHelp() {
+	fmt.Printf(`CLASP Self-Update %s
+
+Update CLASP to the latest version.
+
+Usage: clasp update [options]
+
+Options:
+  -c, --check    Check for updates without installing
+  -f, --force    Update without confirmation prompt
+  -h, --help     Show this help
+
+Examples:
+  clasp update            Update to latest version (with confirmation)
+  clasp update --check    Check if updates are available
+  clasp update --force    Update without asking for confirmation
+
+Alternative Update Methods:
+  If 'clasp update' fails, you can update manually:
+
+  # Global installation
+  npm install -g clasp-ai@latest
+
+  # npx (no install needed, always runs latest)
+  npx clasp-ai@latest
+
+  # With sudo (if you get permission errors)
+  sudo npm install -g clasp-ai@latest
 
 For more information: https://github.com/jedarden/CLASP
 `, version)

@@ -346,16 +346,25 @@ func (sp *ResponsesStreamProcessor) handleTextDelta(text string) error {
 }
 
 // handleFunctionCallDelta handles function call argument deltas.
+// Note: For function_call_arguments.delta events, the "delta" field is a string directly,
+// not a nested object. The custom unmarshaller stores this in DeltaText.
 func (sp *ResponsesStreamProcessor) handleFunctionCallDelta(event *models.ResponsesStreamEvent) error {
-	if event.Delta == nil {
+	// For function call arguments, delta is a string stored in DeltaText
+	deltaStr := event.DeltaText
+	if deltaStr == "" && event.Delta != nil {
+		// Fallback to nested Delta.Delta for other formats
+		deltaStr = event.Delta.Delta
+	}
+
+	if deltaStr == "" {
 		return nil
 	}
 
 	// Find the matching function call state
 	for _, fcState := range sp.activeFuncCalls {
 		if fcState.started && !fcState.closed {
-			fcState.arguments += event.Delta.Delta
-			if err := sp.emitContentBlockDelta(fcState.blockIndex, "input_json_delta", "", event.Delta.Delta); err != nil {
+			fcState.arguments += deltaStr
+			if err := sp.emitContentBlockDelta(fcState.blockIndex, "input_json_delta", "", deltaStr); err != nil {
 				return err
 			}
 			break
