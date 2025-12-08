@@ -1429,9 +1429,14 @@ func TestIdentifyTrulyRequiredForChat(t *testing.T) {
 				return
 			}
 
-			for i, r := range result {
-				if r != tt.expected[i] {
-					t.Errorf("got %v, want %v", result, tt.expected)
+			// Compare as sets (order doesn't matter for required fields)
+			resultSet := make(map[string]bool)
+			for _, r := range result {
+				resultSet[r] = true
+			}
+			for _, e := range tt.expected {
+				if !resultSet[e] {
+					t.Errorf("got %v, want %v (missing %s)", result, tt.expected, e)
 				}
 			}
 		})
