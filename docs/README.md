@@ -12,8 +12,11 @@ This documentation provides a comprehensive reference for the different LLM prov
 ### Translation Guides
 - [Request Translation](./translation-guides/request-translation.md) - How requests are transformed
 - [Response Translation](./translation-guides/response-translation.md) - How responses are mapped back
-- [Tool Call Translation](./translation-guides/tool-calls.md) - Function/tool calling differences
+- [Tool Call Translation](./translation-guides/tool-calls.md) - Function/tool calling differences + testing
 - [Streaming Translation](./translation-guides/streaming.md) - SSE event mapping
+
+### Testing
+- [Tool Call Test Script](../research/remote-devpod/test-clasp-tool-calling.sh) - Automated test for tool schema translation
 
 ### Examples
 - [Basic Conversation](./examples/basic-conversation.md)

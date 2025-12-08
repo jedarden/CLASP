@@ -125,7 +125,13 @@ A parameter is considered truly required if:
 - It appears in the original `required` array
 - It has NO `default` value
 - It is NOT `nullable: true`
-- Its description does NOT contain: `optional`, `(optional)`, `defaults to`, `if not specified`
+- It is NOT a `boolean` type (booleans are almost always optional flags)
+- Its description does NOT contain optional indicators:
+  - `optional`, `(optional)`
+  - `defaults to`, `if not specified`
+  - `set to true to`, `set to false to`
+  - `if provided`, `when provided`
+  - `can be omitted`, `not required`
 
 ### Example Filtering
 
@@ -393,3 +399,73 @@ data: {"type":"content_block_stop","index":0}
 **Problem:** OpenAI doesn't support all JSON Schema format types (e.g., `"format": "uri"`).
 
 **Solution:** CLASP removes unsupported format types from schemas.
+
+## Testing Tool Call Translation
+
+### Automated Test Script
+
+Location: `research/remote-devpod/test-clasp-tool-calling.sh`
+
+This script validates that tool schema translation works correctly with real Claude Code + OpenAI integration.
+
+### What It Tests
+
+The test spawns 3 concurrent Task agents through CLASP, which exercises:
+- Tool schema translation (Anthropic → OpenAI Responses API)
+- Required array filtering (removes optional params)
+- `strict: false` mode (lenient validation)
+- Tool ID translation (`toolu_` → `fc_`)
+- Function call/output round-trip
+
+### Running the Test
+
+```bash
+cd research/remote-devpod
+./test-clasp-tool-calling.sh
+```
+
+### Test Configuration
+
+The script creates a CLASP profile at `~/.clasp/profiles/test-openai.json`:
+- Provider: `openai`
+- Model: `gpt-5.1-codex` (uses Responses API)
+- Auto-launches Claude Code with skip-permissions
+- Debug logging enabled
+
+### Test Prompt
+
+The prompt spawns 3 concurrent research agents:
+```
+Create a new folder in research/remote-devpod and spawn 3 agents at the same
+time to conduct deep research...
+```
+
+This exercises the Task tool which has multiple optional parameters (`model`, `resume`, `run_in_background`) that would fail with `strict: true`.
+
+### Pass Criteria
+
+- CLASP proxy starts on port 8080
+- Claude Code launches and receives prompt
+- Task tool calls succeed (3 agents spawn)
+- No "Invalid tool parameters" errors
+- No "missing required field" errors
+
+### Verification
+
+```bash
+# Check for errors
+grep -i 'invalid\|error\|required' clasp-test-*.log
+
+# Verify research files created
+ls -la research/remote-devpod/*.md
+```
+
+### Monitoring
+
+```bash
+# Watch live execution
+tmux attach -t clasp-test-*
+
+# Watch CLASP logs
+tail -f clasp-test-*.log
+```
