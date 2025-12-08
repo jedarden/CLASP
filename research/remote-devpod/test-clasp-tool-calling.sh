@@ -128,7 +128,7 @@ Profile: $PROFILE_NAME
 
 Configuration:
 - Provider: openai
-- Model: gpt-4o
+- Model: gpt-5.1-codex
 - API Key: ${OPENAI_API_KEY:0:12}...
 - Port: 8080
 
