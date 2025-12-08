@@ -150,6 +150,7 @@ func (w *Wizard) Run() (*config.Config, error) {
 	w.println("Fetching available models...")
 
 	var models []string
+	var validationFailed bool
 	maxRetries := 3
 	for attempt := 1; attempt <= maxRetries; attempt++ {
 		var fetchErr error
@@ -161,24 +162,43 @@ func (w *Wizard) Run() (*config.Config, error) {
 		// Check for 401 (invalid API key) errors
 		if strings.Contains(fetchErr.Error(), "401") || strings.Contains(fetchErr.Error(), "Unauthorized") || strings.Contains(fetchErr.Error(), "Invalid API key") || strings.Contains(fetchErr.Error(), "Incorrect API key") {
 			w.println("")
-			w.println("✗ API key appears to be invalid. Please check and try again.")
+			w.println("✗ API key appears to be invalid.")
 			w.println("")
 
 			if attempt < maxRetries {
-				// Let user re-enter API key
-				var keyErr error
-				apiKey, keyErr = w.promptAPIKey(provider)
-				if keyErr != nil {
-					return nil, keyErr
-				}
+				// Offer choice: retry, skip, or cancel
+				w.println("Options:")
+				w.println("  1) Re-enter API key")
+				w.println("  2) Skip validation and continue")
+				w.println("  3) Cancel setup")
 				w.println("")
-				w.println("Retrying with new API key...")
-				continue
-			}
 
-			// Max retries reached
-			w.println("Maximum retries reached. You can skip validation and enter a model manually,")
-			w.println("or fix your API key and run setup again.")
+				choice, choiceErr := w.promptInput("Choose option [1-3]", "1")
+				if choiceErr != nil {
+					return nil, choiceErr
+				}
+
+				switch choice {
+				case "1":
+					apiKey, _ = w.promptAPIKey(provider)
+					w.println("")
+					w.println("Retrying with new API key...")
+					continue
+				case "2":
+					w.println("")
+					w.println("Skipping validation. Make sure your API key is correct before use.")
+					validationFailed = true
+				case "3":
+					return nil, fmt.Errorf("setup cancelled by user")
+				default:
+					// Default to retry
+					apiKey, _ = w.promptAPIKey(provider)
+					continue
+				}
+			} else {
+				// Max retries reached - offer skip option
+				validationFailed = true
+			}
 		} else {
 			// Other error - warn but continue
 			w.printf("Warning: Could not fetch models: %v\n", fetchErr)
@@ -194,7 +214,11 @@ func (w *Wizard) Run() (*config.Config, error) {
 		}
 		if len(models) > 0 {
 			w.println("")
-			w.println("Using known models list. You can also enter a custom model name.")
+			if validationFailed {
+				w.println("Showing recommended models. Your API key will be saved but verify it's correct.")
+			} else {
+				w.println("Using known models list. You can also enter a custom model name.")
+			}
 		}
 	}
 
@@ -635,14 +659,10 @@ func (w *Wizard) fetchOllamaModels(baseURL string) ([]string, error) {
 	}
 
 	if len(tagsResp.Models) == 0 {
-		// Return recommended models if none installed
-		return []string{
-			"llama3.2",
-			"codellama",
-			"deepseek-coder",
-			"mistral",
-			"qwen2.5-coder",
-		}, nil
+		// Show helpful guidance when no models are installed
+		w.showOllamaSetupGuide()
+		// Return recommended models for selection
+		return w.getOllamaRecommendedModels(), nil
 	}
 
 	models := make([]string, 0, len(tagsResp.Models))
@@ -651,6 +671,47 @@ func (w *Wizard) fetchOllamaModels(baseURL string) ([]string, error) {
 	}
 
 	return models, nil
+}
+
+// showOllamaSetupGuide displays helpful guidance for new Ollama users.
+func (w *Wizard) showOllamaSetupGuide() {
+	w.println("")
+	w.println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	w.println("  No models found in Ollama")
+	w.println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	w.println("")
+	w.println("To use Ollama with CLASP, you need to pull a model first.")
+	w.println("")
+	w.println("Recommended models for Claude Code:")
+	w.println("")
+	w.println("  Fast & Good for coding:")
+	w.println("    ollama pull qwen2.5-coder:7b     # 4.7GB - excellent coder")
+	w.println("    ollama pull deepseek-coder-v2    # 8.9GB - very capable")
+	w.println("")
+	w.println("  Best overall:")
+	w.println("    ollama pull llama3.2:3b          # 2.0GB - fast, capable")
+	w.println("    ollama pull llama3.1:8b          # 4.7GB - good balance")
+	w.println("    ollama pull llama3.1:70b         # 40GB  - most capable")
+	w.println("")
+	w.println("  Code-specific:")
+	w.println("    ollama pull codellama:7b         # 3.8GB - Meta's code model")
+	w.println("    ollama pull starcoder2:7b        # 4.0GB - fast code completion")
+	w.println("")
+	w.println("Run one of these commands in a separate terminal, then continue.")
+	w.println("Or select a model below and CLASP will guide you through setup.")
+	w.println("")
+}
+
+// getOllamaRecommendedModels returns recommended Ollama models for Claude Code.
+func (w *Wizard) getOllamaRecommendedModels() []string {
+	return []string{
+		"qwen2.5-coder:7b",
+		"llama3.2:3b",
+		"llama3.1:8b",
+		"deepseek-coder-v2",
+		"codellama:7b",
+		"mistral:7b",
+	}
 }
 
 func (w *Wizard) selectModel(provider string, models []string) (string, error) {

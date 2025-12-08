@@ -359,8 +359,31 @@ func GetKnownModels(provider string) []ModelInfo {
 		return getGeminiModels()
 	case "deepseek":
 		return getDeepSeekModels()
+	case "ollama":
+		return getOllamaModels()
 	default:
 		return nil
+	}
+}
+
+func getOllamaModels() []ModelInfo {
+	return []ModelInfo{
+		// Recommended for coding
+		{ID: "qwen2.5-coder:7b", Name: "Qwen 2.5 Coder 7B", Desc: "Excellent code model - 4.7GB", ContextSize: 32768, IsRecommended: true},
+		{ID: "qwen2.5-coder:14b", Name: "Qwen 2.5 Coder 14B", Desc: "Larger code model - 9.0GB", ContextSize: 32768},
+		{ID: "qwen2.5-coder:32b", Name: "Qwen 2.5 Coder 32B", Desc: "Most capable Qwen coder - 20GB", ContextSize: 32768},
+		{ID: "deepseek-coder-v2", Name: "DeepSeek Coder V2", Desc: "Strong code model - 8.9GB", ContextSize: 128000, IsRecommended: true},
+		{ID: "codellama:7b", Name: "CodeLlama 7B", Desc: "Meta's code model - 3.8GB", ContextSize: 16384},
+		{ID: "codellama:13b", Name: "CodeLlama 13B", Desc: "Larger CodeLlama - 7.4GB", ContextSize: 16384},
+		{ID: "starcoder2:7b", Name: "StarCoder2 7B", Desc: "Fast code completion - 4.0GB", ContextSize: 16384},
+		// General purpose
+		{ID: "llama3.2:3b", Name: "Llama 3.2 3B", Desc: "Fast, capable - 2.0GB", ContextSize: 131072, IsRecommended: true},
+		{ID: "llama3.1:8b", Name: "Llama 3.1 8B", Desc: "Good balance - 4.7GB", ContextSize: 131072, IsRecommended: true},
+		{ID: "llama3.1:70b", Name: "Llama 3.1 70B", Desc: "Most capable - 40GB", ContextSize: 131072},
+		{ID: "mistral:7b", Name: "Mistral 7B", Desc: "Fast and efficient - 4.1GB", ContextSize: 32768},
+		{ID: "mixtral:8x7b", Name: "Mixtral 8x7B", Desc: "MoE model - 26GB", ContextSize: 32768},
+		{ID: "gemma2:9b", Name: "Gemma 2 9B", Desc: "Google's model - 5.4GB", ContextSize: 8192},
+		{ID: "phi3:mini", Name: "Phi-3 Mini", Desc: "Microsoft's small model - 2.4GB", ContextSize: 128000},
 	}
 }
 
