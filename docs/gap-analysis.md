@@ -61,7 +61,7 @@ var responsesModels = []string{
 | Google Gemini | ✅ | ✅ | ✅ | ❌ |
 | DeepSeek | ✅ | ✅ | ❌ | ❌ |
 | Ollama Local | ✅ | ✅ | ✅ | ❌ |
-| Provider Prefix | ❌ | ✅ | ✅ | ❌ |
+| Provider Prefix | ✅ | ✅ | ✅ | ❌ |
 | Multi-Model Routing | ✅ | ✅ | ✅ | ❌ |
 | Response Caching | ✅ | ❌ | ❌ | ❌ |
 | Prometheus Metrics | ✅ | ❌ | ❌ | ❌ |
