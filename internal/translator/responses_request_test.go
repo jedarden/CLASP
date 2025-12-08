@@ -958,3 +958,59 @@ func TestTransformToolsToResponses_StrictModeFalse(t *testing.T) {
 	jsonData, _ := json.MarshalIndent(tool, "", "  ")
 	t.Logf("Generated tool JSON:\n%s", string(jsonData))
 }
+
+func TestTransformToolsToResponses_AdditionalPropertiesFalse(t *testing.T) {
+	// Test that tools are created with additionalProperties: false
+	// OpenAI Responses API REQUIRES this field even when strict: false is set.
+	// Without it, you get: "Invalid schema for function '...': 'additionalProperties'
+	// is required to be supplied and to be false"
+	tools := []models.AnthropicTool{
+		{
+			Name:        "Task",
+			Description: "Launch a task agent",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"description": map[string]interface{}{
+						"type":        "string",
+						"description": "Task description",
+					},
+					"prompt": map[string]interface{}{
+						"type":        "string",
+						"description": "The task for the agent to perform",
+					},
+					"subagent_type": map[string]interface{}{
+						"type":        "string",
+						"description": "Type of specialized agent",
+					},
+				},
+				"required": []interface{}{"description", "prompt", "subagent_type"},
+			},
+		},
+	}
+
+	result := transformToolsToResponses(tools)
+
+	if len(result) != 1 {
+		t.Fatalf("Expected 1 tool, got %d", len(result))
+	}
+
+	tool := result[0]
+
+	// Verify additionalProperties is false at top level
+	params, ok := tool.Parameters.(map[string]interface{})
+	if !ok {
+		t.Fatal("Tool.Parameters should be a map")
+	}
+
+	additionalProps, hasAdditional := params["additionalProperties"]
+	if !hasAdditional {
+		t.Error("Tool.Parameters should have additionalProperties field (required by OpenAI Responses API)")
+	} else if additionalProps != false {
+		t.Errorf("Tool.Parameters.additionalProperties should be false, got %v", additionalProps)
+	}
+
+	// Log for debugging
+	jsonData, _ := json.MarshalIndent(tool, "", "  ")
+	t.Logf("Generated tool JSON with additionalProperties:\n%s", string(jsonData))
+}

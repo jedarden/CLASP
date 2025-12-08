@@ -301,6 +301,7 @@ func cleanupSchemaForResponses(schema interface{}) interface{} {
 
 // cleanupSchemaMapForResponses recursively cleans up schema properties for Responses API.
 // Key fix: Only include truly required parameters (those without defaults and not nullable).
+// Also adds "additionalProperties": false which is REQUIRED by OpenAI Responses API.
 func cleanupSchemaMapForResponses(schema map[string]interface{}) {
 	// Remove unsupported format types
 	if format, ok := schema["format"].(string); ok {
@@ -313,6 +314,14 @@ func cleanupSchemaMapForResponses(schema map[string]interface{}) {
 	// Claude Code may include "strict": true in tool definitions, which causes
 	// validation failures when optional parameters are missing.
 	delete(schema, "strict")
+
+	// CRITICAL: Add additionalProperties: false at top level of object schemas
+	// OpenAI Responses API REQUIRES this even when strict: false is set.
+	// Without this, you get: "Invalid schema for function '...': 'additionalProperties'
+	// is required to be supplied and to be false"
+	if schemaType, ok := schema["type"].(string); ok && schemaType == "object" {
+		schema["additionalProperties"] = false
+	}
 
 	// Process properties and fix required array
 	if props, ok := schema["properties"].(map[string]interface{}); ok {
