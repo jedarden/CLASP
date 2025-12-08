@@ -86,11 +86,15 @@ var responsesModels = []string{
 
 ### 5. Model Picker Limitations
 
-#### Gap: Dynamic Model Discovery
-- **What**: Model list is hardcoded
-- **Current**: Uses static `chatCompletionsModels` list
-- **Impact**: New models require code update
-- **Status**: ⚠️ Partial - OpenRouter provider queries live models
+#### Dynamic Model Discovery
+- **What**: Real-time model listing from providers
+- **Status**: ✅ Implemented in v0.44.11
+- **Implementation**:
+  - `OpenAIProvider.ListModels()` - Fetches from `/v1/models`, filters to chat models
+  - `OpenRouterProvider.ListModels()` - Fetches all models
+  - `OpenRouterProvider.ListModelsWithInfo()` - Includes pricing, context length, provider
+  - `OpenRouterProvider.GetChatModels()` - Filters out embedding/audio/image models
+- **Note**: Static `chatCompletionsModels` list still used for model picker fallback
 
 ### 6. Anthropic Beta Features
 
