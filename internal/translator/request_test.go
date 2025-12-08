@@ -1119,3 +1119,253 @@ func TestTransformMessages_NonGrokModel_NoJSONInstruction(t *testing.T) {
 		t.Error("Non-Grok model should NOT have XML instruction")
 	}
 }
+
+// TestTransformTools_StrictFalse verifies that Chat Completions tools have strict=false
+// to allow optional parameters that Anthropic marks as required.
+func TestTransformTools_StrictFalse(t *testing.T) {
+	tools := []models.AnthropicTool{
+		{
+			Name:        "read_file",
+			Description: "Read a file from the filesystem",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"file_path": map[string]interface{}{
+						"type":        "string",
+						"description": "The absolute path to the file to read",
+					},
+					"limit": map[string]interface{}{
+						"type":        "number",
+						"description": "Number of lines to read. Only provide if file is too large.",
+					},
+					"offset": map[string]interface{}{
+						"type":        "number",
+						"description": "Line offset. Optional, defaults to 0.",
+					},
+				},
+				"required": []interface{}{"file_path", "limit", "offset"},
+			},
+		},
+	}
+
+	result := transformTools(tools)
+
+	if len(result) != 1 {
+		t.Fatalf("len(result) = %d, want 1", len(result))
+	}
+
+	// Verify strict mode is false
+	if result[0].Function.Strict != false {
+		t.Errorf("Function.Strict = %v, want false", result[0].Function.Strict)
+	}
+}
+
+// TestCleanupSchemaForChatCompletions_FiltersOptionalParams tests that
+// optional parameters are removed from the required array.
+func TestCleanupSchemaForChatCompletions_FiltersOptionalParams(t *testing.T) {
+	tests := []struct {
+		name        string
+		schema      map[string]interface{}
+		wantReq     []string
+		description string
+	}{
+		{
+			name: "filters 'Only provide if' parameters",
+			schema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"file_path": map[string]interface{}{
+						"type":        "string",
+						"description": "The file path (required)",
+					},
+					"offset": map[string]interface{}{
+						"type":        "number",
+						"description": "Line offset. Only provide if file is too large.",
+					},
+				},
+				"required": []interface{}{"file_path", "offset"},
+			},
+			wantReq:     []string{"file_path"},
+			description: "offset has 'Only provide if' so should be filtered out",
+		},
+		{
+			name: "filters 'defaults to' parameters",
+			schema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"query": map[string]interface{}{
+						"type":        "string",
+						"description": "Search query",
+					},
+					"limit": map[string]interface{}{
+						"type":        "number",
+						"description": "Max results. Defaults to 100.",
+					},
+				},
+				"required": []interface{}{"query", "limit"},
+			},
+			wantReq:     []string{"query"},
+			description: "limit has 'Defaults to' so should be filtered out",
+		},
+		{
+			name: "filters 'optional' parameters",
+			schema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"path": map[string]interface{}{
+						"type":        "string",
+						"description": "The path to search",
+					},
+					"recursive": map[string]interface{}{
+						"type":        "boolean",
+						"description": "Recursively search (optional)",
+					},
+				},
+				"required": []interface{}{"path", "recursive"},
+			},
+			wantReq:     []string{"path"},
+			description: "recursive has '(optional)' so should be filtered out",
+		},
+		{
+			name: "keeps truly required parameters",
+			schema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"command": map[string]interface{}{
+						"type":        "string",
+						"description": "The command to execute",
+					},
+					"timeout": map[string]interface{}{
+						"type":        "number",
+						"description": "Timeout in milliseconds",
+					},
+				},
+				"required": []interface{}{"command", "timeout"},
+			},
+			wantReq:     []string{"command", "timeout"},
+			description: "both have no optional indicators so both should remain required",
+		},
+		{
+			name: "filters parameters with default value",
+			schema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"name": map[string]interface{}{
+						"type":        "string",
+						"description": "The name",
+					},
+					"verbose": map[string]interface{}{
+						"type":        "boolean",
+						"description": "Enable verbose output",
+						"default":    false,
+					},
+				},
+				"required": []interface{}{"name", "verbose"},
+			},
+			wantReq:     []string{"name"},
+			description: "verbose has default value so should be filtered out",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := cleanupSchemaForChatCompletions(tt.schema)
+			resultMap := result.(map[string]interface{})
+
+			reqArray, ok := resultMap["required"].([]string)
+			if !ok {
+				// Might be nil if all filtered out
+				if len(tt.wantReq) == 0 {
+					return // Expected empty
+				}
+				t.Fatalf("required is not []string: %T", resultMap["required"])
+			}
+
+			// Check length
+			if len(reqArray) != len(tt.wantReq) {
+				t.Errorf("required length = %d, want %d; got %v, want %v",
+					len(reqArray), len(tt.wantReq), reqArray, tt.wantReq)
+				return
+			}
+
+			// Check each element
+			reqSet := make(map[string]bool)
+			for _, r := range reqArray {
+				reqSet[r] = true
+			}
+			for _, want := range tt.wantReq {
+				if !reqSet[want] {
+					t.Errorf("required missing %q; got %v, want %v", want, reqArray, tt.wantReq)
+				}
+			}
+		})
+	}
+}
+
+// TestIdentifyTrulyRequiredForChat tests the parameter filtering logic.
+func TestIdentifyTrulyRequiredForChat(t *testing.T) {
+	tests := []struct {
+		name     string
+		props    map[string]interface{}
+		schema   map[string]interface{}
+		expected []string
+	}{
+		{
+			name: "keeps required without optional indicators",
+			props: map[string]interface{}{
+				"file_path": map[string]interface{}{
+					"type":        "string",
+					"description": "The file path",
+				},
+			},
+			schema: map[string]interface{}{
+				"required": []interface{}{"file_path"},
+			},
+			expected: []string{"file_path"},
+		},
+		{
+			name: "filters nullable parameters",
+			props: map[string]interface{}{
+				"name": map[string]interface{}{
+					"type":        "string",
+					"description": "The name",
+					"nullable":   true,
+				},
+			},
+			schema: map[string]interface{}{
+				"required": []interface{}{"name"},
+			},
+			expected: nil,
+		},
+		{
+			name: "filters if not specified",
+			props: map[string]interface{}{
+				"timeout": map[string]interface{}{
+					"type":        "number",
+					"description": "Timeout. If not specified, uses default.",
+				},
+			},
+			schema: map[string]interface{}{
+				"required": []interface{}{"timeout"},
+			},
+			expected: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := identifyTrulyRequiredForChat(tt.props, tt.schema)
+
+			if len(result) != len(tt.expected) {
+				t.Errorf("got %v, want %v", result, tt.expected)
+				return
+			}
+
+			for i, r := range result {
+				if r != tt.expected[i] {
+					t.Errorf("got %v, want %v", result, tt.expected)
+				}
+			}
+		})
+	}
+}

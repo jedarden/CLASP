@@ -154,6 +154,7 @@ type OpenAIFunction struct {
 	Name        string      `json:"name"`
 	Description string      `json:"description,omitempty"`
 	Parameters  interface{} `json:"parameters"`
+	Strict      bool        `json:"strict"` // CRITICAL: Must be false to allow optional parameters
 }
 
 // StreamOptions for OpenAI streaming.
