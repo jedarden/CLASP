@@ -8,3 +8,4 @@ coverage.html
 .swarm/
 /clasp
 bin/clasp
+test-results/
