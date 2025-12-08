@@ -797,6 +797,11 @@ func cleanupSchemaMapForChatCompletions(schema map[string]interface{}) {
 		}
 	}
 
+	// CRITICAL: Remove any "strict" field from the schema itself
+	// Claude Code may include "strict": true in tool definitions, which causes
+	// validation failures when optional parameters are missing.
+	delete(schema, "strict")
+
 	// Process properties and fix required array
 	if props, ok := schema["properties"].(map[string]interface{}); ok {
 		// Identify truly required parameters

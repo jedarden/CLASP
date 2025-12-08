@@ -249,6 +249,7 @@ func transformAssistantMessageToInput(content []models.ContentBlock) []models.Re
 // mode enabled, OpenAI rejects tool calls when optional parameters are missing.
 func transformToolsToResponses(tools []models.AnthropicTool) []models.ResponsesTool {
 	result := make([]models.ResponsesTool, len(tools))
+	strictFalse := false // Pointer to false for explicit strict:false
 
 	for i, tool := range tools {
 		// Clean up input schema and fix required array
@@ -260,6 +261,7 @@ func transformToolsToResponses(tools []models.AnthropicTool) []models.ResponsesT
 			Name:        tool.Name,
 			Description: tool.Description,
 			Parameters:  params,
+			Strict:      &strictFalse, // CRITICAL: Must set strict:false at top level for Responses API
 			// Also set Function for backwards compatibility, but Responses API
 			// primarily uses the top-level fields
 			Function: &models.ResponsesFunction{
@@ -306,6 +308,11 @@ func cleanupSchemaMapForResponses(schema map[string]interface{}) {
 			delete(schema, "format")
 		}
 	}
+
+	// CRITICAL: Remove any "strict" field from the schema itself
+	// Claude Code may include "strict": true in tool definitions, which causes
+	// validation failures when optional parameters are missing.
+	delete(schema, "strict")
 
 	// Process properties and fix required array
 	if props, ok := schema["properties"].(map[string]interface{}); ok {

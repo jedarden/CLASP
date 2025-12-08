@@ -74,6 +74,10 @@ type ResponsesTool struct {
 	Name        string                  `json:"name,omitempty"`
 	Description string                  `json:"description,omitempty"`
 	Parameters  interface{}             `json:"parameters,omitempty"`
+	// CRITICAL: Strict must be explicitly set to false at top level for Responses API
+	// When true, OpenAI enforces all "required" parameters must be provided.
+	// Anthropic tools mark ALL params as required, so strict=true causes validation failures.
+	Strict      *bool                   `json:"strict,omitempty"`
 	// Nested function for backwards compatibility with Chat Completions format
 	Function   *ResponsesFunction      `json:"function,omitempty"`
 	MCPServer  *ResponsesMCPServer     `json:"mcp_server,omitempty"`
