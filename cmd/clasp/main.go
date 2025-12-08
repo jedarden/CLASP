@@ -26,7 +26,7 @@ import (
 )
 
 var (
-	version = "v0.44.11"
+	version = "v0.45.1"
 )
 
 func main() {
@@ -60,6 +60,16 @@ func main() {
 		case "version", "-v":
 			// Show version without starting the proxy
 			fmt.Printf("CLASP %s\n", version)
+			return
+		case "doctor":
+			// Run diagnostics
+			verbose := len(os.Args) > 2 && (os.Args[2] == "-v" || os.Args[2] == "--verbose")
+			doctor := setup.NewDoctor(verbose)
+			doctor.Run()
+			doctor.PrintResults(os.Stdout)
+			if doctor.HasErrors() {
+				os.Exit(1)
+			}
 			return
 		}
 	}
@@ -493,6 +503,7 @@ Quick Start:
   clasp -proxy-only         Start proxy only (no Claude Code)
   clasp status              Show current configuration status
   clasp use <profile>       Switch to a different profile
+  clasp doctor              Run diagnostics and troubleshooting
 
 Profile Management:
   clasp profile create      Create new profile interactively
