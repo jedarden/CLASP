@@ -19,6 +19,7 @@ import (
 	"github.com/jedarden/clasp/internal/claudecode"
 	"github.com/jedarden/clasp/internal/config"
 	"github.com/jedarden/clasp/internal/logging"
+	"github.com/jedarden/clasp/internal/mcpserver"
 	"github.com/jedarden/clasp/internal/proxy"
 	"github.com/jedarden/clasp/internal/setup"
 	"github.com/jedarden/clasp/internal/statusline"
@@ -26,7 +27,7 @@ import (
 )
 
 var (
-	version = "v0.46.6"
+	version = "v0.47.0"
 )
 
 func main() {
@@ -70,6 +71,10 @@ func main() {
 			if doctor.HasErrors() {
 				os.Exit(1)
 			}
+			return
+		case "mcp":
+			// Start MCP server mode
+			handleMCPCommand(os.Args[2:])
 			return
 		}
 	}
@@ -504,6 +509,7 @@ Quick Start:
   clasp status              Show current configuration status
   clasp use <profile>       Switch to a different profile
   clasp doctor              Run diagnostics and troubleshooting
+  clasp mcp                 Start as MCP server (for tool integration)
 
 Profile Management:
   clasp profile create      Create new profile interactively
@@ -1304,4 +1310,120 @@ func listAvailableModels() error {
 	fmt.Println("")
 
 	return nil
+}
+
+// handleMCPCommand starts the MCP server mode.
+func handleMCPCommand(args []string) {
+	// Parse MCP-specific flags
+	transport := "stdio" // Default to stdio for MCP
+	httpAddr := ""
+
+	for i, arg := range args {
+		switch arg {
+		case "-t", "--transport":
+			if i+1 < len(args) {
+				transport = args[i+1]
+			}
+		case "-a", "--addr":
+			if i+1 < len(args) {
+				httpAddr = args[i+1]
+			}
+		case "-h", "--help":
+			printMCPHelp()
+			return
+		}
+	}
+
+	// Load configuration
+	cfg, err := config.LoadFromEnv()
+	if err != nil {
+		// Create minimal config for MCP mode
+		cfg = &config.Config{
+			Provider: config.ProviderType(os.Getenv("PROVIDER")),
+		}
+		if cfg.Provider == "" {
+			cfg.Provider = config.ProviderOpenAI
+		}
+	}
+
+	// Create MCP server
+	server := mcpserver.NewServer("clasp", cfg)
+
+	// Run the MCP server
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Handle signals for graceful shutdown
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-sigCh
+		cancel()
+	}()
+
+	switch transport {
+	case "stdio":
+		if err := server.Run(ctx); err != nil && err != context.Canceled {
+			log.Fatalf("[MCP] Server error: %v", err)
+		}
+	case "http":
+		if httpAddr == "" {
+			httpAddr = ":8081"
+		}
+		if err := server.RunHTTP(ctx, httpAddr); err != nil && err != context.Canceled {
+			log.Fatalf("[MCP] HTTP server error: %v", err)
+		}
+	default:
+		log.Fatalf("[MCP] Unknown transport: %s (use 'stdio' or 'http')", transport)
+	}
+}
+
+// printMCPHelp prints help for the MCP command.
+func printMCPHelp() {
+	fmt.Printf(`CLASP MCP Server Mode %s
+
+Start CLASP as an MCP (Model Context Protocol) server for integration
+with Claude Code and other MCP-compatible clients.
+
+Usage: clasp mcp [options]
+
+Options:
+  -t, --transport <type>   Transport type: stdio (default) or http
+  -a, --addr <addr>        HTTP address (default: :8081, only for http transport)
+  -h, --help               Show this help
+
+Transport Types:
+  stdio    Standard input/output (default, for local process communication)
+  http     HTTP server with SSE support (for remote connections)
+
+Available MCP Tools:
+  clasp_status      Get proxy status, provider, model, and session info
+  clasp_config      Get or update CLASP configuration
+  clasp_profile     Manage profiles (list, create, switch, delete)
+  clasp_models      List available models from the provider
+  clasp_metrics     Get proxy performance metrics
+  clasp_health      Check proxy and provider health
+  clasp_doctor      Run diagnostic checks
+  clasp_translate   Translate Anthropic to OpenAI format (debug)
+
+Examples:
+  # Start as stdio MCP server (for Claude Code integration)
+  clasp mcp
+
+  # Start as HTTP MCP server on port 8081
+  clasp mcp -t http
+
+  # Start as HTTP MCP server on custom port
+  clasp mcp -t http -a :9090
+
+MCP Client Configuration:
+  To add CLASP as an MCP server in Claude Code:
+
+  claude mcp add clasp npx clasp-ai mcp
+
+  Or for HTTP mode:
+  claude mcp add clasp-http --url http://localhost:8081/mcp
+
+For more information: https://github.com/jedarden/CLASP
+`, version)
 }

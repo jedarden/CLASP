@@ -182,11 +182,12 @@ CLASP_DEBUG=true clasp -model gpt-5.1-codex
 
 1. **Add LiteLLM integration** - Would enable 100+ providers
 2. **Implement prompt caching simulation** - Cache full responses by request hash
-3. **Dynamic model discovery** - Query providers for available models
+3. ~~**Dynamic model discovery** - Query providers for available models~~ ✅ Added in v0.44.11
 4. ~~**DeepSeek provider** - Direct DeepSeek support~~ ✅ Added in v0.38.0
 5. ~~**Local model support** - Ollama/LM Studio integration~~ ✅ Added in v0.36.0
 6. ~~**Gemini provider** - Direct Google Gemini support~~ ✅ Added in v0.37.0
 7. **Compaction support** - Multi-window context management
+8. ~~**MCP Server Mode** - Add MCP server for tool integration~~ ✅ Added in v0.47.0
 
 ## Sources
 
