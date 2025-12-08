@@ -20,6 +20,7 @@ type Status struct {
 	Running      bool      `json:"running"`
 	Port         int       `json:"port"`
 	PID          int       `json:"pid"`
+	SessionID    string    `json:"session_id,omitempty"` // Unique session identifier for multi-instance support
 	Provider     string    `json:"provider"`
 	Model        string    `json:"model"`
 	Requests     int64     `json:"requests"`
@@ -213,6 +214,7 @@ func (m *Manager) generateScript() string {
 # CLASP Status Line for Claude Code
 # This script is executed by Claude Code to display the current model/provider info.
 # It reads from ~/.clasp/status/<port>.json based on ANTHROPIC_BASE_URL.
+# Supports multiple concurrent CLASP instances with session IDs.
 
 STATUS_DIR="$HOME/.clasp/status"
 
@@ -235,6 +237,7 @@ if [ -n "$ANTHROPIC_BASE_URL" ]; then
                     PROVIDER=$(jq -r '.provider // "unknown"' "$STATUS_FILE")
                     REQUESTS=$(jq -r '.requests // 0' "$STATUS_FILE")
                     COST=$(jq -r '.cost_usd // 0' "$STATUS_FILE")
+                    VERSION=$(jq -r '.version // ""' "$STATUS_FILE")
 
                     # Format cost display
                     if [ "$COST" != "null" ] && [ "$COST" != "0" ]; then
@@ -244,8 +247,15 @@ if [ -n "$ANTHROPIC_BASE_URL" ]; then
                         COST_STR=""
                     fi
 
+                    # Format version display (compact)
+                    VERSION_STR=""
+                    if [ -n "$VERSION" ] && [ "$VERSION" != "null" ]; then
+                        VERSION_STR=" $VERSION"
+                    fi
+
                     # Output status with ANSI colors
-                    echo -e "\033[36m[CLASP:$PORT]\033[0m \033[33m$MODEL\033[0m ($PROVIDER) | $REQUESTS reqs$COST_STR"
+                    # Format: [CLASP:PORT VERSION] MODEL (PROVIDER) | REQUESTS reqs | $COST
+                    echo -e "\033[36m[CLASP:$PORT$VERSION_STR]\033[0m \033[33m$MODEL\033[0m ($PROVIDER) | $REQUESTS reqs$COST_STR"
                     exit 0
                 fi
             fi
@@ -263,6 +273,7 @@ if [ -f "$LEGACY_STATUS" ]; then
         PROVIDER=$(jq -r '.provider // "unknown"' "$LEGACY_STATUS")
         REQUESTS=$(jq -r '.requests // 0' "$LEGACY_STATUS")
         COST=$(jq -r '.cost_usd // 0' "$LEGACY_STATUS")
+        VERSION=$(jq -r '.version // ""' "$LEGACY_STATUS")
 
         if [ "$COST" != "null" ] && [ "$COST" != "0" ]; then
             COST_FMT=$(printf "%.2f" "$COST")
@@ -271,7 +282,12 @@ if [ -f "$LEGACY_STATUS" ]; then
             COST_STR=""
         fi
 
-        echo -e "\033[36m[CLASP]\033[0m \033[33m$MODEL\033[0m ($PROVIDER) | $REQUESTS reqs$COST_STR"
+        VERSION_STR=""
+        if [ -n "$VERSION" ] && [ "$VERSION" != "null" ]; then
+            VERSION_STR=" $VERSION"
+        fi
+
+        echo -e "\033[36m[CLASP$VERSION_STR]\033[0m \033[33m$MODEL\033[0m ($PROVIDER) | $REQUESTS reqs$COST_STR"
         exit 0
     fi
 fi

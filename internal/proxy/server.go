@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/jedarden/clasp/internal/config"
+	"github.com/jedarden/clasp/internal/logging"
 	"github.com/jedarden/clasp/internal/statusline"
 )
 
@@ -176,6 +177,9 @@ func (s *Server) Start() error {
 		log.Printf("[CLASP] Using port %d instead", port)
 	}
 
+	// Set session port for logging - this enables port-specific log files
+	logging.SetSessionPort(port)
+
 	// Create server
 	s.server = &http.Server{
 		Addr:         fmt.Sprintf(":%d", port),
@@ -212,6 +216,7 @@ func (s *Server) Start() error {
 		status := statusline.Status{
 			Running:      true,
 			Port:         port,
+			SessionID:    logging.GetSessionID(),
 			Provider:     string(s.cfg.Provider),
 			Model:        model,
 			Requests:     0,
