@@ -552,3 +552,76 @@ func BenchmarkTransformModelID(b *testing.B) {
 		p.TransformModelID("openai/gpt-4o")
 	}
 }
+
+// TestIsChatModel tests the chat model detection helper.
+func TestIsChatModel(t *testing.T) {
+	tests := []struct {
+		modelID  string
+		expected bool
+	}{
+		// GPT models
+		{"gpt-4o", true},
+		{"gpt-4o-mini", true},
+		{"gpt-4-turbo", true},
+		{"gpt-3.5-turbo", true},
+		// Reasoning models
+		{"o1-preview", true},
+		{"o1-mini", true},
+		{"o3", true},
+		{"o3-mini", true},
+		// GPT-5 series
+		{"gpt-5", true},
+		{"gpt-5.1-codex", true},
+		{"gpt-5.1-codex-max", true},
+		// Non-chat models
+		{"text-embedding-ada-002", false},
+		{"text-embedding-3-small", false},
+		{"whisper-1", false},
+		{"tts-1", false},
+		{"dall-e-3", false},
+		{"text-moderation-latest", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.modelID, func(t *testing.T) {
+			if got := isChatModel(tt.modelID); got != tt.expected {
+				t.Errorf("isChatModel(%q) = %v, want %v", tt.modelID, got, tt.expected)
+			}
+		})
+	}
+}
+
+// TestOpenAIListModelsRequiresKey tests that ListModels requires an API key.
+func TestOpenAIListModelsRequiresKey(t *testing.T) {
+	p := NewOpenAIProvider("")
+	_, err := p.ListModels("")
+	if err == nil {
+		t.Error("Expected error when calling ListModels without API key")
+	}
+	if err.Error() != "API key required to list models" {
+		t.Errorf("Expected 'API key required to list models', got %v", err)
+	}
+}
+
+// TestOpenRouterModelInfo tests OpenRouter model info parsing.
+func TestOpenRouterModelInfo(t *testing.T) {
+	info := OpenRouterModelInfo{
+		ID:            "openai/gpt-4o",
+		Name:          "GPT-4o",
+		Description:   "OpenAI's most advanced model",
+		ContextLength: 128000,
+		InputPrice:    2.5,
+		OutputPrice:   10.0,
+		Provider:      "openai",
+	}
+
+	if info.ID != "openai/gpt-4o" {
+		t.Errorf("Expected ID 'openai/gpt-4o', got %s", info.ID)
+	}
+	if info.Provider != "openai" {
+		t.Errorf("Expected Provider 'openai', got %s", info.Provider)
+	}
+	if info.ContextLength != 128000 {
+		t.Errorf("Expected ContextLength 128000, got %d", info.ContextLength)
+	}
+}

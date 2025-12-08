@@ -2,8 +2,11 @@
 package provider
 
 import (
+	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/jedarden/clasp/internal/translator"
 )
@@ -110,4 +113,85 @@ func (p *OpenAIProvider) SupportsStreaming() bool {
 // RequiresTransformation indicates that OpenAI needs Anthropic->OpenAI translation.
 func (p *OpenAIProvider) RequiresTransformation() bool {
 	return true
+}
+
+// OpenAIModel represents a model from OpenAI's models endpoint.
+type OpenAIModel struct {
+	ID      string `json:"id"`
+	Object  string `json:"object"`
+	Created int64  `json:"created"`
+	OwnedBy string `json:"owned_by"`
+}
+
+// OpenAIModelsResponse is the response from /v1/models endpoint.
+type OpenAIModelsResponse struct {
+	Data   []OpenAIModel `json:"data"`
+	Object string        `json:"object"`
+}
+
+// ListModels returns available models from OpenAI's /v1/models endpoint.
+// Requires a valid API key to be set.
+func (p *OpenAIProvider) ListModels(apiKey string) ([]string, error) {
+	key := apiKey
+	if p.apiKey != "" {
+		key = p.apiKey
+	}
+	if key == "" {
+		return nil, fmt.Errorf("API key required to list models")
+	}
+
+	client := &http.Client{Timeout: 10 * time.Second}
+
+	req, err := http.NewRequest("GET", p.BaseURL+"/models", nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+key)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch models: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("OpenAI returned status %d", resp.StatusCode)
+	}
+
+	var modelsResp OpenAIModelsResponse
+	if err := json.NewDecoder(resp.Body).Decode(&modelsResp); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	// Filter to only chat-capable models
+	var models []string
+	for _, m := range modelsResp.Data {
+		// Include GPT models, O1/O3 reasoning models, and exclude embedding/audio/tts models
+		if isChatModel(m.ID) {
+			models = append(models, m.ID)
+		}
+	}
+
+	return models, nil
+}
+
+// isChatModel checks if a model ID is a chat-capable model.
+func isChatModel(id string) bool {
+	// Include GPT models
+	if strings.HasPrefix(id, "gpt-") {
+		return true
+	}
+	// Include O1/O3 reasoning models
+	if strings.HasPrefix(id, "o1") || strings.HasPrefix(id, "o3") {
+		return true
+	}
+	// Include Codex models (GPT-5.1 series)
+	if strings.Contains(id, "codex") {
+		return true
+	}
+	// Include GPT-5 series
+	if strings.HasPrefix(id, "gpt-5") {
+		return true
+	}
+	return false
 }
