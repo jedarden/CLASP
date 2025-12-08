@@ -26,7 +26,7 @@ import (
 )
 
 var (
-	version = "v0.45.1"
+	version = "v0.46.0"
 )
 
 func main() {
