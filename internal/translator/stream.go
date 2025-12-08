@@ -26,6 +26,10 @@ const (
 	StateThinkingContent // Reasoning/thinking content for O1/O3 models
 )
 
+// maxXMLBufferSize is the maximum size for the Grok XML buffer (100KB).
+// This prevents memory issues if malformed XML is never completed.
+const maxXMLBufferSize = 100 * 1024
+
 // UsageCallback is called when streaming completes with usage information.
 type UsageCallback func(inputTokens, outputTokens int)
 
@@ -570,6 +574,14 @@ type extractedToolCall struct {
 func (sp *StreamProcessor) processGrokXML(text string) (string, []extractedToolCall) {
 	// Accumulate text in buffer
 	sp.xmlBuffer += text
+
+	// Safety check: clear buffer if it exceeds maximum size to prevent memory leak
+	if len(sp.xmlBuffer) > maxXMLBufferSize {
+		logging.LogDebugMessage("XML buffer exceeded max size (%d bytes), clearing to prevent memory leak", maxXMLBufferSize)
+		result := sp.xmlBuffer
+		sp.xmlBuffer = ""
+		return result, nil
+	}
 
 	// Pattern for complete Grok XML tool calls
 	// Format: <xai:function_call name="func_name"><xai:parameter name="param">value</xai:parameter></xai:function_call>

@@ -45,6 +45,31 @@ var modelMaxTokenLimits = map[string]int{
 // defaultMaxTokenLimit is used when the model is not in the known list.
 const defaultMaxTokenLimit = 4096
 
+// Pre-compiled regex patterns for identity filtering.
+// These are compiled once at package initialization for better performance.
+var (
+	identityPatterns = []struct {
+		re          *regexp.Regexp
+		replacement string
+	}{
+		// Replace "You are Claude Code, Anthropic's official CLI" with neutral version
+		{regexp.MustCompile(`(?i)You are Claude Code, Anthropic's official CLI`), "This is Claude Code, an AI-powered CLI tool"},
+		// Replace "You are Claude" at start of sentences
+		{regexp.MustCompile(`(?i)You are Claude\b`), "You are an AI assistant"},
+		// Replace model name references
+		{regexp.MustCompile(`(?i)You are powered by the model named [^.]+\.`), "You are powered by an AI model."},
+		// Remove claude_background_info blocks
+		{regexp.MustCompile(`(?is)<claude_background_info>.*?</claude_background_info>`), ""},
+		// Replace "I'm Claude" with neutral version
+		{regexp.MustCompile(`(?i)\bI'm Claude\b`), "I'm an AI assistant"},
+		{regexp.MustCompile(`(?i)\bI am Claude\b`), "I am an AI assistant"},
+		// Replace references to Anthropic as creator in first person
+		{regexp.MustCompile(`(?i)\bcreated by Anthropic\b`), "created as an AI assistant"},
+		{regexp.MustCompile(`(?i)\bmade by Anthropic\b`), "made as an AI assistant"},
+	}
+	multiNewlinePattern = regexp.MustCompile(`\n{3,}`)
+)
+
 // capMaxTokens ensures max_tokens doesn't exceed the target model's limit.
 func capMaxTokens(maxTokens int, targetModel string) int {
 	if maxTokens <= 0 {
@@ -244,37 +269,17 @@ func isDeepSeekModel(model string) bool {
 
 // filterIdentity removes Claude-specific identity strings from content to prevent model confusion.
 // This is important when proxying to non-Claude models that shouldn't claim to be Claude.
+// Uses pre-compiled regex patterns for better performance on high-traffic proxies.
 func filterIdentity(content string) string {
-	// Regular expressions for identity patterns
-	patterns := []struct {
-		pattern     string
-		replacement string
-	}{
-		// Replace "You are Claude Code, Anthropic's official CLI" with neutral version
-		{`(?i)You are Claude Code, Anthropic's official CLI`, "This is Claude Code, an AI-powered CLI tool"},
-		// Replace "You are Claude" at start of sentences
-		{`(?i)You are Claude\b`, "You are an AI assistant"},
-		// Replace model name references
-		{`(?i)You are powered by the model named [^.]+\.`, "You are powered by an AI model."},
-		// Remove claude_background_info blocks
-		{`(?is)<claude_background_info>.*?</claude_background_info>`, ""},
-		// Replace "I'm Claude" with neutral version
-		{`(?i)\bI'm Claude\b`, "I'm an AI assistant"},
-		{`(?i)\bI am Claude\b`, "I am an AI assistant"},
-		// Replace references to Anthropic as creator in first person
-		{`(?i)\bcreated by Anthropic\b`, "created as an AI assistant"},
-		{`(?i)\bmade by Anthropic\b`, "made as an AI assistant"},
-	}
-
 	result := content
-	for _, p := range patterns {
-		re := regexp.MustCompile(p.pattern)
-		result = re.ReplaceAllString(result, p.replacement)
+
+	// Use pre-compiled patterns from package-level variables
+	for _, p := range identityPatterns {
+		result = p.re.ReplaceAllString(result, p.replacement)
 	}
 
-	// Clean up multiple newlines
-	multiNewline := regexp.MustCompile(`\n{3,}`)
-	result = multiNewline.ReplaceAllString(result, "\n\n")
+	// Clean up multiple newlines using pre-compiled pattern
+	result = multiNewlinePattern.ReplaceAllString(result, "\n\n")
 
 	// Prepend identity clarification for non-Claude models
 	// This helps models understand they should identify themselves truthfully

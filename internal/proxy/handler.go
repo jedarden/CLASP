@@ -271,7 +271,9 @@ func (h *Handler) HandleMessages(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&anthropicReq); err != nil {
 		atomic.AddInt64(&h.metrics.ErrorRequests, 1)
 		log.Printf("[CLASP] Error parsing request: %v", err)
-		h.writeErrorResponse(w, http.StatusBadRequest, "invalid_request_error", "Invalid request body")
+		// Provide helpful error message with context
+		errMsg := fmt.Sprintf("Invalid request body: %v. Expected Anthropic Messages API format with 'model', 'messages', and optionally 'stream', 'tools', etc.", err)
+		h.writeErrorResponse(w, http.StatusBadRequest, "invalid_request_error", errMsg)
 		return
 	}
 	defer r.Body.Close()

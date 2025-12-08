@@ -307,7 +307,11 @@ func (m *ModelPicker) View() string {
 	showingCount := len(m.filtered)
 	totalCount := len(m.models)
 	if filterText != "" {
-		b.WriteString(countStyle.Render(fmt.Sprintf("Showing %d of %d models", showingCount, totalCount)))
+		if showingCount == 0 {
+			b.WriteString(countStyle.Render(fmt.Sprintf("No models match '%s'  •  Press Esc to clear filter", filterText)))
+		} else {
+			b.WriteString(countStyle.Render(fmt.Sprintf("Showing %d of %d models", showingCount, totalCount)))
+		}
 	} else {
 		b.WriteString(countStyle.Render(fmt.Sprintf("Showing %d models  •  Type to filter", totalCount)))
 	}
