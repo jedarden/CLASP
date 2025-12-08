@@ -3,13 +3,16 @@
 # Tests the enhanced tool schema filtering with a realistic multi-agent prompt
 #
 # This script:
-# 1. Creates a CLASP profile with OpenAI configuration + embedded API key
-# 2. Launches CLASP with that profile (which auto-launches Claude Code)
-# 3. Pipes the research prompt to test Task tool spawning
-# 4. Captures tmux output and monitors logs to verify tool calls work
+# 1. Destroys any existing test tmux session (clean slate)
+# 2. Creates a CLASP profile with OpenAI configuration + embedded API key
+# 3. Launches CLASP with that profile (which auto-launches Claude Code)
+# 4. Pipes the research prompt to test Task tool spawning
+# 5. Captures tmux output and monitors logs to verify tool calls work
 #
 # PASS: Task tool calls succeed, agents spawn without "Invalid tool parameters"
 # FAIL: Errors about missing optional parameters (model, resume, run_in_background)
+#
+# Session isolation: Each run creates a fresh tmux session after destroying any previous
 
 set -e
 
@@ -34,6 +37,22 @@ echo -e "${YELLOW}=== CLASP Tool Calling Test ===${NC}"
 echo "Session: $SESSION_NAME"
 echo "Log file: $LOG_FILE"
 echo "Results: $RESULTS_FILE"
+
+# Clean up any existing test sessions for isolation
+cleanup_previous_sessions() {
+    echo -e "${YELLOW}Cleaning up previous test sessions...${NC}"
+    for session in $(tmux ls -F '#{session_name}' 2>/dev/null | grep "^clasp-test" || true); do
+        echo "  Killing session: $session"
+        tmux kill-session -t "$session" 2>/dev/null || true
+    done
+    # Kill any orphaned CLASP processes from previous tests
+    pkill -9 -f "clasp.*-profile.*test" 2>/dev/null || true
+    # Clean stale status files
+    rm -f ~/.clasp/status/*.json 2>/dev/null || true
+    sleep 1
+}
+
+cleanup_previous_sessions
 
 # Check if CLASP binary exists
 if [[ ! -x "$CLASP_DIR/bin/clasp" ]]; then
@@ -186,10 +205,36 @@ echo ""
 echo "To kill session: tmux kill-session -t $SESSION_NAME"
 echo "To cleanup profile: rm $PROFILE_DIR/${PROFILE_NAME}.json"
 
-# Optional: Auto-attach to session
-if [[ "${1:-}" == "--attach" ]]; then
+# Cleanup function for when test finishes or is interrupted
+cleanup_on_exit() {
     echo ""
-    echo "Attaching to session..."
-    sleep 2
-    tmux attach -t "$SESSION_NAME"
-fi
+    echo -e "${YELLOW}Cleaning up test session...${NC}"
+    tmux kill-session -t "$SESSION_NAME" 2>/dev/null || true
+    pkill -9 -f "clasp.*-profile.*$PROFILE_NAME" 2>/dev/null || true
+    rm -f ~/.clasp/status/*.json 2>/dev/null || true
+}
+
+# Handle arguments
+case "${1:-}" in
+    --attach)
+        echo ""
+        echo "Attaching to session..."
+        sleep 2
+        tmux attach -t "$SESSION_NAME"
+        ;;
+    --cleanup)
+        echo "Running cleanup only..."
+        cleanup_previous_sessions
+        cleanup_on_exit
+        echo "Cleanup complete."
+        ;;
+    --destroy)
+        # Destroy session and exit
+        cleanup_on_exit
+        echo "Test session destroyed."
+        ;;
+    *)
+        echo ""
+        echo -e "${BLUE}Run with --attach to auto-attach, --cleanup to clean stale sessions, --destroy to kill this session${NC}"
+        ;;
+esac
