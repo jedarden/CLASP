@@ -74,10 +74,19 @@ func transformMessagesToInput(req *models.AnthropicRequest) ([]models.ResponsesI
 
 		switch msg.Role {
 		case "user":
-			input := transformUserMessageToInput(content)
-			inputs = append(inputs, input)
-			// Handle tool results within user message
+			// Extract tool results first to check if message has other content
 			toolResults := extractToolResultsForResponses(content)
+
+			// Only add user message if there's non-tool_result content
+			// In Responses API, function_call_output items should NOT be preceded
+			// by an empty user message - they are standalone input items
+			input := transformUserMessageToInput(content)
+			hasNonToolResultContent := input.Content != nil && input.Content != ""
+			if hasNonToolResultContent {
+				inputs = append(inputs, input)
+			}
+
+			// Add tool results as function_call_output items
 			inputs = append(inputs, toolResults...)
 
 		case "assistant":

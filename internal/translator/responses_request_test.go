@@ -661,6 +661,88 @@ func TestTransformRequestToResponses_ToolResultIDTranslation(t *testing.T) {
 	}
 }
 
+// TestTransformRequestToResponses_ToolResultOnlyMessage tests that user messages containing
+// ONLY tool_result blocks do NOT produce an empty user message in the output.
+// This was a bug that caused spawned Task agents to hang: empty user messages followed by
+// function_call_output items confused the model, causing "tool uses increasing but tokens not".
+func TestTransformRequestToResponses_ToolResultOnlyMessage(t *testing.T) {
+	req := &models.AnthropicRequest{
+		Model: "claude-3-5-sonnet-20241022",
+		Messages: []models.AnthropicMessage{
+			// Initial user message
+			{Role: "user", Content: "What files are in the current directory?"},
+			// Assistant response with tool use
+			{
+				Role: "assistant",
+				Content: []interface{}{
+					map[string]interface{}{
+						"type":  "tool_use",
+						"id":    "call_abc123",
+						"name":  "Bash",
+						"input": map[string]interface{}{"command": "ls -la"},
+					},
+				},
+			},
+			// User message with ONLY tool_result (no text content)
+			// This is what Claude Code sends back after executing a tool
+			{
+				Role: "user",
+				Content: []interface{}{
+					map[string]interface{}{
+						"type":        "tool_result",
+						"tool_use_id": "call_abc123",
+						"content":     "total 8\ndrwxr-xr-x  2 user user 4096 Jan  1 00:00 .\ndrwxr-xr-x 10 user user 4096 Jan  1 00:00 ..",
+					},
+				},
+			},
+		},
+		MaxTokens: 1024,
+	}
+
+	result, err := TransformRequestToResponses(req, "gpt-5", "")
+	if err != nil {
+		t.Fatalf("TransformRequestToResponses failed: %v", err)
+	}
+
+	// Verify the structure of inputs:
+	// 1. User message "What files..."
+	// 2. Function call item
+	// 3. function_call_output item (NO empty user message before this!)
+	var foundEmptyUserMessage bool
+	var foundFCOutput bool
+	var inputTypes []string
+
+	for _, input := range result.Input {
+		inputTypes = append(inputTypes, input.Type)
+
+		if input.Type == "message" && input.Role == "user" {
+			// Check if it's an empty user message
+			content, ok := input.Content.(string)
+			if ok && content == "" {
+				foundEmptyUserMessage = true
+			}
+		}
+		if input.Type == "function_call_output" {
+			foundFCOutput = true
+		}
+	}
+
+	if foundEmptyUserMessage {
+		t.Errorf("Found empty user message in inputs, which should NOT happen for tool_result-only messages. Inputs: %v", inputTypes)
+	}
+
+	if !foundFCOutput {
+		t.Errorf("Expected to find function_call_output item in result. Inputs: %v", inputTypes)
+	}
+
+	// Expected: message (user), function_call, function_call_output
+	// NOT: message (user), function_call, message (empty user), function_call_output
+	expectedTypes := []string{"message", "function_call", "function_call_output"}
+	if len(result.Input) != len(expectedTypes) {
+		t.Errorf("Input length = %d, want %d. Got types: %v", len(result.Input), len(expectedTypes), inputTypes)
+	}
+}
+
 func TestTransformRequestToResponses_ContentTypes(t *testing.T) {
 	// Test that content parts use correct types for Responses API
 	req := &models.AnthropicRequest{
