@@ -369,9 +369,24 @@ func transformMessage(msg models.AnthropicMessage) ([]models.OpenAIMessage, erro
 
 	switch msg.Role {
 	case "user":
-		result = append(result, transformUserMessage(content))
 		// Handle tool results within user message
 		toolResults := extractToolResults(content)
+
+		// Check if there's non-tool-result content
+		hasNonToolContent := false
+		for _, block := range content {
+			if block.Type != "tool_result" {
+				hasNonToolContent = true
+				break
+			}
+		}
+
+		// Only add user message if there's actual user content (not just tool results)
+		if hasNonToolContent {
+			result = append(result, transformUserMessage(content))
+		}
+
+		// Add tool results (these become "tool" role messages in OpenAI format)
 		for _, tr := range toolResults {
 			result = append(result, tr)
 		}
@@ -812,7 +827,8 @@ func cleanupSchemaMapForChatCompletions(schema map[string]interface{}) {
 // 1. It appears in the original required array
 // 2. It doesn't have a default value
 // 3. It's not nullable
-// 4. It doesn't have a description containing "optional" or "(optional)"
+// 4. It doesn't have a description containing optional-indicating phrases
+// 5. It's not a boolean type (booleans are almost always optional flags)
 func identifyTrulyRequiredForChat(props map[string]interface{}, schema map[string]interface{}) []string {
 	var trulyRequired []string
 
@@ -847,6 +863,11 @@ func identifyTrulyRequiredForChat(props map[string]interface{}, schema map[strin
 			continue
 		}
 
+		// Skip boolean types - they're almost always optional flags
+		if propType, ok := propMap["type"].(string); ok && propType == "boolean" {
+			continue
+		}
+
 		// Skip if description indicates it's optional
 		if desc, ok := propMap["description"].(string); ok {
 			descLower := strings.ToLower(desc)
@@ -854,6 +875,12 @@ func identifyTrulyRequiredForChat(props map[string]interface{}, schema map[strin
 				strings.Contains(descLower, "(optional)") ||
 				strings.Contains(descLower, "if not specified") ||
 				strings.Contains(descLower, "defaults to") ||
+				strings.Contains(descLower, "set to true to") ||
+				strings.Contains(descLower, "set to false to") ||
+				strings.Contains(descLower, "if provided") ||
+				strings.Contains(descLower, "when provided") ||
+				strings.Contains(descLower, "can be omitted") ||
+				strings.Contains(descLower, "not required") ||
 				strings.Contains(descLower, "only provide if") {
 				continue
 			}

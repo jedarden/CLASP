@@ -1350,6 +1350,74 @@ func TestIdentifyTrulyRequiredForChat(t *testing.T) {
 			},
 			expected: nil,
 		},
+		{
+			name: "filters boolean types as optional flags",
+			props: map[string]interface{}{
+				"run_in_background": map[string]interface{}{
+					"type":        "boolean",
+					"description": "Run this command in background.",
+				},
+			},
+			schema: map[string]interface{}{
+				"required": []interface{}{"run_in_background"},
+			},
+			expected: nil,
+		},
+		{
+			name: "filters set to true to descriptions",
+			props: map[string]interface{}{
+				"dangerouslyDisableSandbox": map[string]interface{}{
+					"type":        "boolean",
+					"description": "Set to true to dangerously override sandbox mode.",
+				},
+			},
+			schema: map[string]interface{}{
+				"required": []interface{}{"dangerouslyDisableSandbox"},
+			},
+			expected: nil,
+		},
+		{
+			name: "filters if provided descriptions",
+			props: map[string]interface{}{
+				"resume": map[string]interface{}{
+					"type":        "string",
+					"description": "Agent ID to resume. If provided, continues from previous execution.",
+				},
+			},
+			schema: map[string]interface{}{
+				"required": []interface{}{"resume"},
+			},
+			expected: nil,
+		},
+		{
+			name: "Task tool realistic scenario - keeps only truly required",
+			props: map[string]interface{}{
+				"description": map[string]interface{}{
+					"type":        "string",
+					"description": "A short (3-5 word) description of the task",
+				},
+				"prompt": map[string]interface{}{
+					"type":        "string",
+					"description": "The task for the agent to perform",
+				},
+				"subagent_type": map[string]interface{}{
+					"type":        "string",
+					"description": "The type of specialized agent to use",
+				},
+				"model": map[string]interface{}{
+					"type":        "string",
+					"description": "Optional model to use for this agent. If not specified, inherits from parent.",
+				},
+				"resume": map[string]interface{}{
+					"type":        "string",
+					"description": "Optional agent ID to resume from. If provided, continues from previous execution.",
+				},
+			},
+			schema: map[string]interface{}{
+				"required": []interface{}{"description", "prompt", "subagent_type", "model", "resume"},
+			},
+			expected: []string{"description", "prompt", "subagent_type"},
+		},
 	}
 
 	for _, tt := range tests {

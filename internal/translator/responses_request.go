@@ -337,7 +337,8 @@ func cleanupSchemaMapForResponses(schema map[string]interface{}) {
 // 1. It appears in the original required array
 // 2. It doesn't have a default value
 // 3. It's not nullable
-// 4. It doesn't have a description containing "optional" or "(optional)"
+// 4. It doesn't have a description containing optional-indicating phrases
+// 5. It's not a boolean type (booleans are almost always optional flags)
 func identifyTrulyRequired(props map[string]interface{}, schema map[string]interface{}) []string {
 	var trulyRequired []string
 
@@ -372,13 +373,24 @@ func identifyTrulyRequired(props map[string]interface{}, schema map[string]inter
 			continue
 		}
 
+		// Skip boolean types - they're almost always optional flags
+		if propType, ok := propMap["type"].(string); ok && propType == "boolean" {
+			continue
+		}
+
 		// Skip if description indicates it's optional
 		if desc, ok := propMap["description"].(string); ok {
 			descLower := strings.ToLower(desc)
 			if strings.Contains(descLower, "optional") ||
 				strings.Contains(descLower, "(optional)") ||
 				strings.Contains(descLower, "if not specified") ||
-				strings.Contains(descLower, "defaults to") {
+				strings.Contains(descLower, "defaults to") ||
+				strings.Contains(descLower, "set to true to") ||
+				strings.Contains(descLower, "set to false to") ||
+				strings.Contains(descLower, "if provided") ||
+				strings.Contains(descLower, "when provided") ||
+				strings.Contains(descLower, "can be omitted") ||
+				strings.Contains(descLower, "not required") {
 				continue
 			}
 		}
