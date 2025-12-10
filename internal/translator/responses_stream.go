@@ -8,6 +8,7 @@ import (
 	"io"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/jedarden/clasp/internal/logging"
 	"github.com/jedarden/clasp/pkg/models"
@@ -39,6 +40,12 @@ type ResponsesStreamProcessor struct {
 	// Web search citation tracking
 	// Citations are collected during streaming and appended to text at the end
 	citations []models.ResponsesAnnotation
+
+	// Deduplication tracking for text deltas
+	// The Responses API may send the same text through multiple event types
+	// (content_part.delta, output_text.delta, etc.)
+	lastTextDelta     string
+	lastTextDeltaTime int64
 
 	// Usage tracking
 	usage         *models.ResponsesUsage
@@ -343,6 +350,8 @@ func TranslateResponsesIDToAnthropic(id string) string {
 }
 
 // handleContentPartDelta handles the response.content_part.delta event.
+// NOTE: This may be sent alongside output_text.delta with the same content.
+// The handleTextDelta function handles deduplication.
 func (sp *ResponsesStreamProcessor) handleContentPartDelta(event *models.ResponsesStreamEvent) error {
 	if event.Delta == nil {
 		return nil
@@ -364,6 +373,17 @@ func (sp *ResponsesStreamProcessor) handleTextDelta(text string) error {
 	if text == "" {
 		return nil
 	}
+
+	// Deduplicate consecutive identical text deltas
+	// The Responses API may send the same text through multiple event types
+	// (content_part.delta and output_text.delta) within a short time window
+	now := time.Now().UnixMilli()
+	if text == sp.lastTextDelta && (now-sp.lastTextDeltaTime) < 100 {
+		// Same text within 100ms, skip duplicate
+		return nil
+	}
+	sp.lastTextDelta = text
+	sp.lastTextDeltaTime = now
 
 	// Emit message_start if not already done
 	if sp.state == StateIdle {
