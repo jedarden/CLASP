@@ -305,7 +305,12 @@ func (sp *ResponsesStreamProcessor) handleOutputItemAdded(event *models.Response
 
 		// Emit the search query as the tool input
 		// WebSearch expects {"query": "search terms"}
-		searchInput := fmt.Sprintf(`{"query":"%s"}`, escapeJSONString(event.Item.Query))
+		// The Action field is now an object with Type and Query
+		query := ""
+		if event.Item.Action != nil {
+			query = event.Item.Action.Query
+		}
+		searchInput := fmt.Sprintf(`{"query":"%s"}`, escapeJSONString(query))
 		fcState.arguments = searchInput
 		if err := sp.emitContentBlockDelta(fcState.blockIndex, "input_json_delta", "", searchInput); err != nil {
 			return err

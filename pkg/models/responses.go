@@ -154,9 +154,14 @@ type ResponsesItem struct {
 	Output    string      `json:"output,omitempty"` // For function_call_output
 
 	// Web search call fields (type: "web_search_call")
-	// Action can be "search" with a Query field
-	Action    string      `json:"action,omitempty"` // "search"
-	Query     string      `json:"query,omitempty"`  // The search query used
+	// Action is an object with type "search" and a query field
+	Action *WebSearchAction `json:"action,omitempty"`
+}
+
+// WebSearchAction represents the action details for a web_search_call.
+type WebSearchAction struct {
+	Type  string `json:"type"`  // "search"
+	Query string `json:"query"` // The search query used
 }
 
 // ResponsesSummaryItem represents a single reasoning summary item.
