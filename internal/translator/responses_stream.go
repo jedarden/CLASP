@@ -36,6 +36,10 @@ type ResponsesStreamProcessor struct {
 	funcCallIndex    int
 	activeFuncCalls  map[int]*funcCallState
 
+	// Web search citation tracking
+	// Citations are collected during streaming and appended to text at the end
+	citations []models.ResponsesAnnotation
+
 	// Usage tracking
 	usage         *models.ResponsesUsage
 	usageCallback UsageCallback
@@ -175,6 +179,8 @@ func (sp *ResponsesStreamProcessor) processEvent(event *models.ResponsesStreamEv
 	case models.EventOutputTextDone:
 		// Final text, but we've already streamed the deltas
 		return nil
+	case models.EventOutputTextAnnotationAdd:
+		return sp.handleAnnotationAdded(event)
 
 	// Refusal events
 	case models.EventRefusalDelta:
@@ -265,6 +271,45 @@ func (sp *ResponsesStreamProcessor) handleOutputItemAdded(event *models.Response
 			return err
 		}
 		fcState.started = true
+
+	case "web_search_call":
+		// OpenAI's web_search_preview tool was invoked
+		// Convert to a WebSearch tool_use block for Claude Code compatibility
+		// The ID format from web search is typically "ws_xxx"
+		webSearchID := event.Item.ID
+		if webSearchID == "" {
+			webSearchID = fmt.Sprintf("call_ws_%d", sp.funcCallIndex)
+		}
+
+		fcState := &funcCallState{
+			id:         webSearchID,
+			name:       "WebSearch",
+			blockIndex: sp.calculateNextBlockIndex(),
+		}
+		sp.activeFuncCalls[sp.funcCallIndex] = fcState
+		sp.funcCallIndex++
+
+		// Close text block if open
+		if sp.textStarted && sp.state == StateTextContent {
+			if err := sp.emitContentBlockStop(sp.textBlockIndex); err != nil {
+				return err
+			}
+			sp.state = StateToolCall
+		}
+
+		// Emit content_block_start for WebSearch tool_use
+		if err := sp.emitContentBlockStart(fcState.blockIndex, "tool_use", fcState.id, "WebSearch"); err != nil {
+			return err
+		}
+		fcState.started = true
+
+		// Emit the search query as the tool input
+		// WebSearch expects {"query": "search terms"}
+		searchInput := fmt.Sprintf(`{"query":"%s"}`, escapeJSONString(event.Item.Query))
+		fcState.arguments = searchInput
+		if err := sp.emitContentBlockDelta(fcState.blockIndex, "input_json_delta", "", searchInput); err != nil {
+			return err
+		}
 	}
 
 	return nil
@@ -408,6 +453,18 @@ func (sp *ResponsesStreamProcessor) handleOutputItemDone(event *models.Responses
 				break
 			}
 		}
+	case "web_search_call":
+		// Close the WebSearch tool_use block
+		// Find the fcState by matching the WebSearch name
+		for _, fcState := range sp.activeFuncCalls {
+			if fcState.started && !fcState.closed && fcState.name == "WebSearch" {
+				if err := sp.emitContentBlockStop(fcState.blockIndex); err != nil {
+					return err
+				}
+				fcState.closed = true
+				break
+			}
+		}
 	}
 
 	return nil
@@ -422,6 +479,14 @@ func (sp *ResponsesStreamProcessor) handleResponseCompleted(event *models.Respon
 	// Close thinking block if still open
 	if sp.thinkingStarted && sp.state == StateThinkingContent {
 		if err := sp.emitContentBlockStop(sp.thinkingBlockIndex); err != nil {
+			return err
+		}
+	}
+
+	// If we have citations from web search, append them to the text
+	if len(sp.citations) > 0 && sp.textStarted {
+		sourcesText := sp.formatCitationsAsText()
+		if err := sp.emitContentBlockDelta(sp.textBlockIndex, "text_delta", sourcesText, ""); err != nil {
 			return err
 		}
 	}
@@ -450,6 +515,34 @@ func (sp *ResponsesStreamProcessor) handleResponseCompleted(event *models.Respon
 	}
 
 	return sp.emitMessageDelta(stopReason)
+}
+
+// formatCitationsAsText formats collected URL citations as a "Sources:" section.
+func (sp *ResponsesStreamProcessor) formatCitationsAsText() string {
+	if len(sp.citations) == 0 {
+		return ""
+	}
+
+	// Deduplicate citations by URL
+	seen := make(map[string]bool)
+	var unique []models.ResponsesAnnotation
+	for _, c := range sp.citations {
+		if !seen[c.URL] {
+			seen[c.URL] = true
+			unique = append(unique, c)
+		}
+	}
+
+	var sb strings.Builder
+	sb.WriteString("\n\nSources:\n")
+	for _, c := range unique {
+		if c.Title != "" {
+			sb.WriteString(fmt.Sprintf("- [%s](%s)\n", c.Title, c.URL))
+		} else {
+			sb.WriteString(fmt.Sprintf("- %s\n", c.URL))
+		}
+	}
+	return sb.String()
 }
 
 // handleResponseFailed handles the response.failed event.
@@ -526,6 +619,22 @@ func (sp *ResponsesStreamProcessor) handleRefusalDelta(event *models.ResponsesSt
 	}
 
 	return sp.handleTextDelta(refusalText)
+}
+
+// handleAnnotationAdded handles response.output_text.annotation.added events.
+// Annotations are citations from web search results. We collect them and will
+// append a "Sources:" section to the text output when the response completes.
+func (sp *ResponsesStreamProcessor) handleAnnotationAdded(event *models.ResponsesStreamEvent) error {
+	if event.Annotation == nil {
+		return nil
+	}
+
+	// Collect URL citations for later output
+	if event.Annotation.Type == "url_citation" {
+		sp.citations = append(sp.citations, *event.Annotation)
+	}
+
+	return nil
 }
 
 // handleReasoningDelta handles reasoning_text.delta and reasoning_summary_text.delta events.
@@ -749,4 +858,18 @@ func (sp *ResponsesStreamProcessor) writeSSE(event, data string) error {
 
 	_, err := sp.writer.Write([]byte(output))
 	return err
+}
+
+// escapeJSONString escapes special characters in a string for JSON embedding.
+func escapeJSONString(s string) string {
+	// Use json.Marshal to properly escape the string, then strip the quotes
+	data, err := json.Marshal(s)
+	if err != nil {
+		return s
+	}
+	// Remove surrounding quotes
+	if len(data) >= 2 {
+		return string(data[1 : len(data)-1])
+	}
+	return s
 }

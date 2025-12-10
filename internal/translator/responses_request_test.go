@@ -1041,6 +1041,144 @@ func TestTransformToolsToResponses_StrictModeFalse(t *testing.T) {
 	t.Logf("Generated tool JSON:\n%s", string(jsonData))
 }
 
+func TestTransformRequestToResponses_ToolResultWithIsError(t *testing.T) {
+	// Test that tool results with is_error: true are correctly prefixed with [Error]
+	req := &models.AnthropicRequest{
+		Model: "claude-3-5-sonnet-20241022",
+		Messages: []models.AnthropicMessage{
+			{Role: "user", Content: "Run a command"},
+			{
+				Role: "assistant",
+				Content: []interface{}{
+					map[string]interface{}{
+						"type":  "tool_use",
+						"id":    "call_error123",
+						"name":  "Bash",
+						"input": map[string]interface{}{"command": "invalid_command"},
+					},
+				},
+			},
+			{
+				Role: "user",
+				Content: []interface{}{
+					map[string]interface{}{
+						"type":        "tool_result",
+						"tool_use_id": "call_error123",
+						"content":     "command not found: invalid_command",
+						"is_error":    true,
+					},
+				},
+			},
+		},
+		MaxTokens: 1024,
+	}
+
+	result, err := TransformRequestToResponses(req, "gpt-5", "")
+	if err != nil {
+		t.Fatalf("TransformRequestToResponses failed: %v", err)
+	}
+
+	// Find the function_call_output item
+	var fcOutput *models.ResponsesInput
+	for i := range result.Input {
+		if result.Input[i].Type == "function_call_output" {
+			fcOutput = &result.Input[i]
+			break
+		}
+	}
+
+	if fcOutput == nil {
+		t.Fatal("Expected to find function_call_output item in result")
+	}
+
+	// Verify Output is prefixed with [Error]
+	if fcOutput.Output == nil {
+		t.Error("function_call_output.Output should not be nil")
+	}
+
+	if fcOutput.Output != nil && !strings.HasPrefix(*fcOutput.Output, "[Error]") {
+		t.Errorf("function_call_output.Output should be prefixed with [Error], got: %q", *fcOutput.Output)
+	}
+}
+
+func TestTransformRequestToResponses_EmptyToolResultOutput(t *testing.T) {
+	// Test that empty tool result output is correctly serialized with "output": ""
+	// OpenAI Responses API REQUIRES the "output" field for function_call_output items,
+	// even when the output is empty (e.g., mkdir returns no output).
+	// Previously, using `json:"output,omitempty"` caused empty strings to be omitted,
+	// resulting in: "Missing required parameter: 'input[6].output'"
+	req := &models.AnthropicRequest{
+		Model: "claude-3-5-sonnet-20241022",
+		Messages: []models.AnthropicMessage{
+			{Role: "user", Content: "Create a directory"},
+			{
+				Role: "assistant",
+				Content: []interface{}{
+					map[string]interface{}{
+						"type":  "tool_use",
+						"id":    "call_mkdir123",
+						"name":  "Bash",
+						"input": map[string]interface{}{"command": "mkdir -p /tmp/test"},
+					},
+				},
+			},
+			{
+				Role: "user",
+				Content: []interface{}{
+					map[string]interface{}{
+						"type":        "tool_result",
+						"tool_use_id": "call_mkdir123",
+						"content":     "", // Empty output - mkdir returns nothing
+					},
+				},
+			},
+		},
+		MaxTokens: 1024,
+	}
+
+	result, err := TransformRequestToResponses(req, "gpt-5", "")
+	if err != nil {
+		t.Fatalf("TransformRequestToResponses failed: %v", err)
+	}
+
+	// Find the function_call_output item
+	var fcOutput *models.ResponsesInput
+	for i := range result.Input {
+		if result.Input[i].Type == "function_call_output" {
+			fcOutput = &result.Input[i]
+			break
+		}
+	}
+
+	if fcOutput == nil {
+		t.Fatal("Expected to find function_call_output item in result")
+	}
+
+	// Verify Output pointer is not nil (even for empty string)
+	if fcOutput.Output == nil {
+		t.Error("function_call_output.Output should not be nil (must be empty string pointer)")
+	}
+
+	// Verify the output value is empty string
+	if fcOutput.Output != nil && *fcOutput.Output != "" {
+		t.Errorf("function_call_output.Output = %q, want empty string", *fcOutput.Output)
+	}
+
+	// Marshal to JSON and verify "output" field is present
+	jsonData, err := json.Marshal(result)
+	if err != nil {
+		t.Fatalf("Failed to marshal result to JSON: %v", err)
+	}
+
+	jsonStr := string(jsonData)
+	// The JSON should contain "output":"" for the function_call_output item
+	if !strings.Contains(jsonStr, `"output":""`) && !strings.Contains(jsonStr, `"output": ""`) {
+		t.Errorf("JSON should contain empty output field for function_call_output. JSON: %s", jsonStr)
+	}
+
+	t.Logf("Generated JSON with empty output: %s", jsonStr)
+}
+
 func TestTransformToolsToResponses_AdditionalPropertiesFalse(t *testing.T) {
 	// Test that tools are created with additionalProperties: false
 	// OpenAI Responses API REQUIRES this field even when strict: false is set.

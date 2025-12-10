@@ -524,15 +524,59 @@ func extractToolResults(content []models.ContentBlock) []models.OpenAIMessage {
 
 	for _, block := range content {
 		if block.Type == "tool_result" {
+			// Extract content from the tool result (can be string or array)
+			output := extractToolResultContentForChat(block)
+
+			// If the tool result indicates an error, prefix the output
+			if block.IsError {
+				output = "[Error] " + output
+			}
+
 			results = append(results, models.OpenAIMessage{
 				Role:       "tool",
-				Content:    block.Content,
+				Content:    output,
 				ToolCallID: block.ToolUseID,
 			})
 		}
 	}
 
 	return results
+}
+
+// extractToolResultContentForChat extracts content from a tool result block for Chat Completions API.
+// The content can be a string or an array of content blocks.
+func extractToolResultContentForChat(block models.ContentBlock) string {
+	if block.Content == nil {
+		return ""
+	}
+
+	// Try as string first (most common case)
+	if str, ok := block.Content.(string); ok {
+		return str
+	}
+
+	// Try as array of content blocks
+	if arr, ok := block.Content.([]interface{}); ok {
+		var parts []string
+		for _, item := range arr {
+			if itemMap, ok := item.(map[string]interface{}); ok {
+				// Extract text from nested content blocks
+				if itemType, ok := itemMap["type"].(string); ok && itemType == "text" {
+					if text, ok := itemMap["text"].(string); ok {
+						parts = append(parts, text)
+					}
+				}
+			}
+		}
+		return strings.Join(parts, "\n")
+	}
+
+	// Fallback: marshal to JSON
+	data, err := json.Marshal(block.Content)
+	if err != nil {
+		return ""
+	}
+	return string(data)
 }
 
 // transformAssistantMessage transforms assistant message content to OpenAI format.

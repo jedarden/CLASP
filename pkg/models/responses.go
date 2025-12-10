@@ -46,7 +46,10 @@ type ResponsesInput struct {
 	Arguments string `json:"arguments,omitempty"`
 
 	// Function call output fields (type: "function_call_output")
-	Output string `json:"output,omitempty"`
+	// NOTE: Output uses a pointer to differentiate between unset (nil) and empty string ("").
+	// OpenAI Responses API REQUIRES the "output" field for function_call_output items,
+	// even when the output is empty. Using *string ensures empty outputs are serialized.
+	Output *string `json:"output,omitempty"`
 }
 
 // ResponsesContentPart represents a content part in Responses input.
@@ -93,9 +96,26 @@ type ResponsesFunction struct {
 
 // ResponsesMCPServer represents an MCP server tool in Responses API.
 type ResponsesMCPServer struct {
-	URL                 string   `json:"url"`
-	AllowedTools        []string `json:"allowed_tools,omitempty"`
+	URL                 string            `json:"url"`
+	AllowedTools        []string          `json:"allowed_tools,omitempty"`
 	Headers             map[string]string `json:"headers,omitempty"`
+}
+
+// ResponsesWebSearchTool represents a web_search_preview tool in Responses API.
+// When included in tools, the model can search the web for current information.
+type ResponsesWebSearchTool struct {
+	Type              string                      `json:"type"` // "web_search_preview"
+	SearchContextSize string                      `json:"search_context_size,omitempty"` // "low", "medium", "high"
+	UserLocation      *ResponsesUserLocation      `json:"user_location,omitempty"`
+}
+
+// ResponsesUserLocation provides location context for web search results.
+type ResponsesUserLocation struct {
+	Type     string `json:"type"` // "approximate"
+	Country  string `json:"country,omitempty"`  // ISO 3166-1 alpha-2 country code
+	City     string `json:"city,omitempty"`
+	Region   string `json:"region,omitempty"`
+	Timezone string `json:"timezone,omitempty"`
 }
 
 // ResponsesResponse represents an OpenAI Responses API response.
@@ -112,9 +132,9 @@ type ResponsesResponse struct {
 }
 
 // ResponsesItem represents an output item in Responses API.
-// Items are polymorphic: reasoning, message, function_call, function_call_output
+// Items are polymorphic: reasoning, message, function_call, function_call_output, web_search_call
 type ResponsesItem struct {
-	Type      string      `json:"type"` // "reasoning", "message", "function_call", "function_call_output"
+	Type      string      `json:"type"` // "reasoning", "message", "function_call", "function_call_output", "web_search_call"
 	ID        string      `json:"id,omitempty"`
 
 	// Message fields
@@ -132,6 +152,11 @@ type ResponsesItem struct {
 	Arguments string      `json:"arguments,omitempty"`
 	Status    string      `json:"status,omitempty"` // "in_progress", "completed", "failed"
 	Output    string      `json:"output,omitempty"` // For function_call_output
+
+	// Web search call fields (type: "web_search_call")
+	// Action can be "search" with a Query field
+	Action    string      `json:"action,omitempty"` // "search"
+	Query     string      `json:"query,omitempty"`  // The search query used
 }
 
 // ResponsesSummaryItem represents a single reasoning summary item.
@@ -142,11 +167,25 @@ type ResponsesSummaryItem struct {
 
 // ResponsesOutputContentPart represents a content part in Responses output.
 type ResponsesOutputContentPart struct {
-	Type        string `json:"type"` // "text", "refusal", "audio"
-	Text        string `json:"text,omitempty"`
-	Refusal     string `json:"refusal,omitempty"`
-	AudioData   string `json:"audio_data,omitempty"`
-	Transcript  string `json:"transcript,omitempty"`
+	Type        string                  `json:"type"` // "output_text", "refusal", "audio"
+	Text        string                  `json:"text,omitempty"`
+	Refusal     string                  `json:"refusal,omitempty"`
+	AudioData   string                  `json:"audio_data,omitempty"`
+	Transcript  string                  `json:"transcript,omitempty"`
+	Annotations []ResponsesAnnotation   `json:"annotations,omitempty"`
+}
+
+// ResponsesAnnotation represents a citation or annotation in Responses output.
+// Used primarily for web search results to cite sources.
+type ResponsesAnnotation struct {
+	Type       string `json:"type"`        // "url_citation", "file_citation"
+	StartIndex int    `json:"start_index"` // Character position where citation begins
+	EndIndex   int    `json:"end_index"`   // Character position where citation ends
+	URL        string `json:"url,omitempty"`
+	Title      string `json:"title,omitempty"`
+	// File citation fields
+	FileID     string `json:"file_id,omitempty"`
+	Filename   string `json:"filename,omitempty"`
 }
 
 // ResponsesUsage represents usage statistics in Responses API.
@@ -190,6 +229,9 @@ type ResponsesStreamEvent struct {
 
 	// Part field for content_part events
 	Part *ResponsesOutputContentPart `json:"part,omitempty"`
+
+	// Annotation field for output_text.annotation.added events
+	Annotation *ResponsesAnnotation `json:"annotation,omitempty"`
 }
 
 // UnmarshalJSON implements custom JSON unmarshaling to handle the polymorphic delta field.

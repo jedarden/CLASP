@@ -40,8 +40,9 @@ type ContentBlock struct {
 	Name  string      `json:"name,omitempty"`
 	Input interface{} `json:"input,omitempty"`
 	// Tool result fields
-	ToolUseID string `json:"tool_use_id,omitempty"`
-	Content   string `json:"content,omitempty"`
+	ToolUseID string      `json:"tool_use_id,omitempty"`
+	Content   interface{} `json:"content,omitempty"` // Can be string or []ContentBlock for tool results
+	IsError   bool        `json:"is_error,omitempty"`
 	// Cache control (Anthropic-specific, stripped during translation)
 	CacheControl *CacheControl `json:"cache_control,omitempty"`
 }

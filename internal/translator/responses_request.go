@@ -193,15 +193,60 @@ func extractToolResultsForResponses(content []models.ContentBlock) []models.Resp
 		if block.Type == "tool_result" {
 			// In Responses API, tool results are represented as function_call_output items
 			// The ID must use "fc_" prefix for Responses API compatibility
+			// IMPORTANT: Output must be a pointer to ensure empty strings are serialized.
+			// OpenAI Responses API REQUIRES the "output" field even when empty.
+			output := extractToolResultContent(block)
+
+			// If the tool result indicates an error, prefix the output
+			if block.IsError {
+				output = "[Error] " + output
+			}
+
 			results = append(results, models.ResponsesInput{
 				Type:   "function_call_output",
 				CallID: translateToolCallID(block.ToolUseID),
-				Output: block.Content,
+				Output: &output,
 			})
 		}
 	}
 
 	return results
+}
+
+// extractToolResultContent extracts content from a tool result block.
+// The content can be a string or an array of content blocks.
+func extractToolResultContent(block models.ContentBlock) string {
+	if block.Content == nil {
+		return ""
+	}
+
+	// Try as string first (most common case)
+	if str, ok := block.Content.(string); ok {
+		return str
+	}
+
+	// Try as array of content blocks
+	if arr, ok := block.Content.([]interface{}); ok {
+		var parts []string
+		for _, item := range arr {
+			if itemMap, ok := item.(map[string]interface{}); ok {
+				// Extract text from nested content blocks
+				if itemType, ok := itemMap["type"].(string); ok && itemType == "text" {
+					if text, ok := itemMap["text"].(string); ok {
+						parts = append(parts, text)
+					}
+				}
+			}
+		}
+		return strings.Join(parts, "\n")
+	}
+
+	// Fallback: marshal to JSON
+	data, err := json.Marshal(block.Content)
+	if err != nil {
+		return ""
+	}
+	return string(data)
 }
 
 // transformAssistantMessageToInput converts an assistant message to Responses input items.
@@ -256,16 +301,27 @@ func transformAssistantMessageToInput(content []models.ContentBlock) []models.Re
 // IMPORTANT: We set Strict=false because Anthropic's tool schemas mark ALL parameters as
 // required, but Claude Code only provides values for truly required parameters. With strict
 // mode enabled, OpenAI rejects tool calls when optional parameters are missing.
+//
+// SPECIAL HANDLING: The "WebSearch" tool from Claude Code is intercepted and converted to
+// OpenAI's native "web_search_preview" tool, which provides better search results and
+// automatic citations.
 func transformToolsToResponses(tools []models.AnthropicTool) []models.ResponsesTool {
-	result := make([]models.ResponsesTool, len(tools))
+	var result []models.ResponsesTool
 	strictFalse := false // Pointer to false for explicit strict:false
+	hasWebSearch := false
 
-	for i, tool := range tools {
+	for _, tool := range tools {
+		// Intercept WebSearch tool and convert to web_search_preview
+		if tool.Name == "WebSearch" {
+			hasWebSearch = true
+			continue // Skip adding as function, will add web_search_preview instead
+		}
+
 		// Clean up input schema and fix required array
 		params := cleanupSchemaForResponses(tool.InputSchema)
 
 		// Responses API uses a flattened structure with name at top level
-		result[i] = models.ResponsesTool{
+		result = append(result, models.ResponsesTool{
 			Type:        "function",
 			Name:        tool.Name,
 			Description: tool.Description,
@@ -279,7 +335,16 @@ func transformToolsToResponses(tools []models.AnthropicTool) []models.ResponsesT
 				Parameters:  params,
 				Strict:      false, // CRITICAL: Don't use strict mode - Anthropic marks all params as required
 			},
-		}
+		})
+	}
+
+	// Add web_search_preview tool if WebSearch was requested
+	if hasWebSearch {
+		result = append(result, models.ResponsesTool{
+			Type: "web_search_preview",
+			// Use medium search context for balanced speed/quality
+			// This field is at the tool level for web_search_preview
+		})
 	}
 
 	return result
