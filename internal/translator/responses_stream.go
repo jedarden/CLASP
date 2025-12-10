@@ -8,7 +8,6 @@ import (
 	"io"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/jedarden/clasp/internal/logging"
 	"github.com/jedarden/clasp/pkg/models"
@@ -44,8 +43,8 @@ type ResponsesStreamProcessor struct {
 	// Deduplication tracking for text deltas
 	// The Responses API may send the same text through multiple event types
 	// (content_part.delta, output_text.delta, etc.)
-	lastTextDelta     string
-	lastTextDeltaTime int64
+	// We track seen sequence numbers to deduplicate events
+	seenSequenceNumbers map[int]bool
 
 	// Usage tracking
 	usage         *models.ResponsesUsage
@@ -67,13 +66,14 @@ type funcCallState struct {
 // NewResponsesStreamProcessor creates a new stream processor for Responses API.
 func NewResponsesStreamProcessor(writer io.Writer, messageID, targetModel string) *ResponsesStreamProcessor {
 	return &ResponsesStreamProcessor{
-		writer:          writer,
-		messageID:       messageID,
-		targetModel:     targetModel,
-		state:           StateIdle,
-		textBlockIndex:  0,
-		funcCallIndex:   0,
-		activeFuncCalls: make(map[int]*funcCallState),
+		writer:              writer,
+		messageID:           messageID,
+		targetModel:         targetModel,
+		state:               StateIdle,
+		textBlockIndex:      0,
+		funcCallIndex:       0,
+		activeFuncCalls:     make(map[int]*funcCallState),
+		seenSequenceNumbers: make(map[int]bool),
 	}
 }
 
@@ -150,6 +150,17 @@ func (sp *ResponsesStreamProcessor) ProcessStream(reader io.Reader) error {
 func (sp *ResponsesStreamProcessor) processEvent(event *models.ResponsesStreamEvent) error {
 	sp.mu.Lock()
 	defer sp.mu.Unlock()
+
+	// Deduplicate events using sequence number
+	// The Responses API may send the same content through multiple event types
+	// (e.g., content_part.delta and output_text.delta) with the same sequence number
+	if event.SequenceNumber > 0 {
+		if sp.seenSequenceNumbers[event.SequenceNumber] {
+			// Already processed this sequence number, skip
+			return nil
+		}
+		sp.seenSequenceNumbers[event.SequenceNumber] = true
+	}
 
 	switch event.Type {
 	// Response lifecycle events
@@ -373,17 +384,6 @@ func (sp *ResponsesStreamProcessor) handleTextDelta(text string) error {
 	if text == "" {
 		return nil
 	}
-
-	// Deduplicate consecutive identical text deltas
-	// The Responses API may send the same text through multiple event types
-	// (content_part.delta and output_text.delta) within a short time window
-	now := time.Now().UnixMilli()
-	if text == sp.lastTextDelta && (now-sp.lastTextDeltaTime) < 100 {
-		// Same text within 100ms, skip duplicate
-		return nil
-	}
-	sp.lastTextDelta = text
-	sp.lastTextDeltaTime = now
 
 	// Emit message_start if not already done
 	if sp.state == StateIdle {
