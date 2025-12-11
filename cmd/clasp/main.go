@@ -28,7 +28,7 @@ import (
 )
 
 var (
-	version = "v0.48.9"
+	version = "v0.49.0"
 )
 
 func main() {
@@ -136,17 +136,62 @@ func main() {
 		fmt.Print(setup.WarnCLIAPIKey())
 	}
 
-	// Apply profile if specified
-	if *profileName != "" {
+	// Profile selection logic:
+	// 1. If --profile flag is set, use that profile
+	// 2. If profiles exist and no flag, show profile selector TUI
+	// 3. If no profiles exist, run setup wizard
+	selectedProfileName := *profileName
+
+	if selectedProfileName == "" && !*proxyOnly {
+		// Check if profiles exist and show selector
 		pm := setup.NewProfileManager()
-		profile, err := pm.GetProfile(*profileName)
+		profiles, _ := pm.ListProfiles()
+
+		if len(profiles) > 0 {
+			// Profiles exist - show selector TUI (only if TTY available)
+			if setup.IsTTY() {
+				profileName, createNew, cancelled := setup.SelectOrCreateProfile()
+				if cancelled {
+					fmt.Println("\n[CLASP] Cancelled.")
+					os.Exit(0)
+				}
+				if createNew {
+					// User wants to create a new profile
+					wizard := setup.NewWizard()
+					newProfile, err := wizard.RunProfileCreate("")
+					if err != nil {
+						if err == setup.ErrCancelled {
+							fmt.Println("\n[CLASP] Setup cancelled.")
+							os.Exit(0)
+						}
+						log.Fatalf("[CLASP] Failed to create profile: %v", err)
+					}
+					selectedProfileName = newProfile.Name
+				} else {
+					selectedProfileName = profileName
+				}
+			} else {
+				// Non-TTY: use active profile
+				if globalCfg, err := pm.GetGlobalConfig(); err == nil && globalCfg.ActiveProfile != "" {
+					selectedProfileName = globalCfg.ActiveProfile
+				} else if len(profiles) > 0 {
+					selectedProfileName = profiles[0].Name
+				}
+			}
+		}
+	}
+
+	// Apply selected profile if we have one
+	if selectedProfileName != "" {
+		pm := setup.NewProfileManager()
+		profile, err := pm.GetProfile(selectedProfileName)
 		if err != nil {
-			log.Fatalf("[CLASP] Profile '%s' not found. Run 'clasp profile list' to see available profiles.", *profileName)
+			log.Fatalf("[CLASP] Profile '%s' not found. Run 'clasp profile list' to see available profiles.", selectedProfileName)
 		}
 		if err := pm.ApplyProfileToEnv(profile); err != nil {
 			log.Fatalf("[CLASP] Failed to apply profile: %v", err)
 		}
-		log.Printf("[CLASP] Using profile: %s", *profileName)
+		log.Printf("[CLASP] Using profile: %s", selectedProfileName)
 	}
 
 	if *showVersion {
@@ -509,8 +554,9 @@ Usage: clasp [options] [-- claude-args...]
        clasp <command> [arguments]
 
 Quick Start:
-  clasp                     Start proxy AND launch Claude Code (default)
-  clasp -proxy-only         Start proxy only (no Claude Code)
+  clasp                     Launch with profile selector (if profiles exist)
+  clasp -profile <name>     Start with a specific profile (skip selector)
+  clasp -proxy-only         Start proxy only (no Claude Code, no selector)
   clasp status              Show current configuration status
   clasp use <profile>       Switch to a different profile
   clasp doctor              Run diagnostics and troubleshooting
