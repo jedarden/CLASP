@@ -220,11 +220,7 @@ func RunProfileSelector(profiles []*Profile, activeProfile string) (selectedProf
 		return "", true, false, nil
 	}
 
-	// If only one profile exists, use it automatically (no need for selector)
-	if len(profiles) == 1 {
-		return profiles[0].Name, false, false, nil
-	}
-
+	// Show selector for 1+ profiles (always includes "Create New" option)
 	selector := NewProfileSelector(profiles, activeProfile)
 
 	p := tea.NewProgram(selector, tea.WithAltScreen())
