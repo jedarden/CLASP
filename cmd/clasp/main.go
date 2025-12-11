@@ -138,45 +138,42 @@ func main() {
 
 	// Profile selection logic:
 	// 1. If --profile flag is set, use that profile
-	// 2. If profiles exist and no flag, show profile selector TUI
-	// 3. If no profiles exist, run setup wizard
+	// 2. If TTY available, show profile selector TUI (with option to create new)
+	// 3. Non-TTY: use active profile or first available
 	selectedProfileName := *profileName
 
 	if selectedProfileName == "" && !*proxyOnly {
-		// Check if profiles exist and show selector
 		pm := setup.NewProfileManager()
 		profiles, _ := pm.ListProfiles()
 
-		if len(profiles) > 0 {
-			// Profiles exist - show selector TUI (only if TTY available)
-			if setup.IsTTY() {
-				profileName, createNew, cancelled := setup.SelectOrCreateProfile()
-				if cancelled {
-					fmt.Println("\n[CLASP] Cancelled.")
-					os.Exit(0)
-				}
-				if createNew {
-					// User wants to create a new profile
-					wizard := setup.NewWizard()
-					newProfile, err := wizard.RunProfileCreate("")
-					if err != nil {
-						if err == setup.ErrCancelled {
-							fmt.Println("\n[CLASP] Setup cancelled.")
-							os.Exit(0)
-						}
-						log.Fatalf("[CLASP] Failed to create profile: %v", err)
+		if setup.IsTTY() {
+			// Interactive mode - show selector (works with 0+ profiles)
+			profileName, createNew, cancelled := setup.SelectOrCreateProfile()
+			if cancelled {
+				fmt.Println("\n[CLASP] Cancelled.")
+				os.Exit(0)
+			}
+			if createNew {
+				// User wants to create a new profile
+				wizard := setup.NewWizard()
+				newProfile, err := wizard.RunProfileCreate("")
+				if err != nil {
+					if err == setup.ErrCancelled {
+						fmt.Println("\n[CLASP] Setup cancelled.")
+						os.Exit(0)
 					}
-					selectedProfileName = newProfile.Name
-				} else {
-					selectedProfileName = profileName
+					log.Fatalf("[CLASP] Failed to create profile: %v", err)
 				}
+				selectedProfileName = newProfile.Name
 			} else {
-				// Non-TTY: use active profile
-				if globalCfg, err := pm.GetGlobalConfig(); err == nil && globalCfg.ActiveProfile != "" {
-					selectedProfileName = globalCfg.ActiveProfile
-				} else if len(profiles) > 0 {
-					selectedProfileName = profiles[0].Name
-				}
+				selectedProfileName = profileName
+			}
+		} else if len(profiles) > 0 {
+			// Non-TTY: use active profile or first available
+			if globalCfg, err := pm.GetGlobalConfig(); err == nil && globalCfg.ActiveProfile != "" {
+				selectedProfileName = globalCfg.ActiveProfile
+			} else {
+				selectedProfileName = profiles[0].Name
 			}
 		}
 	}

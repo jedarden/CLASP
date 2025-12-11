@@ -3,6 +3,7 @@ package setup
 
 import (
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 
@@ -577,7 +578,10 @@ func RunModelPicker(models []ModelInfo, provider, tier string) (string, error) {
 
 // IsTTY checks if stdin is a terminal.
 func IsTTY() bool {
-	// Use the lipgloss.HasDarkBackground approach to detect TTY
-	// This works by checking if we can query terminal capabilities
-	return lipgloss.HasDarkBackground()
+	// Check if stdin is a terminal using os.Stdin.Stat()
+	if fileInfo, err := os.Stdin.Stat(); err == nil {
+		// If mode has ModeCharDevice, it's a terminal
+		return (fileInfo.Mode() & os.ModeCharDevice) != 0
+	}
+	return false
 }
