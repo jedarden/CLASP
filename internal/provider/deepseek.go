@@ -72,9 +72,7 @@ func (p *DeepSeekProvider) GetEndpointURL() string {
 // Maps Claude model names to appropriate DeepSeek equivalents.
 func (p *DeepSeekProvider) TransformModelID(modelID string) string {
 	// Strip any provider prefix
-	if strings.HasPrefix(modelID, "deepseek/") {
-		modelID = strings.TrimPrefix(modelID, "deepseek/")
-	}
+	modelID = strings.TrimPrefix(modelID, "deepseek/")
 
 	// If already a DeepSeek model, return as-is
 	modelLower := strings.ToLower(modelID)

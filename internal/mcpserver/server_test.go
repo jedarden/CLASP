@@ -173,7 +173,7 @@ func TestCallToolConfig(t *testing.T) {
 
 	// Test list action
 	params := CallToolParams{
-		Name: "clasp_config",
+		Name:      "clasp_config",
 		Arguments: json.RawMessage(`{"action": "list"}`),
 	}
 	paramsJSON, _ := json.Marshal(params)

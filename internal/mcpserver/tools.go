@@ -291,7 +291,7 @@ func (s *Server) executeModels(args json.RawMessage) (*CallToolResult, error) {
 		Filter   string `json:"filter"`
 	}
 	if args != nil {
-		json.Unmarshal(args, &params)
+		_ = json.Unmarshal(args, &params) // Ignore error - use defaults
 	}
 
 	provider := params.Provider

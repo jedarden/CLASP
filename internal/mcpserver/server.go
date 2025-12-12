@@ -10,7 +10,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"sync"
 	"time"
 
 	"github.com/jedarden/clasp/internal/config"
@@ -26,7 +25,6 @@ type Server struct {
 	version string
 	proxy   *proxy.Server
 	config  *config.Config
-	mu      sync.RWMutex
 
 	// Session management
 	sessions map[string]*Session
@@ -65,10 +63,10 @@ type JSONRPCRequest struct {
 
 // JSONRPCResponse represents a JSON-RPC 2.0 response
 type JSONRPCResponse struct {
-	JSONRPC string          `json:"jsonrpc"`
-	ID      interface{}     `json:"id,omitempty"`
-	Result  interface{}     `json:"result,omitempty"`
-	Error   *JSONRPCError   `json:"error,omitempty"`
+	JSONRPC string        `json:"jsonrpc"`
+	ID      interface{}   `json:"id,omitempty"`
+	Result  interface{}   `json:"result,omitempty"`
+	Error   *JSONRPCError `json:"error,omitempty"`
 }
 
 // JSONRPCError represents a JSON-RPC 2.0 error
@@ -118,8 +116,8 @@ type PromptCapability struct {
 
 // InitializeParams represents initialization parameters from client
 type InitializeParams struct {
-	ProtocolVersion string            `json:"protocolVersion"`
-	ClientInfo      Implementation    `json:"clientInfo"`
+	ProtocolVersion string             `json:"protocolVersion"`
+	ClientInfo      Implementation     `json:"clientInfo"`
 	Capabilities    ClientCapabilities `json:"capabilities"`
 }
 
@@ -392,7 +390,7 @@ func (s *Server) errorResponse(id interface{}, code int, message string, data in
 
 func (s *Server) sendError(encoder *json.Encoder, id interface{}, code int, message string, data interface{}) {
 	resp := s.errorResponse(id, code, message, data)
-	encoder.Encode(resp)
+	_ = encoder.Encode(resp) // Ignore error - best effort response
 }
 
 func (s *Server) writeHTTPError(w http.ResponseWriter, id interface{}, code int, message string, data interface{}) {

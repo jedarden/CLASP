@@ -356,7 +356,7 @@ func LogDebugRequest(direction, endpoint string, payload interface{}) {
 
 // LogDebugRequestRaw logs raw request/response data to the debug log.
 // Includes session ID for multi-instance tracking.
-func LogDebugRequestRaw(direction string, endpoint string, data []byte) {
+func LogDebugRequestRaw(direction, endpoint string, data []byte) {
 	mu.Lock()
 	defer mu.Unlock()
 
@@ -376,7 +376,7 @@ func LogDebugRequestRaw(direction string, endpoint string, data []byte) {
 
 // LogDebugSSE logs an SSE event to the debug log.
 // Includes session ID for multi-instance tracking.
-func LogDebugSSE(direction string, eventType string, data string) {
+func LogDebugSSE(direction, eventType, data string) {
 	mu.Lock()
 	defer mu.Unlock()
 
@@ -425,8 +425,8 @@ func rotateDebugLog() {
 		debugLogger = nil
 	}
 
-	// Rename current debug log file
-	os.Rename(debugFilePath, rotatedPath)
+	// Rename current debug log file (ignore error - best effort)
+	_ = os.Rename(debugFilePath, rotatedPath)
 
 	// Keep only last 3 rotated debug logs (they can be large)
 	cleanOldDebugLogs()
@@ -462,21 +462,21 @@ func GetDebugLogFilePath() string {
 // ListAllLogFiles returns a list of all CLASP log files (main and debug).
 // This is useful for the logs command to show logs from all instances.
 func ListAllLogFiles() ([]string, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return nil, err
+	home, homeErr := os.UserHomeDir()
+	if homeErr != nil {
+		return nil, homeErr
 	}
 
 	logsDir := filepath.Join(home, ".clasp", "logs")
 
 	// Check if logs directory exists
-	if _, err := os.Stat(logsDir); os.IsNotExist(err) {
+	if _, statErr := os.Stat(logsDir); os.IsNotExist(statErr) {
 		return []string{}, nil
 	}
 
-	entries, err := os.ReadDir(logsDir)
-	if err != nil {
-		return nil, err
+	entries, readErr := os.ReadDir(logsDir)
+	if readErr != nil {
+		return nil, readErr
 	}
 
 	var files []string
