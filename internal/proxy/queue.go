@@ -15,11 +15,11 @@ import (
 
 // QueueConfig holds configuration for the request queue.
 type QueueConfig struct {
-	Enabled     bool
-	MaxSize     int           // Maximum number of requests to queue
-	MaxWait     time.Duration // Maximum time a request can wait in queue
-	RetryDelay  time.Duration // Delay between retry attempts
-	MaxRetries  int           // Maximum number of retries per request
+	Enabled    bool
+	MaxSize    int           // Maximum number of requests to queue
+	MaxWait    time.Duration // Maximum time a request can wait in queue
+	RetryDelay time.Duration // Delay between retry attempts
+	MaxRetries int           // Maximum number of retries per request
 }
 
 // DefaultQueueConfig returns the default queue configuration.
@@ -261,11 +261,11 @@ type CircuitBreaker struct {
 	successThreshold int
 	timeout          time.Duration
 
-	failures      int32
-	successes     int32
-	state         int32 // 0=closed, 1=open, 2=half-open
-	lastFailure   time.Time
-	mu            sync.RWMutex
+	failures    int32
+	successes   int32
+	state       int32 // 0=closed, 1=open, 2=half-open
+	lastFailure time.Time
+	mu          sync.RWMutex
 }
 
 const (

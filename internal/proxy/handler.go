@@ -1613,7 +1613,7 @@ func (h *Handler) HandleRoot(w http.ResponseWriter, r *http.Request) {
 		response["tier_fallbacks"] = fallbacks
 	}
 
-	json.NewEncoder(w).Encode(response)
+	_ = json.NewEncoder(w).Encode(response)
 }
 
 // flushWriter wraps http.ResponseWriter to auto-flush after each write.

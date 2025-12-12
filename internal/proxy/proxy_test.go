@@ -103,7 +103,7 @@ func TestRateLimitMiddleware(t *testing.T) {
 			w.WriteHeader(http.StatusOK)
 		}))
 
-		req := httptest.NewRequest("GET", "/health", nil)
+		req := httptest.NewRequest("GET", "/health", http.NoBody)
 		rr := httptest.NewRecorder()
 		handler.ServeHTTP(rr, req)
 
@@ -124,7 +124,7 @@ func TestRateLimitMiddleware(t *testing.T) {
 			w.WriteHeader(http.StatusOK)
 		}))
 
-		req := httptest.NewRequest("POST", "/v1/messages", nil)
+		req := httptest.NewRequest("POST", "/v1/messages", http.NoBody)
 		rr := httptest.NewRecorder()
 		handler.ServeHTTP(rr, req)
 
@@ -363,7 +363,7 @@ func TestAuthMiddleware(t *testing.T) {
 			w.WriteHeader(http.StatusOK)
 		}))
 
-		req := httptest.NewRequest("POST", "/v1/messages", nil)
+		req := httptest.NewRequest("POST", "/v1/messages", http.NoBody)
 		rr := httptest.NewRecorder()
 		handler.ServeHTTP(rr, req)
 
@@ -382,7 +382,7 @@ func TestAuthMiddleware(t *testing.T) {
 			w.WriteHeader(http.StatusOK)
 		}))
 
-		req := httptest.NewRequest("GET", "/health", nil)
+		req := httptest.NewRequest("GET", "/health", http.NoBody)
 		rr := httptest.NewRecorder()
 		handler.ServeHTTP(rr, req)
 
@@ -437,7 +437,7 @@ func TestAuthMiddleware(t *testing.T) {
 			w.WriteHeader(http.StatusOK)
 		}))
 
-		req := httptest.NewRequest("POST", "/v1/messages", nil)
+		req := httptest.NewRequest("POST", "/v1/messages", http.NoBody)
 		rr := httptest.NewRecorder()
 		handler.ServeHTTP(rr, req)
 
@@ -455,7 +455,7 @@ func TestAuthMiddleware(t *testing.T) {
 			w.WriteHeader(http.StatusOK)
 		}))
 
-		req := httptest.NewRequest("POST", "/v1/messages", nil)
+		req := httptest.NewRequest("POST", "/v1/messages", http.NoBody)
 		req.Header.Set("x-api-key", "wrong-key")
 		rr := httptest.NewRecorder()
 		handler.ServeHTTP(rr, req)
@@ -474,7 +474,7 @@ func TestAuthMiddleware(t *testing.T) {
 			w.WriteHeader(http.StatusOK)
 		}))
 
-		req := httptest.NewRequest("POST", "/v1/messages", nil)
+		req := httptest.NewRequest("POST", "/v1/messages", http.NoBody)
 		req.Header.Set("x-api-key", "secret-key")
 		rr := httptest.NewRecorder()
 		handler.ServeHTTP(rr, req)
@@ -493,7 +493,7 @@ func TestAuthMiddleware(t *testing.T) {
 			w.WriteHeader(http.StatusOK)
 		}))
 
-		req := httptest.NewRequest("POST", "/v1/messages", nil)
+		req := httptest.NewRequest("POST", "/v1/messages", http.NoBody)
 		req.Header.Set("Authorization", "Bearer secret-key")
 		rr := httptest.NewRecorder()
 		handler.ServeHTTP(rr, req)
