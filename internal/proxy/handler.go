@@ -1294,16 +1294,16 @@ func (h *Handler) HandleMetrics(w http.ResponseWriter, r *http.Request) {
 
 	// Add queue stats if enabled
 	if h.queue != nil {
-		queued, dequeued, dropped, retried, expired, length, paused := h.queue.Stats()
+		stats := h.queue.Stats()
 		response["queue"] = map[string]interface{}{
 			"enabled":  true,
-			"queued":   queued,
-			"dequeued": dequeued,
-			"dropped":  dropped,
-			"retried":  retried,
-			"expired":  expired,
-			"length":   length,
-			"paused":   paused,
+			"queued":   stats.Queued,
+			"dequeued": stats.Dequeued,
+			"dropped":  stats.Dropped,
+			"retried":  stats.Retried,
+			"expired":  stats.Expired,
+			"length":   stats.Length,
+			"paused":   stats.Paused,
 		}
 	}
 
@@ -1442,31 +1442,31 @@ func (h *Handler) HandleMetricsPrometheus(w http.ResponseWriter, r *http.Request
 
 	// Queue metrics
 	if h.queue != nil {
-		queued, dequeued, dropped, retried, expired, length, _ := h.queue.Stats()
+		stats := h.queue.Stats()
 
 		fmt.Fprintf(w, "# HELP clasp_queue_total Total requests queued\n")
 		fmt.Fprintf(w, "# TYPE clasp_queue_total counter\n")
-		fmt.Fprintf(w, "clasp_queue_total{provider=\"%s\"} %d\n", providerName, queued)
+		fmt.Fprintf(w, "clasp_queue_total{provider=\"%s\"} %d\n", providerName, stats.Queued)
 
 		fmt.Fprintf(w, "# HELP clasp_queue_dequeued Total requests dequeued\n")
 		fmt.Fprintf(w, "# TYPE clasp_queue_dequeued counter\n")
-		fmt.Fprintf(w, "clasp_queue_dequeued{provider=\"%s\"} %d\n", providerName, dequeued)
+		fmt.Fprintf(w, "clasp_queue_dequeued{provider=\"%s\"} %d\n", providerName, stats.Dequeued)
 
 		fmt.Fprintf(w, "# HELP clasp_queue_dropped Total requests dropped (queue full)\n")
 		fmt.Fprintf(w, "# TYPE clasp_queue_dropped counter\n")
-		fmt.Fprintf(w, "clasp_queue_dropped{provider=\"%s\"} %d\n", providerName, dropped)
+		fmt.Fprintf(w, "clasp_queue_dropped{provider=\"%s\"} %d\n", providerName, stats.Dropped)
 
 		fmt.Fprintf(w, "# HELP clasp_queue_retried Total requests retried\n")
 		fmt.Fprintf(w, "# TYPE clasp_queue_retried counter\n")
-		fmt.Fprintf(w, "clasp_queue_retried{provider=\"%s\"} %d\n", providerName, retried)
+		fmt.Fprintf(w, "clasp_queue_retried{provider=\"%s\"} %d\n", providerName, stats.Retried)
 
 		fmt.Fprintf(w, "# HELP clasp_queue_expired Total requests expired in queue\n")
 		fmt.Fprintf(w, "# TYPE clasp_queue_expired counter\n")
-		fmt.Fprintf(w, "clasp_queue_expired{provider=\"%s\"} %d\n", providerName, expired)
+		fmt.Fprintf(w, "clasp_queue_expired{provider=\"%s\"} %d\n", providerName, stats.Expired)
 
 		fmt.Fprintf(w, "# HELP clasp_queue_length Current queue length\n")
 		fmt.Fprintf(w, "# TYPE clasp_queue_length gauge\n")
-		fmt.Fprintf(w, "clasp_queue_length{provider=\"%s\"} %d\n", providerName, length)
+		fmt.Fprintf(w, "clasp_queue_length{provider=\"%s\"} %d\n", providerName, stats.Length)
 	}
 
 	// Circuit breaker metrics

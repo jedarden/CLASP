@@ -401,7 +401,7 @@ func TestAuthMiddleware(t *testing.T) {
 			w.WriteHeader(http.StatusOK)
 		}))
 
-		req := httptest.NewRequest("GET", "/metrics", nil)
+		req := httptest.NewRequest("GET", "/metrics", http.NoBody)
 		rr := httptest.NewRecorder()
 		handler.ServeHTTP(rr, req)
 
@@ -419,7 +419,7 @@ func TestAuthMiddleware(t *testing.T) {
 			w.WriteHeader(http.StatusOK)
 		}))
 
-		req := httptest.NewRequest("GET", "/", nil)
+		req := httptest.NewRequest("GET", "/", http.NoBody)
 		rr := httptest.NewRecorder()
 		handler.ServeHTTP(rr, req)
 
@@ -720,16 +720,16 @@ func TestRequestQueue(t *testing.T) {
 		q.Enqueue([]byte("2"))
 		q.Enqueue([]byte("3")) // Should be dropped
 
-		queued, _, dropped, _, _, length, _ := q.Stats()
+		stats := q.Stats()
 
-		if queued != 2 {
-			t.Errorf("Expected 2 queued, got %d", queued)
+		if stats.Queued != 2 {
+			t.Errorf("Expected 2 queued, got %d", stats.Queued)
 		}
-		if dropped != 1 {
-			t.Errorf("Expected 1 dropped, got %d", dropped)
+		if stats.Dropped != 1 {
+			t.Errorf("Expected 1 dropped, got %d", stats.Dropped)
 		}
-		if length != 2 {
-			t.Errorf("Expected length 2, got %d", length)
+		if stats.Length != 2 {
+			t.Errorf("Expected length 2, got %d", stats.Length)
 		}
 	})
 

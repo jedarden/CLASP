@@ -96,12 +96,12 @@ func TestRequestQueue_MaxSize(t *testing.T) {
 	}
 
 	// Check stats
-	queued, _, dropped, _, _, _, _ := queue.Stats()
-	if dropped != 1 {
-		t.Errorf("Expected 1 dropped request, got %d", dropped)
+	stats := queue.Stats()
+	if stats.Dropped != 1 {
+		t.Errorf("Expected 1 dropped request, got %d", stats.Dropped)
 	}
-	if queued != 2 {
-		t.Errorf("Expected 2 queued requests, got %d", queued)
+	if stats.Queued != 2 {
+		t.Errorf("Expected 2 queued requests, got %d", stats.Queued)
 	}
 }
 
@@ -394,28 +394,28 @@ func TestQueueStats(t *testing.T) {
 	queue.Enqueue([]byte("test2"))
 
 	// Check initial stats
-	queued, dequeued, dropped, _, _, length, paused := queue.Stats()
+	stats := queue.Stats()
 
-	if queued != 2 {
-		t.Errorf("Expected queued=2, got %d", queued)
+	if stats.Queued != 2 {
+		t.Errorf("Expected queued=2, got %d", stats.Queued)
 	}
-	if dequeued != 0 {
-		t.Errorf("Expected dequeued=0, got %d", dequeued)
+	if stats.Dequeued != 0 {
+		t.Errorf("Expected dequeued=0, got %d", stats.Dequeued)
 	}
-	if dropped != 0 {
-		t.Errorf("Expected dropped=0, got %d", dropped)
+	if stats.Dropped != 0 {
+		t.Errorf("Expected dropped=0, got %d", stats.Dropped)
 	}
-	if length != 2 {
-		t.Errorf("Expected length=2, got %d", length)
+	if stats.Length != 2 {
+		t.Errorf("Expected length=2, got %d", stats.Length)
 	}
-	if paused {
+	if stats.Paused {
 		t.Error("Expected paused=false")
 	}
 
 	// Pause and check
 	queue.Pause()
-	_, _, _, _, _, _, paused = queue.Stats()
-	if !paused {
+	stats = queue.Stats()
+	if !stats.Paused {
 		t.Error("Expected paused=true after pause")
 	}
 }

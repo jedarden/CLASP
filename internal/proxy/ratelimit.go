@@ -13,16 +13,16 @@ type RateLimiter struct {
 	mu sync.Mutex
 
 	// Configuration
-	rate     float64 // tokens per second
-	burst    int     // maximum tokens
+	rate  float64 // tokens per second
+	burst int     // maximum tokens
 
 	// State
 	tokens   float64
 	lastTime time.Time
 
 	// Metrics
-	allowed  int64
-	denied   int64
+	allowed int64
+	denied  int64
 }
 
 // NewRateLimiter creates a new rate limiter.
@@ -113,7 +113,7 @@ func writeRateLimitError(w http.ResponseWriter, retryAfter time.Duration) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Retry-After", retryAfter.String())
 	w.WriteHeader(http.StatusTooManyRequests)
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"type": "error",
 		"error": map[string]string{
 			"type":    "rate_limit_error",

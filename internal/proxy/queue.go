@@ -4,10 +4,8 @@ package proxy
 import (
 	"container/list"
 	"context"
-	"encoding/json"
 	"errors"
 	"net/http"
-	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -49,13 +47,12 @@ type QueueResult struct {
 
 // RequestQueue manages request queuing during provider outages.
 type RequestQueue struct {
-	config     *QueueConfig
-	queue      *list.List
-	mu         sync.Mutex
-	cond       *sync.Cond
-	closed     bool
-	processing int32
-	paused     int32
+	config *QueueConfig
+	queue  *list.List
+	mu     sync.Mutex
+	cond   *sync.Cond
+	closed bool
+	paused int32
 
 	// Metrics
 	totalQueued   int64
@@ -132,7 +129,10 @@ func (q *RequestQueue) Dequeue(ctx context.Context) (*QueuedRequest, error) {
 		if q.queue.Len() > 0 {
 			elem := q.queue.Front()
 			q.queue.Remove(elem)
-			req := elem.Value.(*QueuedRequest)
+			req, ok := elem.Value.(*QueuedRequest)
+			if !ok {
+				continue
+			}
 
 			// Check if request has expired
 			if time.Since(req.CreatedAt) > q.config.MaxWait {
@@ -178,9 +178,10 @@ func (q *RequestQueue) Close() {
 
 	// Drain remaining requests with error
 	for elem := q.queue.Front(); elem != nil; elem = elem.Next() {
-		req := elem.Value.(*QueuedRequest)
-		req.ResultCh <- QueueResult{Error: errors.New("queue closed")}
-		close(req.ResultCh)
+		if req, ok := elem.Value.(*QueuedRequest); ok {
+			req.ResultCh <- QueueResult{Error: errors.New("queue closed")}
+			close(req.ResultCh)
+		}
 	}
 	q.queue.Init()
 
@@ -194,19 +195,32 @@ func (q *RequestQueue) Len() int {
 	return q.queue.Len()
 }
 
+// QueueStats contains queue statistics.
+type QueueStats struct {
+	Queued   int64
+	Dequeued int64
+	Dropped  int64
+	Retried  int64
+	Expired  int64
+	Length   int
+	Paused   bool
+}
+
 // Stats returns queue statistics.
-func (q *RequestQueue) Stats() (queued, dequeued, dropped, retried, expired int64, length int, paused bool) {
+func (q *RequestQueue) Stats() QueueStats {
 	q.mu.Lock()
-	length = q.queue.Len()
+	length := q.queue.Len()
 	q.mu.Unlock()
 
-	queued = atomic.LoadInt64(&q.totalQueued)
-	dequeued = atomic.LoadInt64(&q.totalDequeued)
-	dropped = atomic.LoadInt64(&q.totalDropped)
-	retried = atomic.LoadInt64(&q.totalRetried)
-	expired = atomic.LoadInt64(&q.totalExpired)
-	paused = q.IsPaused()
-	return
+	return QueueStats{
+		Queued:   atomic.LoadInt64(&q.totalQueued),
+		Dequeued: atomic.LoadInt64(&q.totalDequeued),
+		Dropped:  atomic.LoadInt64(&q.totalDropped),
+		Retried:  atomic.LoadInt64(&q.totalRetried),
+		Expired:  atomic.LoadInt64(&q.totalExpired),
+		Length:   length,
+		Paused:   q.IsPaused(),
+	}
 }
 
 // IncrementRetried increments the retry counter.
@@ -237,22 +251,6 @@ func QueueMiddleware(queue *RequestQueue) func(http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 		})
 	}
-}
-
-// writeQueueError writes a queue-related error response.
-func writeQueueError(w http.ResponseWriter, status int, message string, retryAfter int) {
-	w.Header().Set("Content-Type", "application/json")
-	if retryAfter > 0 {
-		w.Header().Set("Retry-After", strconv.Itoa(retryAfter))
-	}
-	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"type": "error",
-		"error": map[string]string{
-			"type":    "overloaded_error",
-			"message": message,
-		},
-	})
 }
 
 // CircuitBreaker implements a simple circuit breaker pattern.
