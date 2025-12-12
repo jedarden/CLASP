@@ -2,6 +2,7 @@
 package provider
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -140,14 +141,16 @@ func (p *OpenAIProvider) ListModels(apiKey string) ([]string, error) {
 		return nil, fmt.Errorf("API key required to list models")
 	}
 
-	client := &http.Client{Timeout: 10 * time.Second}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 
-	req, err := http.NewRequest("GET", p.BaseURL+"/models", nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, p.BaseURL+"/models", http.NoBody)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+key)
 
+	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch models: %w", err)

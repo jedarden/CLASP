@@ -2,6 +2,7 @@
 package provider
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -75,25 +76,34 @@ func (p *OpenRouterProvider) RequiresTransformation() bool {
 	return true
 }
 
+// OpenRouterModelPricing contains pricing information for a model.
+type OpenRouterModelPricing struct {
+	Prompt     string `json:"prompt"`     // Price per token for prompt
+	Completion string `json:"completion"` // Price per token for completion
+}
+
+// OpenRouterModelTopProvider contains top provider information.
+type OpenRouterModelTopProvider struct {
+	ContextLength  int  `json:"context_length"`
+	MaxCompletions int  `json:"max_completion_tokens"`
+	IsModerated    bool `json:"is_moderated"`
+}
+
+// OpenRouterModelLimits contains per-request limits.
+type OpenRouterModelLimits struct {
+	PromptTokens     int `json:"prompt_tokens"`
+	CompletionTokens int `json:"completion_tokens"`
+}
+
 // OpenRouterModel represents a model from OpenRouter's models endpoint.
 type OpenRouterModel struct {
-	ID            string  `json:"id"`
-	Name          string  `json:"name"`
-	Description   string  `json:"description"`
-	ContextLength int     `json:"context_length"`
-	Pricing       struct {
-		Prompt     string `json:"prompt"`     // Price per token for prompt
-		Completion string `json:"completion"` // Price per token for completion
-	} `json:"pricing"`
-	TopProvider struct {
-		ContextLength   int  `json:"context_length"`
-		MaxCompletions  int  `json:"max_completion_tokens"`
-		IsModerated     bool `json:"is_moderated"`
-	} `json:"top_provider"`
-	PerRequestLimits *struct {
-		PromptTokens     int `json:"prompt_tokens"`
-		CompletionTokens int `json:"completion_tokens"`
-	} `json:"per_request_limits,omitempty"`
+	ID               string                      `json:"id"`
+	Name             string                      `json:"name"`
+	Description      string                      `json:"description"`
+	ContextLength    int                         `json:"context_length"`
+	Pricing          OpenRouterModelPricing      `json:"pricing"`
+	TopProvider      OpenRouterModelTopProvider  `json:"top_provider"`
+	PerRequestLimits *OpenRouterModelLimits      `json:"per_request_limits,omitempty"`
 }
 
 // OpenRouterModelsResponse is the response from /models endpoint.
@@ -129,16 +139,18 @@ func (p *OpenRouterProvider) ListModels() ([]string, error) {
 
 // ListModelsWithInfo returns models with full pricing and context info.
 func (p *OpenRouterProvider) ListModelsWithInfo() ([]OpenRouterModelInfo, error) {
-	client := &http.Client{Timeout: 15 * time.Second}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
 
 	// OpenRouter's /models endpoint is public
-	req, err := http.NewRequest("GET", p.BaseURL+"/models", nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, p.BaseURL+"/models", http.NoBody)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 	req.Header.Set("HTTP-Referer", "https://github.com/jedarden/CLASP")
 	req.Header.Set("X-Title", "CLASP Proxy")
 
+	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch models: %w", err)
@@ -172,13 +184,15 @@ func (p *OpenRouterProvider) ListModelsWithInfo() ([]OpenRouterModelInfo, error)
 		// Parse pricing (OpenRouter prices are per-token, convert to per-1M)
 		if m.Pricing.Prompt != "" {
 			var price float64
-			fmt.Sscanf(m.Pricing.Prompt, "%f", &price)
-			info.InputPrice = price * 1000000 // Convert to per-1M
+			if _, scanErr := fmt.Sscanf(m.Pricing.Prompt, "%f", &price); scanErr == nil {
+				info.InputPrice = price * 1000000 // Convert to per-1M
+			}
 		}
 		if m.Pricing.Completion != "" {
 			var price float64
-			fmt.Sscanf(m.Pricing.Completion, "%f", &price)
-			info.OutputPrice = price * 1000000 // Convert to per-1M
+			if _, scanErr := fmt.Sscanf(m.Pricing.Completion, "%f", &price); scanErr == nil {
+				info.OutputPrice = price * 1000000 // Convert to per-1M
+			}
 		}
 
 		models = append(models, info)

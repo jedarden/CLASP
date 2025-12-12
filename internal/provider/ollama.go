@@ -182,18 +182,25 @@ func ListOllamaModels(baseURL string) ([]string, error) {
 	baseURL = strings.TrimSuffix(baseURL, "/v1")
 	baseURL = strings.TrimSuffix(baseURL, "/")
 
-	client := &http.Client{Timeout: 10 * time.Second}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 
 	// Try Ollama native endpoint first
-	resp, err := client.Get(baseURL + "/api/tags")
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL+"/api/tags", http.NoBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
 	if err != nil {
 		// Fall back to OpenAI-compatible endpoint
-		return listModelsOpenAICompat(client, baseURL)
+		return listModelsOpenAICompat(ctx, baseURL)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return listModelsOpenAICompat(client, baseURL)
+		return listModelsOpenAICompat(ctx, baseURL)
 	}
 
 	var tagsResp OllamaTagsResponse
@@ -203,22 +210,22 @@ func ListOllamaModels(baseURL string) ([]string, error) {
 
 	models := make([]string, 0, len(tagsResp.Models))
 	for _, m := range tagsResp.Models {
-		// Use the short name (without tag) for cleaner display
-		name := m.Name
-		if idx := strings.Index(name, ":"); idx > 0 {
-			// Keep full name including tag for precision
-			models = append(models, name)
-		} else {
-			models = append(models, name)
-		}
+		// Always keep the full name for precision
+		models = append(models, m.Name)
 	}
 
 	return models, nil
 }
 
 // listModelsOpenAICompat tries to list models using the OpenAI-compatible endpoint.
-func listModelsOpenAICompat(client *http.Client, baseURL string) ([]string, error) {
-	resp, err := client.Get(baseURL + "/v1/models")
+func listModelsOpenAICompat(ctx context.Context, baseURL string) ([]string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL+"/v1/models", http.NoBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to Ollama: %w", err)
 	}
@@ -255,10 +262,19 @@ func PullOllamaModel(baseURL, modelName string) error {
 	baseURL = strings.TrimSuffix(baseURL, "/v1")
 	baseURL = strings.TrimSuffix(baseURL, "/")
 
-	payload := fmt.Sprintf(`{"name":"%s"}`, modelName)
+	payload := fmt.Sprintf(`{"name":%q}`, modelName)
 
-	client := &http.Client{Timeout: 30 * time.Minute} // Pulling can take a long time
-	resp, err := client.Post(baseURL+"/api/pull", "application/json", strings.NewReader(payload))
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute) // Pulling can take a long time
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+"/api/pull", strings.NewReader(payload))
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to start model pull: %w", err)
 	}
