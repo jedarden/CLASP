@@ -29,6 +29,7 @@ type Server struct {
 	circuitBreaker *CircuitBreaker
 	statusManager  *statusline.Manager
 	version        string
+	shutdownCh     chan struct{} // Channel to signal goroutines to stop
 }
 
 // NewServer creates a new proxy server.
@@ -58,6 +59,7 @@ func NewServerWithVersion(cfg *config.Config, version string) (*Server, error) {
 		handler:       handler,
 		statusManager: statusManager,
 		version:       version,
+		shutdownCh:    make(chan struct{}),
 	}
 
 	// Initialize rate limiter if enabled
@@ -134,6 +136,8 @@ func (s *Server) Start() error {
 		handler = RateLimitMiddleware(s.rateLimiter)(handler)
 		log.Printf("[CLASP] Rate limiting enabled: %d requests per %d seconds (burst: %d)",
 			s.cfg.RateLimitRequests, s.cfg.RateLimitWindow, s.cfg.RateLimitBurst)
+	} else {
+		log.Printf("[CLASP] Warning: Rate limiting is disabled. Set RATE_LIMIT_ENABLED=true for production use.")
 	}
 
 	// Log cache status
@@ -159,6 +163,8 @@ func (s *Server) Start() error {
 		handler = AuthMiddleware(s.authConfig)(handler)
 		log.Printf("[CLASP] Authentication enabled (anonymous health: %v, anonymous metrics: %v)",
 			s.authConfig.AllowAnonymousHealth, s.authConfig.AllowAnonymousMetrics)
+	} else {
+		log.Printf("[CLASP] Warning: Authentication is disabled. Set AUTH_ENABLED=true for production use.")
 	}
 
 	// Apply logging middleware
@@ -301,6 +307,9 @@ func (s *Server) GetPort() int {
 
 // Shutdown gracefully shuts down the server.
 func (s *Server) Shutdown() error {
+	// Signal all goroutines to stop
+	close(s.shutdownCh)
+
 	// Mark status as stopped
 	if s.statusManager != nil {
 		if err := s.statusManager.ClearStatus(); err != nil {
@@ -320,49 +329,55 @@ func (s *Server) Shutdown() error {
 }
 
 // updateStatusPeriodically updates the status file with current metrics every 5 seconds.
+// It terminates gracefully when the shutdown channel is closed.
 func (s *Server) updateStatusPeriodically() {
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 
-	for range ticker.C {
-		if s.server == nil {
+	for {
+		select {
+		case <-s.shutdownCh:
 			return
-		}
-
-		// Get metrics from handler
-		metrics := s.handler.GetMetrics()
-		costs := s.handler.GetCostTracker()
-
-		// Calculate average latency
-		var avgLatency float64
-		if metrics.TotalRequests > 0 {
-			avgLatency = float64(metrics.TotalLatencyMs) / float64(metrics.TotalRequests)
-		}
-
-		// Get cache hit rate if available
-		var cacheHitRate float64
-		if s.cache != nil {
-			_, _, hits, misses, _ := s.cache.Stats()
-			total := hits + misses
-			if total > 0 {
-				cacheHitRate = float64(hits) / float64(total)
+		case <-ticker.C:
+			if s.server == nil {
+				return
 			}
-		}
 
-		// Update status
-		if err := s.statusManager.UpdateMetrics(
-			metrics.TotalRequests,
-			metrics.ErrorRequests,
-			costs.GetTotalCostUSD(),
-			avgLatency,
-		); err != nil {
-			// Silently ignore update errors
-			continue
-		}
+			// Get metrics from handler
+			metrics := s.handler.GetMetrics()
+			costs := s.handler.GetCostTracker()
 
-		// Update cache stats
-		if s.cache != nil {
-			s.statusManager.UpdateCacheStats(true, cacheHitRate)
+			// Calculate average latency
+			var avgLatency float64
+			if metrics.TotalRequests > 0 {
+				avgLatency = float64(metrics.TotalLatencyMs) / float64(metrics.TotalRequests)
+			}
+
+			// Get cache hit rate if available
+			var cacheHitRate float64
+			if s.cache != nil {
+				_, _, hits, misses, _ := s.cache.Stats()
+				total := hits + misses
+				if total > 0 {
+					cacheHitRate = float64(hits) / float64(total)
+				}
+			}
+
+			// Update status
+			if err := s.statusManager.UpdateMetrics(
+				metrics.TotalRequests,
+				metrics.ErrorRequests,
+				costs.GetTotalCostUSD(),
+				avgLatency,
+			); err != nil {
+				// Silently ignore update errors
+				continue
+			}
+
+			// Update cache stats
+			if s.cache != nil {
+				s.statusManager.UpdateCacheStats(true, cacheHitRate)
+			}
 		}
 	}
 }

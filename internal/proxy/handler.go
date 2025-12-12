@@ -106,52 +106,35 @@ func NewHandler(cfg *config.Config) (*Handler, error) {
 
 	// Initialize tier-specific providers if multi-provider routing is enabled
 	if cfg.MultiProviderEnabled {
-		if cfg.TierOpus != nil {
-			if tierProvider, err := createTierProvider(cfg.TierOpus); err == nil {
-				handler.tierProviders[config.TierOpus] = tierProvider
-				log.Printf("[CLASP] Multi-provider: opus -> %s (%s)", cfg.TierOpus.Provider, cfg.TierOpus.Model)
-			}
-			// Initialize tier-specific fallback
-			if cfg.TierOpus.HasFallback() {
-				if fb := cfg.TierOpus.GetFallbackConfig(); fb != nil {
-					if fbProvider, err := createTierProvider(fb); err == nil {
-						handler.tierFallbacks[config.TierOpus] = fbProvider
-						log.Printf("[CLASP] Fallback: opus -> %s (%s)", fb.Provider, fb.Model)
-					}
-				}
-			}
-		}
-		if cfg.TierSonnet != nil {
-			if tierProvider, err := createTierProvider(cfg.TierSonnet); err == nil {
-				handler.tierProviders[config.TierSonnet] = tierProvider
-				log.Printf("[CLASP] Multi-provider: sonnet -> %s (%s)", cfg.TierSonnet.Provider, cfg.TierSonnet.Model)
-			}
-			if cfg.TierSonnet.HasFallback() {
-				if fb := cfg.TierSonnet.GetFallbackConfig(); fb != nil {
-					if fbProvider, err := createTierProvider(fb); err == nil {
-						handler.tierFallbacks[config.TierSonnet] = fbProvider
-						log.Printf("[CLASP] Fallback: sonnet -> %s (%s)", fb.Provider, fb.Model)
-					}
-				}
-			}
-		}
-		if cfg.TierHaiku != nil {
-			if tierProvider, err := createTierProvider(cfg.TierHaiku); err == nil {
-				handler.tierProviders[config.TierHaiku] = tierProvider
-				log.Printf("[CLASP] Multi-provider: haiku -> %s (%s)", cfg.TierHaiku.Provider, cfg.TierHaiku.Model)
-			}
-			if cfg.TierHaiku.HasFallback() {
-				if fb := cfg.TierHaiku.GetFallbackConfig(); fb != nil {
-					if fbProvider, err := createTierProvider(fb); err == nil {
-						handler.tierFallbacks[config.TierHaiku] = fbProvider
-						log.Printf("[CLASP] Fallback: haiku -> %s (%s)", fb.Provider, fb.Model)
-					}
-				}
-			}
-		}
+		handler.initializeTier(config.TierOpus, cfg.TierOpus)
+		handler.initializeTier(config.TierSonnet, cfg.TierSonnet)
+		handler.initializeTier(config.TierHaiku, cfg.TierHaiku)
 	}
 
 	return handler, nil
+}
+
+// initializeTier sets up a tier-specific provider and its fallback.
+func (h *Handler) initializeTier(tier config.ModelTier, tierCfg *config.TierConfig) {
+	if tierCfg == nil {
+		return
+	}
+
+	// Initialize main tier provider
+	if tierProvider, err := createTierProvider(tierCfg); err == nil {
+		h.tierProviders[tier] = tierProvider
+		log.Printf("[CLASP] Multi-provider: %s -> %s (%s)", tier, tierCfg.Provider, tierCfg.Model)
+	}
+
+	// Initialize tier-specific fallback
+	if tierCfg.HasFallback() {
+		if fb := tierCfg.GetFallbackConfig(); fb != nil {
+			if fbProvider, err := createTierProvider(fb); err == nil {
+				h.tierFallbacks[tier] = fbProvider
+				log.Printf("[CLASP] Fallback: %s -> %s (%s)", tier, fb.Provider, fb.Model)
+			}
+		}
+	}
 }
 
 // SetRateLimiter sets the rate limiter for metrics reporting.
@@ -259,24 +242,110 @@ func (h *Handler) HandleMessages(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	atomic.AddInt64(&h.metrics.TotalRequests, 1)
 
+	// Parse and validate request
+	anthropicReq, reqErr := h.parseAndValidateRequest(r)
+	if reqErr != nil {
+		atomic.AddInt64(&h.metrics.ErrorRequests, 1)
+		h.writeErrorResponse(w, reqErr.statusCode, reqErr.errType, reqErr.message)
+		return
+	}
+	defer r.Body.Close()
+
+	// Check cache for non-streaming requests
+	cacheKey, cacheable := h.checkCache(w, anthropicReq)
+	if cacheKey == "HIT" {
+		return // Response already sent from cache
+	}
+
+	// Select provider and resolve target model
+	selectedProvider, targetModel := h.selectProviderAndModel(anthropicReq)
+
+	// Check circuit breaker
+	if h.circuitBreaker != nil && !h.circuitBreaker.Allow() {
+		atomic.AddInt64(&h.metrics.ErrorRequests, 1)
+		log.Printf("[CLASP] Circuit breaker open - rejecting request")
+		w.Header().Set("X-CLASP-Circuit-Breaker", "open")
+		h.writeErrorResponse(w, http.StatusServiceUnavailable, "overloaded_error", "Service temporarily unavailable - circuit breaker open")
+		return
+	}
+
+	// Check if this provider requires transformation (passthrough mode for Anthropic)
+	if !selectedProvider.RequiresTransformation() {
+		h.handlePassthroughRequest(w, r, anthropicReq, selectedProvider, start, cacheKey, cacheable)
+		return
+	}
+
+	// Transform and execute request
+	resp, targetModel, useResponsesAPI, usedFallback, execErr := h.transformAndExecute(r.Context(), anthropicReq, selectedProvider, targetModel)
+	if execErr != nil {
+		atomic.AddInt64(&h.metrics.ErrorRequests, 1)
+		if h.circuitBreaker != nil {
+			h.circuitBreaker.RecordFailure()
+		}
+		log.Printf("[CLASP] Error making upstream request: %v", execErr)
+		h.writeErrorResponse(w, http.StatusBadGateway, "api_error", "Error connecting to upstream provider")
+		return
+	}
+	defer resp.Body.Close()
+
+	// Handle upstream errors
+	if resp.StatusCode >= 400 {
+		h.handleUpstreamError(w, resp)
+		return
+	}
+
+	// Record success
+	if h.circuitBreaker != nil {
+		h.circuitBreaker.RecordSuccess()
+	}
+	atomic.AddInt64(&h.metrics.SuccessRequests, 1)
+	atomic.AddInt64(&h.metrics.TotalLatencyMs, time.Since(start).Milliseconds())
+
+	// Set response headers
+	if usedFallback {
+		w.Header().Set("X-CLASP-Fallback", "true")
+	}
+	if useResponsesAPI {
+		w.Header().Set("X-CLASP-Responses-API", "true")
+	}
+
+	// Handle streaming vs non-streaming response
+	h.handleResponse(w, resp, anthropicReq.Stream, useResponsesAPI, targetModel, cacheKey, cacheable)
+}
+
+// requestError represents a request validation error with HTTP status info.
+type requestError struct {
+	statusCode int
+	errType    string
+	message    string
+}
+
+// parseAndValidateRequest parses and validates an incoming Anthropic request.
+func (h *Handler) parseAndValidateRequest(r *http.Request) (*models.AnthropicRequest, *requestError) {
 	// Only accept POST
 	if r.Method != http.MethodPost {
-		atomic.AddInt64(&h.metrics.ErrorRequests, 1)
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
+		return nil, &requestError{
+			statusCode: http.StatusMethodNotAllowed,
+			errType:    "invalid_request_error",
+			message:    "Method not allowed",
+		}
 	}
 
 	// Parse request body
 	var anthropicReq models.AnthropicRequest
 	if err := json.NewDecoder(r.Body).Decode(&anthropicReq); err != nil {
-		atomic.AddInt64(&h.metrics.ErrorRequests, 1)
 		log.Printf("[CLASP] Error parsing request: %v", err)
-		// Provide helpful error message with context
-		errMsg := fmt.Sprintf("Invalid request body: %v. Expected Anthropic Messages API format with 'model', 'messages', and optionally 'stream', 'tools', etc.", err)
-		h.writeErrorResponse(w, http.StatusBadRequest, "invalid_request_error", errMsg)
-		return
+		return nil, &requestError{
+			statusCode: http.StatusBadRequest,
+			errType:    "invalid_request_error",
+			message:    fmt.Sprintf("Invalid request body: %v. Expected Anthropic Messages API format with 'model', 'messages', and optionally 'stream', 'tools', etc.", err),
+		}
 	}
-	defer r.Body.Close()
+
+	// Validate required fields
+	if err := h.validateRequest(&anthropicReq); err != nil {
+		return nil, err
+	}
 
 	// Track request types
 	if anthropicReq.Stream {
@@ -296,76 +365,90 @@ func (h *Handler) HandleMessages(w http.ResponseWriter, r *http.Request) {
 	// Debug logging for incoming request (secrets are masked)
 	if h.cfg.DebugRequests {
 		debugJSON, _ := json.MarshalIndent(anthropicReq, "", "  ")
-		// Mask any secrets that might be in the request content
 		maskedJSON := secrets.MaskJSONSecrets(debugJSON)
 		log.Printf("[CLASP DEBUG] Incoming Anthropic request:\n%s", string(maskedJSON))
-		// Also log to dedicated debug file
 		logging.LogDebugRequestRaw("INCOMING", "/v1/messages", maskedJSON)
 	}
 
-	// Check cache for non-streaming requests
-	var cacheKey string
-	var cacheable bool
-	if h.cache != nil && !anthropicReq.Stream {
-		cacheKey, cacheable = GenerateCacheKey(&anthropicReq)
-		if cacheable {
-			if cachedResp, found := h.cache.Get(cacheKey); found {
-				log.Printf("[CLASP] Cache HIT for request")
-				atomic.AddInt64(&h.metrics.SuccessRequests, 1)
-				w.Header().Set("Content-Type", "application/json")
-				w.Header().Set("X-CLASP-Cache", "HIT")
-				json.NewEncoder(w).Encode(cachedResp)
-				return
-			}
-			log.Printf("[CLASP] Cache MISS for request")
+	return &anthropicReq, nil
+}
+
+// validateRequest validates required fields in the Anthropic request.
+func (h *Handler) validateRequest(req *models.AnthropicRequest) *requestError {
+	if req.Model == "" {
+		return &requestError{
+			statusCode: http.StatusBadRequest,
+			errType:    "invalid_request_error",
+			message:    "Missing required field: 'model'",
 		}
 	}
+	if len(req.Messages) == 0 {
+		return &requestError{
+			statusCode: http.StatusBadRequest,
+			errType:    "invalid_request_error",
+			message:    "Missing required field: 'messages'",
+		}
+	}
+	return nil
+}
 
-	// Select provider and model based on tier (multi-provider routing)
+// checkCache checks if the request is in cache and returns cache key/status.
+// Returns "HIT" as cacheKey if response was served from cache.
+func (h *Handler) checkCache(w http.ResponseWriter, req *models.AnthropicRequest) (string, bool) {
+	if h.cache == nil || req.Stream {
+		return "", false
+	}
+
+	cacheKey, cacheable := GenerateCacheKey(req)
+	if !cacheable {
+		return "", false
+	}
+
+	if cachedResp, found := h.cache.Get(cacheKey); found {
+		log.Printf("[CLASP] Cache HIT for request")
+		atomic.AddInt64(&h.metrics.SuccessRequests, 1)
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("X-CLASP-Cache", "HIT")
+		json.NewEncoder(w).Encode(cachedResp)
+		return "HIT", true
+	}
+
+	log.Printf("[CLASP] Cache MISS for request")
+	return cacheKey, cacheable
+}
+
+// selectProviderAndModel selects the appropriate provider and target model.
+func (h *Handler) selectProviderAndModel(req *models.AnthropicRequest) (provider.Provider, string) {
 	selectedProvider := h.provider
-	tierCfg := h.cfg.GetTierConfig(anthropicReq.Model)
+	tierCfg := h.cfg.GetTierConfig(req.Model)
 	var targetModel string
 
 	if tierCfg != nil {
-		// Use tier-specific provider and model
-		tier := config.GetModelTier(anthropicReq.Model)
+		tier := config.GetModelTier(req.Model)
 		if tierProvider, ok := h.tierProviders[tier]; ok {
 			selectedProvider = tierProvider
 			targetModel = tierCfg.Model
 			if targetModel == "" {
-				targetModel = h.cfg.MapModel(anthropicReq.Model)
+				targetModel = h.cfg.MapModel(req.Model)
 			}
-			log.Printf("[CLASP] Multi-provider routing: %s -> %s via %s", anthropicReq.Model, targetModel, tierCfg.Provider)
+			log.Printf("[CLASP] Multi-provider routing: %s -> %s via %s", req.Model, targetModel, tierCfg.Provider)
 		} else {
-			// Fallback to default provider
-			targetModel = h.cfg.MapModel(anthropicReq.Model)
+			targetModel = h.cfg.MapModel(req.Model)
 			targetModel = selectedProvider.TransformModelID(targetModel)
 		}
 	} else {
-		// Default model mapping
-		targetModel = h.cfg.MapModel(anthropicReq.Model)
+		targetModel = h.cfg.MapModel(req.Model)
 		targetModel = selectedProvider.TransformModelID(targetModel)
 	}
 
-	log.Printf("[CLASP] Request: %s -> %s (streaming: %v, provider: %s, passthrough: %v)", anthropicReq.Model, targetModel, anthropicReq.Stream, selectedProvider.Name(), !selectedProvider.RequiresTransformation())
+	log.Printf("[CLASP] Request: %s -> %s (streaming: %v, provider: %s, passthrough: %v)",
+		req.Model, targetModel, req.Stream, selectedProvider.Name(), !selectedProvider.RequiresTransformation())
 
-	// Check circuit breaker
-	if h.circuitBreaker != nil && !h.circuitBreaker.Allow() {
-		atomic.AddInt64(&h.metrics.ErrorRequests, 1)
-		log.Printf("[CLASP] Circuit breaker open - rejecting request")
-		w.Header().Set("X-CLASP-Circuit-Breaker", "open")
-		h.writeErrorResponse(w, http.StatusServiceUnavailable, "overloaded_error", "Service temporarily unavailable - circuit breaker open")
-		return
-	}
+	return selectedProvider, targetModel
+}
 
-	// Check if this provider requires transformation (passthrough mode for Anthropic)
-	if !selectedProvider.RequiresTransformation() {
-		// Passthrough mode - forward request directly to Anthropic API
-		h.handlePassthroughRequest(w, r, &anthropicReq, selectedProvider, start, cacheKey, cacheable)
-		return
-	}
-
-	// Check if this model requires the Responses API
+// transformAndExecute transforms the request and executes it against the provider.
+func (h *Handler) transformAndExecute(ctx interface{ Done() <-chan struct{} }, req *models.AnthropicRequest, selectedProvider provider.Provider, targetModel string) (*http.Response, string, bool, bool, error) {
 	endpointType := translator.GetEndpointType(targetModel)
 	useResponsesAPI := endpointType == translator.EndpointResponses
 
@@ -374,157 +457,134 @@ func (h *Handler) HandleMessages(w http.ResponseWriter, r *http.Request) {
 		openaiProvider.SetTargetModel(targetModel)
 	}
 
-	var reqBody []byte
+	// Transform request
+	reqBody, err := h.transformRequest(req, targetModel, useResponsesAPI)
+	if err != nil {
+		return nil, targetModel, useResponsesAPI, false, err
+	}
+
+	// Execute request
+	resp, err := h.doRequestWithRetry(ctx, reqBody, selectedProvider)
+	usedFallback := false
+
+	// Check if we should try fallback
+	if err != nil || (resp != nil && resp.StatusCode >= 500) {
+		resp, targetModel, useResponsesAPI, usedFallback, err = h.tryFallback(ctx, req, resp, targetModel, err)
+	}
+
+	return resp, targetModel, useResponsesAPI, usedFallback, err
+}
+
+// transformRequest transforms an Anthropic request to the appropriate format.
+func (h *Handler) transformRequest(req *models.AnthropicRequest, targetModel string, useResponsesAPI bool) ([]byte, error) {
 	if useResponsesAPI {
-		// Transform request to OpenAI Responses API format
-		responsesReq, err := translator.TransformRequestToResponses(&anthropicReq, targetModel, "")
+		responsesReq, err := translator.TransformRequestToResponses(req, targetModel, "")
 		if err != nil {
-			atomic.AddInt64(&h.metrics.ErrorRequests, 1)
 			log.Printf("[CLASP] Error transforming request to Responses API: %v", err)
-			h.writeErrorResponse(w, http.StatusInternalServerError, "api_error", "Error transforming request")
-			return
+			return nil, err
 		}
 
-		reqBody, err = json.Marshal(responsesReq)
+		reqBody, err := json.Marshal(responsesReq)
 		if err != nil {
-			atomic.AddInt64(&h.metrics.ErrorRequests, 1)
 			log.Printf("[CLASP] Error marshaling Responses request: %v", err)
-			h.writeErrorResponse(w, http.StatusInternalServerError, "api_error", "Error preparing request")
-			return
+			return nil, err
 		}
 
-		// Debug logging for outgoing request (secrets are masked)
 		if h.cfg.DebugRequests {
 			debugJSON, _ := json.MarshalIndent(responsesReq, "", "  ")
 			maskedJSON := secrets.MaskJSONSecrets(debugJSON)
 			log.Printf("[CLASP DEBUG] Outgoing OpenAI Responses API request:\n%s", string(maskedJSON))
-			// Also log to dedicated debug file
 			logging.LogDebugRequestRaw("OUTGOING", "/v1/responses", maskedJSON)
 		}
 
 		log.Printf("[CLASP] Using Responses API for model: %s", targetModel)
-	} else {
-		// Transform request to OpenAI Chat Completions format
-		openAIReq, err := translator.TransformRequest(&anthropicReq, targetModel)
-		if err != nil {
-			atomic.AddInt64(&h.metrics.ErrorRequests, 1)
-			log.Printf("[CLASP] Error transforming request: %v", err)
-			h.writeErrorResponse(w, http.StatusInternalServerError, "api_error", "Error transforming request")
-			return
-		}
-
-		reqBody, err = json.Marshal(openAIReq)
-		if err != nil {
-			atomic.AddInt64(&h.metrics.ErrorRequests, 1)
-			log.Printf("[CLASP] Error marshaling request: %v", err)
-			h.writeErrorResponse(w, http.StatusInternalServerError, "api_error", "Error preparing request")
-			return
-		}
-
-		// Debug logging for outgoing request (secrets are masked)
-		if h.cfg.DebugRequests {
-			debugJSON, _ := json.MarshalIndent(openAIReq, "", "  ")
-			maskedJSON := secrets.MaskJSONSecrets(debugJSON)
-			log.Printf("[CLASP DEBUG] Outgoing OpenAI Chat Completions request:\n%s", string(maskedJSON))
-			// Also log to dedicated debug file
-			logging.LogDebugRequestRaw("OUTGOING", "/v1/chat/completions", maskedJSON)
-		}
+		return reqBody, nil
 	}
 
-	// Execute request with retry logic
-	resp, err := h.doRequestWithRetry(r.Context(), reqBody, selectedProvider)
-	usedFallback := false
-
-	// Check if we should try fallback
-	if (err != nil || (resp != nil && resp.StatusCode >= 500)) {
-		fallbackProvider, fallbackModel := h.getFallbackProvider(anthropicReq.Model)
-		if fallbackProvider != nil {
-			// Close original response if it exists
-			if resp != nil {
-				resp.Body.Close()
-			}
-
-			atomic.AddInt64(&h.metrics.FallbackAttempts, 1)
-			log.Printf("[CLASP] Primary provider failed, attempting fallback to %s", fallbackProvider.Name())
-
-			// Re-transform request with fallback model if specified
-			if fallbackModel != "" {
-				targetModel = fallbackModel
-				// Check if fallback model uses Responses API
-				fallbackEndpointType := translator.GetEndpointType(fallbackModel)
-				if fallbackEndpointType == translator.EndpointResponses {
-					responsesReq, _ := translator.TransformRequestToResponses(&anthropicReq, targetModel, "")
-					reqBody, _ = json.Marshal(responsesReq)
-					useResponsesAPI = true
-				} else {
-					openAIReq, _ := translator.TransformRequest(&anthropicReq, targetModel)
-					reqBody, _ = json.Marshal(openAIReq)
-					useResponsesAPI = false
-				}
-				// Update fallback provider endpoint type
-				if openaiProvider, ok := fallbackProvider.(*provider.OpenAIProvider); ok {
-					openaiProvider.SetTargetModel(targetModel)
-				}
-			}
-
-			// Try fallback provider
-			resp, err = h.doRequestWithRetry(r.Context(), reqBody, fallbackProvider)
-			if err == nil && resp.StatusCode < 500 {
-				atomic.AddInt64(&h.metrics.FallbackSuccesses, 1)
-				usedFallback = true
-				log.Printf("[CLASP] Fallback to %s succeeded", fallbackProvider.Name())
-			}
-		}
-	}
-
+	openAIReq, err := translator.TransformRequest(req, targetModel)
 	if err != nil {
-		atomic.AddInt64(&h.metrics.ErrorRequests, 1)
-		if h.circuitBreaker != nil {
-			h.circuitBreaker.RecordFailure()
+		log.Printf("[CLASP] Error transforming request: %v", err)
+		return nil, err
+	}
+
+	reqBody, err := json.Marshal(openAIReq)
+	if err != nil {
+		log.Printf("[CLASP] Error marshaling request: %v", err)
+		return nil, err
+	}
+
+	if h.cfg.DebugRequests {
+		debugJSON, _ := json.MarshalIndent(openAIReq, "", "  ")
+		maskedJSON := secrets.MaskJSONSecrets(debugJSON)
+		log.Printf("[CLASP DEBUG] Outgoing OpenAI Chat Completions request:\n%s", string(maskedJSON))
+		logging.LogDebugRequestRaw("OUTGOING", "/v1/chat/completions", maskedJSON)
+	}
+
+	return reqBody, nil
+}
+
+// tryFallback attempts to use a fallback provider if the primary fails.
+func (h *Handler) tryFallback(ctx interface{ Done() <-chan struct{} }, req *models.AnthropicRequest, resp *http.Response, targetModel string, originalErr error) (*http.Response, string, bool, bool, error) {
+	fallbackProvider, fallbackModel := h.getFallbackProvider(req.Model)
+	if fallbackProvider == nil {
+		return resp, targetModel, false, false, originalErr
+	}
+
+	// Close original response if it exists
+	if resp != nil {
+		resp.Body.Close()
+	}
+
+	atomic.AddInt64(&h.metrics.FallbackAttempts, 1)
+	log.Printf("[CLASP] Primary provider failed, attempting fallback to %s", fallbackProvider.Name())
+
+	// Re-transform request with fallback model if specified
+	useResponsesAPI := false
+	var reqBody []byte
+	if fallbackModel != "" {
+		targetModel = fallbackModel
+		fallbackEndpointType := translator.GetEndpointType(fallbackModel)
+		useResponsesAPI = fallbackEndpointType == translator.EndpointResponses
+
+		if openaiProvider, ok := fallbackProvider.(*provider.OpenAIProvider); ok {
+			openaiProvider.SetTargetModel(targetModel)
 		}
-		log.Printf("[CLASP] Error making upstream request: %v", err)
-		h.writeErrorResponse(w, http.StatusBadGateway, "api_error", "Error connecting to upstream provider")
-		return
-	}
-	defer resp.Body.Close()
-
-	// Check for upstream errors
-	if resp.StatusCode >= 400 {
-		atomic.AddInt64(&h.metrics.ErrorRequests, 1)
-		// Record failure for 5xx errors (not 4xx client errors)
-		if h.circuitBreaker != nil && resp.StatusCode >= 500 {
-			h.circuitBreaker.RecordFailure()
-		}
-		body, _ := io.ReadAll(resp.Body)
-		// Mask any secrets in error response before logging
-		maskedBody := secrets.MaskAllSecrets(string(body))
-		log.Printf("[CLASP] Upstream error (%d): %s", resp.StatusCode, maskedBody)
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(resp.StatusCode)
-		w.Write(body) // Send original response to client
-		return
 	}
 
-	// Record success for circuit breaker
-	if h.circuitBreaker != nil {
-		h.circuitBreaker.RecordSuccess()
+	var err error
+	reqBody, err = h.transformRequest(req, targetModel, useResponsesAPI)
+	if err != nil {
+		return nil, targetModel, useResponsesAPI, false, err
 	}
 
-	atomic.AddInt64(&h.metrics.SuccessRequests, 1)
-	atomic.AddInt64(&h.metrics.TotalLatencyMs, time.Since(start).Milliseconds())
-
-	// Add header to indicate fallback was used
-	if usedFallback {
-		w.Header().Set("X-CLASP-Fallback", "true")
+	// Try fallback provider
+	resp, err = h.doRequestWithRetry(ctx, reqBody, fallbackProvider)
+	if err == nil && resp.StatusCode < 500 {
+		atomic.AddInt64(&h.metrics.FallbackSuccesses, 1)
+		log.Printf("[CLASP] Fallback to %s succeeded", fallbackProvider.Name())
+		return resp, targetModel, useResponsesAPI, true, nil
 	}
 
-	// Add header to indicate Responses API was used
-	if useResponsesAPI {
-		w.Header().Set("X-CLASP-Responses-API", "true")
-	}
+	return resp, targetModel, useResponsesAPI, false, err
+}
 
-	// Handle streaming vs non-streaming
-	if anthropicReq.Stream {
+// handleUpstreamError handles error responses from the upstream provider.
+func (h *Handler) handleUpstreamError(w http.ResponseWriter, resp *http.Response) {
+	atomic.AddInt64(&h.metrics.ErrorRequests, 1)
+	if h.circuitBreaker != nil && resp.StatusCode >= 500 {
+		h.circuitBreaker.RecordFailure()
+	}
+	body, _ := io.ReadAll(resp.Body)
+	maskedBody := secrets.MaskAllSecrets(string(body))
+	log.Printf("[CLASP] Upstream error (%d): %s", resp.StatusCode, maskedBody)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(resp.StatusCode)
+	w.Write(body)
+}
+
+// handleResponse routes the response to the appropriate handler.
+func (h *Handler) handleResponse(w http.ResponseWriter, resp *http.Response, isStreaming, useResponsesAPI bool, targetModel, cacheKey string, cacheable bool) {
+	if isStreaming {
 		if useResponsesAPI {
 			h.handleResponsesStreamingResponse(w, resp, targetModel)
 		} else {

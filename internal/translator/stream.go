@@ -195,6 +195,7 @@ func (sp *StreamProcessor) processChunk(chunk *models.OpenAIStreamChunk) error {
 }
 
 // processChoice processes a single choice from the stream chunk.
+// Note: This method must be called while holding sp.mu lock (called from processChunk).
 func (sp *StreamProcessor) processChoice(choice *models.StreamChoice) error {
 	delta := &choice.Delta
 
@@ -245,6 +246,7 @@ func (sp *StreamProcessor) handleThinkingContent(thinking string) error {
 }
 
 // handleTextContent handles text content from the stream.
+// Note: This method must be called while holding sp.mu lock (called from processChunk).
 func (sp *StreamProcessor) handleTextContent(text string) error {
 	// Check if this is a Grok model that might emit XML tool calls
 	if isGrokModelStream(sp.targetModel) {
@@ -571,6 +573,7 @@ type extractedToolCall struct {
 
 // processGrokXML buffers text and extracts Grok XML tool calls.
 // Returns cleaned text (with XML removed) and any extracted tool calls.
+// Note: This method must be called while holding sp.mu lock (called via handleTextContent from processChunk).
 func (sp *StreamProcessor) processGrokXML(text string) (string, []extractedToolCall) {
 	// Accumulate text in buffer
 	sp.xmlBuffer += text
@@ -657,6 +660,7 @@ func parseXMLParameters(xmlContent string) map[string]interface{} {
 }
 
 // emitExtractedToolCall emits an extracted Grok XML tool call as Anthropic format.
+// Note: This method must be called while holding sp.mu lock (called via handleTextContent from processChunk).
 func (sp *StreamProcessor) emitExtractedToolCall(tc extractedToolCall) error {
 	// Close text block if open
 	if sp.textStarted && sp.state == StateTextContent {
