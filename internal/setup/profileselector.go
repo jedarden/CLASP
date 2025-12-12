@@ -43,7 +43,7 @@ type ProfileSelectorResult int
 const (
 	ProfileResultSelected ProfileSelectorResult = iota
 	ProfileResultCreateNew
-	ProfileResultCancelled
+	ProfileResultCanceled
 	ProfileResultRenamed
 	ProfileResultDeleted
 )
@@ -91,11 +91,6 @@ var (
 
 	profileActiveStyle = lipgloss.NewStyle().
 		Foreground(lipgloss.Color("76"))
-
-	profileBoxStyle = lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("39")).
-		Padding(0, 1)
 
 	profileErrorStyle = lipgloss.NewStyle().
 		Foreground(lipgloss.Color("196")).
@@ -202,7 +197,7 @@ func (m *ProfileSelector) updateSelectMode(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "ctrl+c", "q":
-			m.result = ProfileResultCancelled
+			m.result = ProfileResultCanceled
 			return m, tea.Quit
 
 		case "enter":
@@ -218,7 +213,7 @@ func (m *ProfileSelector) updateSelectMode(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		case "esc":
-			m.result = ProfileResultCancelled
+			m.result = ProfileResultCanceled
 			return m, tea.Quit
 
 		case "n":
@@ -473,9 +468,9 @@ func (m *ProfileSelector) Result() ProfileSelectorResult {
 }
 
 // RunProfileSelector runs the Bubble Tea profile selector.
-// Returns the selected profile name, or empty string for create new / cancelled.
+// Returns the selected profile name, or empty string for create new / canceled.
 // The second return value indicates whether to create a new profile.
-func RunProfileSelector(profiles []*Profile, activeProfile string) (selectedProfile string, createNew bool, cancelled bool, err error) {
+func RunProfileSelector(profiles []*Profile, activeProfile string) (selectedProfile string, createNew, canceled bool, err error) {
 	if len(profiles) == 0 {
 		// No profiles exist, go straight to create
 		return "", true, false, nil
@@ -499,7 +494,7 @@ func RunProfileSelector(profiles []*Profile, activeProfile string) (selectedProf
 		return "", false, true, nil
 	case ProfileResultCreateNew:
 		return "", true, false, nil
-	case ProfileResultCancelled:
+	case ProfileResultCanceled:
 		return "", false, true, nil
 	}
 
@@ -518,8 +513,8 @@ func HasProfiles() bool {
 
 // SelectOrCreateProfile shows the profile selector TUI if profiles exist,
 // otherwise returns that a new profile should be created.
-// Returns: profileName (if selected), createNew (if should create), cancelled (if user quit)
-func SelectOrCreateProfile() (profileName string, createNew bool, cancelled bool) {
+// Returns: profileName (if selected), createNew (if should create), canceled (if user quit)
+func SelectOrCreateProfile() (profileName string, createNew, canceled bool) {
 	pm := NewProfileManager()
 
 	profiles, err := pm.ListProfiles()

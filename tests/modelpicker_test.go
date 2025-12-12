@@ -19,8 +19,8 @@ func TestModelPickerCreation(t *testing.T) {
 	}
 
 	// Test that the picker initializes correctly
-	if picker.Cancelled() {
-		t.Error("Picker should not be cancelled initially")
+	if picker.Canceled() {
+		t.Error("Picker should not be canceled initially")
 	}
 
 	if picker.Selected() != nil {

@@ -95,7 +95,7 @@ func (pm *ProfileManager) GetGlobalConfigPath() string {
 // EnsureDirectories creates necessary directories if they don't exist.
 func (pm *ProfileManager) EnsureDirectories() error {
 	profilesDir := pm.GetProfilesDir()
-	return os.MkdirAll(profilesDir, 0700)
+	return os.MkdirAll(profilesDir, 0o700)
 }
 
 // CreateProfile creates a new profile.
@@ -172,7 +172,7 @@ func (pm *ProfileManager) DeleteProfile(name string) error {
 	globalCfg, err := pm.GetGlobalConfig()
 	if err == nil && globalCfg.ActiveProfile == name {
 		globalCfg.ActiveProfile = "default"
-		pm.SaveGlobalConfig(globalCfg)
+		_ = pm.SaveGlobalConfig(globalCfg)
 	}
 
 	return nil
@@ -229,7 +229,7 @@ func (pm *ProfileManager) RenameProfile(oldName, newName string) error {
 	globalCfg, err := pm.GetGlobalConfig()
 	if err == nil && globalCfg.ActiveProfile == oldName {
 		globalCfg.ActiveProfile = newName
-		pm.SaveGlobalConfig(globalCfg)
+		_ = pm.SaveGlobalConfig(globalCfg)
 	}
 
 	return nil
@@ -344,7 +344,7 @@ func (pm *ProfileManager) SaveGlobalConfig(config *GlobalConfig) error {
 	}
 
 	configPath := pm.GetGlobalConfigPath()
-	return os.WriteFile(configPath, data, 0600)
+	return os.WriteFile(configPath, data, 0o600)
 }
 
 // ApplyProfileToEnv applies profile settings to environment variables.
@@ -533,7 +533,7 @@ func (pm *ProfileManager) saveProfile(profile *Profile) error {
 	}
 
 	profilePath := pm.getProfilePath(profile.Name)
-	return os.WriteFile(profilePath, data, 0600)
+	return os.WriteFile(profilePath, data, 0o600)
 }
 
 // getProfilePath returns the file path for a profile.
@@ -630,10 +630,4 @@ func FormatProfileDetails(profile *Profile) string {
 	sb.WriteString(fmt.Sprintf("Updated:     %s\n", profile.UpdatedAt))
 
 	return sb.String()
-}
-
-// maskAPIKey masks an API key for display.
-// Deprecated: Use secrets.MaskAPIKey instead. This function is kept for backwards compatibility.
-func maskAPIKey(key string) string {
-	return secrets.MaskAPIKey(key)
 }

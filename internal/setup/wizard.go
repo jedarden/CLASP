@@ -3,6 +3,7 @@ package setup
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -349,8 +350,16 @@ func (w *Wizard) selectProvider() (string, error) {
 
 // isOllamaRunning checks if Ollama is running locally.
 func isOllamaRunning() bool {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://localhost:11434/api/tags", http.NoBody)
+	if err != nil {
+		return false
+	}
+
 	client := &http.Client{Timeout: 2 * time.Second}
-	resp, err := client.Get("http://localhost:11434/api/tags")
+	resp, err := client.Do(req)
 	if err != nil {
 		return false
 	}
@@ -638,7 +647,15 @@ func (w *Wizard) fetchOllamaModels(baseURL string) ([]string, error) {
 	baseURL = strings.TrimSuffix(baseURL, "/v1")
 	baseURL = strings.TrimSuffix(baseURL, "/")
 
-	resp, err := w.client.Get(baseURL + "/api/tags")
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL+"/api/tags", http.NoBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	resp, err := w.client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to Ollama: %w", err)
 	}
@@ -778,7 +795,7 @@ func (w *Wizard) saveConfig(cfg *ConfigFile) error {
 	configDir := filepath.Dir(configPath)
 
 	// Create directory if it doesn't exist
-	if err := os.MkdirAll(configDir, 0700); err != nil {
+	if err := os.MkdirAll(configDir, 0o700); err != nil {
 		return err
 	}
 
@@ -789,7 +806,7 @@ func (w *Wizard) saveConfig(cfg *ConfigFile) error {
 	}
 
 	// Write with restrictive permissions (API keys inside)
-	return os.WriteFile(configPath, data, 0600)
+	return os.WriteFile(configPath, data, 0o600)
 }
 
 func (w *Wizard) setEnvVars(cfg *ConfigFile) {
@@ -1295,7 +1312,7 @@ func (w *Wizard) RunProfileExport(name, outputPath string) error {
 		outputPath = name + "-profile.json"
 	}
 
-	if err := os.WriteFile(outputPath, data, 0644); err != nil {
+	if err := os.WriteFile(outputPath, data, 0o600); err != nil {
 		return fmt.Errorf("failed to write file: %w", err)
 	}
 
@@ -1323,8 +1340,9 @@ func (w *Wizard) RunProfileImport(inputPath, newName string) error {
 	profileName := newName
 	if profileName == "" {
 		var profile Profile
-		json.Unmarshal(data, &profile)
-		profileName = profile.Name
+		if err := json.Unmarshal(data, &profile); err == nil {
+			profileName = profile.Name
+		}
 	}
 
 	w.println("")

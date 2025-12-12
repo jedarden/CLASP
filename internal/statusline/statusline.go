@@ -57,10 +57,10 @@ func NewManager() (*Manager, error) {
 	claudeDir := filepath.Join(homeDir, ".claude")
 
 	// Ensure directories exist
-	if err := os.MkdirAll(statusDir, 0755); err != nil {
+	if err := os.MkdirAll(statusDir, 0o700); err != nil {
 		return nil, fmt.Errorf("creating .clasp/status directory: %w", err)
 	}
-	if err := os.MkdirAll(claudeDir, 0755); err != nil {
+	if err := os.MkdirAll(claudeDir, 0o700); err != nil {
 		return nil, fmt.Errorf("creating .claude directory: %w", err)
 	}
 
@@ -174,7 +174,7 @@ func (m *Manager) writeStatus() error {
 		statusPath = filepath.Join(homeDir, ".clasp", "status.json")
 	}
 
-	if err := os.WriteFile(statusPath, data, 0644); err != nil {
+	if err := os.WriteFile(statusPath, data, 0o600); err != nil {
 		return fmt.Errorf("writing status file: %w", err)
 	}
 
@@ -200,7 +200,7 @@ func (m *Manager) ClearStatus() error {
 func (m *Manager) InstallScript() error {
 	script := m.generateScript()
 
-	if err := os.WriteFile(m.scriptPath, []byte(script), 0755); err != nil {
+	if err := os.WriteFile(m.scriptPath, []byte(script), 0o700); err != nil {
 		return fmt.Errorf("writing status line script: %w", err)
 	}
 
@@ -335,7 +335,7 @@ func (m *Manager) ConfigureClaudeCode() error {
 		return fmt.Errorf("marshaling settings: %w", err)
 	}
 
-	if err := os.WriteFile(settingsPath, output, 0644); err != nil {
+	if err := os.WriteFile(settingsPath, output, 0o600); err != nil {
 		return fmt.Errorf("writing settings.json: %w", err)
 	}
 
@@ -431,7 +431,7 @@ func ListAllInstances() ([]InstanceInfo, error) {
 		return nil, fmt.Errorf("reading status directory: %w", err)
 	}
 
-	var instances []InstanceInfo
+	instances := make([]InstanceInfo, 0, len(entries))
 
 	for _, entry := range entries {
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
@@ -581,9 +581,9 @@ func ReadStatusFromPort(port int) (*Status, error) {
 	var statusPath string
 	if port == 0 {
 		// Try to find the first running instance
-		instances, err := ListAllInstances()
-		if err != nil {
-			return nil, err
+		instances, listErr := ListAllInstances()
+		if listErr != nil {
+			return nil, listErr
 		}
 		for _, inst := range instances {
 			if inst.IsRunning {

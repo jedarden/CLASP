@@ -53,7 +53,7 @@ type ModelPicker struct {
 	models         []ModelInfo
 	filtered       []ModelInfo
 	selected       *ModelInfo
-	cancelled      bool
+	canceled       bool
 	width          int
 	height         int
 	provider       string
@@ -176,7 +176,7 @@ func (m *ModelPicker) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "ctrl+c", "q":
-			m.cancelled = true
+			m.canceled = true
 			return m, tea.Quit
 
 		case "enter":
@@ -195,7 +195,7 @@ func (m *ModelPicker) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.applyFilter("")
 				return m, nil
 			}
-			m.cancelled = true
+			m.canceled = true
 			return m, tea.Quit
 		}
 	}
@@ -340,9 +340,9 @@ func (m *ModelPicker) Selected() *ModelInfo {
 	return m.selected
 }
 
-// Cancelled returns true if the user cancelled the selection.
-func (m *ModelPicker) Cancelled() bool {
-	return m.cancelled
+// Canceled returns true if the user canceled the selection.
+func (m *ModelPicker) Canceled() bool {
+	return m.canceled
 }
 
 // GetKnownModels returns model metadata for known providers.
@@ -566,7 +566,7 @@ func RunModelPicker(models []ModelInfo, provider, tier string) (string, error) {
 	}
 
 	result := m.(*ModelPicker)
-	if result.Cancelled() {
+	if result.Canceled() {
 		return "", ErrCanceled
 	}
 	if result.Selected() == nil {
