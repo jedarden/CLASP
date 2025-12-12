@@ -989,7 +989,7 @@ func (h *Handler) handleNonStreamingResponse(w http.ResponseWriter, resp *http.R
 	// Write response
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("X-CLASP-Cache", "MISS")
-	json.NewEncoder(w).Encode(anthropicResp)
+	_ = json.NewEncoder(w).Encode(anthropicResp)
 }
 
 // handleResponsesStreamingResponse handles SSE streaming responses from Responses API.
@@ -1041,7 +1041,7 @@ func (h *Handler) handleResponsesStreamingResponse(w http.ResponseWriter, resp *
 }
 
 // handleResponsesNonStreamingResponse handles non-streaming responses from Responses API.
-func (h *Handler) handleResponsesNonStreamingResponse(w http.ResponseWriter, resp *http.Response, targetModel string, cacheKey string, cacheable bool) {
+func (h *Handler) handleResponsesNonStreamingResponse(w http.ResponseWriter, resp *http.Response, targetModel, cacheKey string, cacheable bool) {
 	// Read response body
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -1195,13 +1195,13 @@ func (h *Handler) handleResponsesNonStreamingResponse(w http.ResponseWriter, res
 	// Write response
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("X-CLASP-Cache", "MISS")
-	json.NewEncoder(w).Encode(anthropicResp)
+	_ = json.NewEncoder(w).Encode(anthropicResp)
 }
 
 // HandleHealth handles health check requests.
 func (h *Handler) HandleHealth(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"status":   "healthy",
 		"provider": h.provider.Name(),
 		"uptime":   time.Since(h.metrics.StartTime).String(),
@@ -1319,19 +1319,19 @@ func (h *Handler) HandleMetrics(w http.ResponseWriter, r *http.Request) {
 	if h.costTracker != nil {
 		summary := h.costTracker.GetSummary()
 		response["costs"] = map[string]interface{}{
-			"enabled":            true,
-			"total_cost_usd":     fmt.Sprintf("%.6f", summary.TotalCostUSD),
-			"input_cost_usd":     fmt.Sprintf("%.6f", summary.InputCostUSD),
-			"output_cost_usd":    fmt.Sprintf("%.6f", summary.OutputCostUSD),
-			"total_input_tokens": summary.TotalInputTokens,
+			"enabled":             true,
+			"total_cost_usd":      fmt.Sprintf("%.6f", summary.TotalCostUSD),
+			"input_cost_usd":      fmt.Sprintf("%.6f", summary.InputCostUSD),
+			"output_cost_usd":     fmt.Sprintf("%.6f", summary.OutputCostUSD),
+			"total_input_tokens":  summary.TotalInputTokens,
 			"total_output_tokens": summary.TotalOutputTokens,
-			"cost_per_request":   fmt.Sprintf("%.6f", summary.CostPerRequest),
-			"cost_per_hour":      fmt.Sprintf("%.6f", summary.CostPerHour),
+			"cost_per_request":    fmt.Sprintf("%.6f", summary.CostPerRequest),
+			"cost_per_hour":       fmt.Sprintf("%.6f", summary.CostPerHour),
 		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	_ = json.NewEncoder(w).Encode(response)
 }
 
 // HandleMetricsPrometheus handles Prometheus metrics endpoint requests.
@@ -1540,7 +1540,7 @@ func (h *Handler) HandleMetricsPrometheus(w http.ResponseWriter, r *http.Request
 func (h *Handler) HandleCosts(w http.ResponseWriter, r *http.Request) {
 	if h.costTracker == nil {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"enabled": false,
 			"message": "Cost tracking is not enabled",
 		})
@@ -1553,7 +1553,7 @@ func (h *Handler) HandleCosts(w http.ResponseWriter, r *http.Request) {
 		if action == "reset" {
 			h.costTracker.Reset()
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]interface{}{
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
 				"status":  "ok",
 				"message": "Cost tracking data has been reset",
 			})
@@ -1563,7 +1563,7 @@ func (h *Handler) HandleCosts(w http.ResponseWriter, r *http.Request) {
 
 	summary := h.costTracker.GetSummary()
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(summary)
+	_ = json.NewEncoder(w).Encode(summary)
 }
 
 // HandleRoot handles root path requests.

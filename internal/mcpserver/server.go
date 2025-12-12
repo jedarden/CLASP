@@ -237,7 +237,7 @@ func (s *Server) handleHTTP(w http.ResponseWriter, r *http.Request) {
 
 	resp := s.handleRequest(&req)
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 func (s *Server) handleSSE(w http.ResponseWriter, r *http.Request) {
@@ -396,5 +396,5 @@ func (s *Server) sendError(encoder *json.Encoder, id interface{}, code int, mess
 func (s *Server) writeHTTPError(w http.ResponseWriter, id interface{}, code int, message string, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusBadRequest)
-	json.NewEncoder(w).Encode(s.errorResponse(id, code, message, data))
+	_ = json.NewEncoder(w).Encode(s.errorResponse(id, code, message, data))
 }
