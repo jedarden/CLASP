@@ -17,6 +17,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/joho/godotenv"
+
 	"github.com/jedarden/clasp/internal/claudecode"
 	"github.com/jedarden/clasp/internal/config"
 	"github.com/jedarden/clasp/internal/logging"
@@ -24,7 +26,6 @@ import (
 	"github.com/jedarden/clasp/internal/proxy"
 	"github.com/jedarden/clasp/internal/setup"
 	"github.com/jedarden/clasp/internal/statusline"
-	"github.com/joho/godotenv"
 )
 
 var (
@@ -452,8 +453,14 @@ func main() {
 		proxyURL := fmt.Sprintf("http://localhost:%d", cfg.Port)
 		healthURL := proxyURL + "/health"
 
+		httpClient := &http.Client{Timeout: 2 * time.Second}
 		for i := 0; i < 10; i++ {
-			resp, err := http.Get(healthURL)
+			req, reqErr := http.NewRequestWithContext(context.Background(), http.MethodGet, healthURL, http.NoBody)
+			if reqErr != nil {
+				time.Sleep(200 * time.Millisecond)
+				continue
+			}
+			resp, err := httpClient.Do(req)
 			if err == nil && resp.StatusCode == 200 {
 				resp.Body.Close()
 				break

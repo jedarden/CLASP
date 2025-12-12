@@ -111,11 +111,12 @@ func (s *SecureInput) View() string {
 
 	// Validation hint
 	_, _ = b.WriteString("\n")
-	if s.validateAPIKey() {
+	switch {
+	case s.validateAPIKey():
 		_, _ = b.WriteString(validKeyStyle.Render("  ✓ Key format looks valid"))
-	} else if s.textInput.Value() != "" {
+	case s.textInput.Value() != "":
 		_, _ = b.WriteString(secureHintStyle.Render("  Enter your API key (press Enter when done)"))
-	} else {
+	default:
 		_, _ = b.WriteString(secureHintStyle.Render("  Paste or type your API key"))
 	}
 	_, _ = b.WriteString("\n")
@@ -181,7 +182,10 @@ func RunSecureInput(prompt, placeholder string, showLast4 bool) (string, error) 
 		return "", fmt.Errorf("error running secure input: %w", err)
 	}
 
-	result := m.(*SecureInput)
+	result, ok := m.(*SecureInput)
+	if !ok {
+		return "", fmt.Errorf("unexpected model type")
+	}
 	if result.Canceled() {
 		return "", nil
 	}

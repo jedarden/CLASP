@@ -553,7 +553,10 @@ func RunModelPicker(models []ModelInfo, provider, tier string) (string, error) {
 		return "", fmt.Errorf("error running model picker: %w", err)
 	}
 
-	result := m.(*ModelPicker)
+	result, ok := m.(*ModelPicker)
+	if !ok {
+		return "", fmt.Errorf("unexpected model type")
+	}
 	if result.Canceled() {
 		return "", ErrCanceled
 	}

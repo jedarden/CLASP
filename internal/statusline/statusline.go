@@ -200,7 +200,7 @@ func (m *Manager) ClearStatus() error {
 func (m *Manager) InstallScript() error {
 	script := m.generateScript()
 
-	if err := os.WriteFile(m.scriptPath, []byte(script), 0o700); err != nil {
+	if err := os.WriteFile(m.scriptPath, []byte(script), 0o700); err != nil { //nolint:gosec // G306: script needs to be executable
 		return fmt.Errorf("writing status line script: %w", err)
 	}
 

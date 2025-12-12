@@ -271,8 +271,8 @@ func BenchmarkMaskAllSecrets(b *testing.B) {
 }
 
 func BenchmarkMaskJSONSecrets(b *testing.B) {
-	json := []byte(`{"api_key": "sk-1234567890abcdefghij", "model": "gpt-4", "config": {"secret": "mysecret123456"}}`)
+	jsonData := []byte(`{"api_key": "sk-1234567890abcdefghij", "model": "gpt-4", "config": {"secret": "mysecret123456"}}`)
 	for i := 0; i < b.N; i++ {
-		MaskJSONSecrets(json)
+		MaskJSONSecrets(jsonData)
 	}
 }

@@ -178,8 +178,9 @@ func (sp *StreamProcessor) processChunk(chunk *models.OpenAIStreamChunk) error {
 	}
 
 	// Process each choice
-	for _, choice := range chunk.Choices {
-		if err := sp.processChoice(&choice); err != nil {
+	for i := range chunk.Choices {
+		choice := &chunk.Choices[i]
+		if err := sp.processChoice(choice); err != nil {
 			return err
 		}
 
@@ -216,8 +217,8 @@ func (sp *StreamProcessor) processChoice(choice *models.StreamChoice) error {
 
 	// Handle tool calls
 	if len(delta.ToolCalls) > 0 {
-		for _, tc := range delta.ToolCalls {
-			if err := sp.handleToolCall(&tc); err != nil {
+		for i := range delta.ToolCalls {
+			if err := sp.handleToolCall(&delta.ToolCalls[i]); err != nil {
 				return err
 			}
 		}

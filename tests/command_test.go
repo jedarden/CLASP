@@ -24,10 +24,9 @@ func TestCommandVersion(t *testing.T) {
 func TestCommandHelp(t *testing.T) {
 	cmd := exec.Command("go", "run", "../cmd/clasp", "--help")
 	output, err := cmd.CombinedOutput()
-	if err != nil {
-		// --help may exit with status 0 or non-zero depending on implementation
-		// Just check the output contains expected content
-	}
+	// --help may exit with status 0 or non-zero depending on implementation
+	// Just check the output contains expected content
+	_ = err // Deliberately ignore error as --help behavior varies
 
 	outputStr := string(output)
 	expectedContent := []string{

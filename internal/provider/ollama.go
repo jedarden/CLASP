@@ -121,16 +121,19 @@ func IsOllamaRunning(baseURL string) bool {
 	}
 
 	resp, err := client.Do(req)
+	if err == nil {
+		defer resp.Body.Close()
+		return resp.StatusCode == http.StatusOK
+	}
+
+	// Try OpenAI-compatible endpoint as fallback
+	req, err = http.NewRequestWithContext(ctx, http.MethodGet, baseURL+"/v1/models", http.NoBody)
 	if err != nil {
-		// Try OpenAI-compatible endpoint as fallback
-		req, err = http.NewRequestWithContext(ctx, http.MethodGet, baseURL+"/v1/models", http.NoBody)
-		if err != nil {
-			return false
-		}
-		resp, err = client.Do(req)
-		if err != nil {
-			return false
-		}
+		return false
+	}
+	resp, err = client.Do(req)
+	if err != nil {
+		return false
 	}
 	defer resp.Body.Close()
 

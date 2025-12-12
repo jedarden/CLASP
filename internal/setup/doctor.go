@@ -381,15 +381,16 @@ func (d *Doctor) PrintResults(w io.Writer) {
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-	if errorCount > 0 {
+	switch {
+	case errorCount > 0:
 		fmt.Fprintf(w, "Summary: %d error(s), %d warning(s), %d ok\n", errorCount, warningCount, okCount)
 		fmt.Fprintln(w, "")
 		fmt.Fprintln(w, "Fix the errors above to ensure CLASP works correctly.")
-	} else if warningCount > 0 {
+	case warningCount > 0:
 		fmt.Fprintf(w, "Summary: %d warning(s), %d ok\n", warningCount, okCount)
 		fmt.Fprintln(w, "")
 		fmt.Fprintln(w, "CLASP should work, but consider addressing the warnings.")
-	} else {
+	default:
 		fmt.Fprintf(w, "Summary: All %d checks passed!\n", okCount)
 		fmt.Fprintln(w, "")
 		fmt.Fprintln(w, "CLASP is ready to use. Run 'clasp' to start.")

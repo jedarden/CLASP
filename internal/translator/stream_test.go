@@ -642,7 +642,7 @@ func TestProcessGrokXML_PartialXML_Buffering(t *testing.T) {
 
 	// Second chunk: complete the XML
 	text2 := `><xai:parameter name="x">1</xai:parameter></xai:function_call>`
-	cleanedText, toolCalls = sp.processGrokXML(text2)
+	_, toolCalls = sp.processGrokXML(text2)
 
 	if len(toolCalls) != 1 {
 		t.Fatalf("len(toolCalls) = %d, want 1 after completing XML", len(toolCalls))

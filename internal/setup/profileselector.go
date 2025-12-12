@@ -483,7 +483,10 @@ func RunProfileSelector(profiles []*Profile, activeProfile string) (selectedProf
 		return "", false, false, fmt.Errorf("error running profile selector: %w", err)
 	}
 
-	result := m.(*ProfileSelector)
+	result, ok := m.(*ProfileSelector)
+	if !ok {
+		return "", false, false, fmt.Errorf("unexpected model type")
+	}
 	switch result.Result() {
 	case ProfileResultSelected:
 		if result.Selected() != nil {

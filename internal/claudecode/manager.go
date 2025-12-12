@@ -331,7 +331,7 @@ func (m *Manager) Launch(opts LaunchOptions) error {
 			cmd = exec.Command("node", nodeArgs...)
 		} else {
 			// Direct binary or symlink
-			cmd = exec.Command(status.Path, args...)
+			cmd = exec.Command(status.Path, args...) //nolint:gosec // G204: status.Path is from our own installation check, not user input
 		}
 	case "npx":
 		// Use npx to run Claude Code
@@ -339,7 +339,7 @@ func (m *Manager) Launch(opts LaunchOptions) error {
 		cmd = exec.Command("npx", npxArgs...)
 	default:
 		// Use installed claude command
-		cmd = exec.Command(status.Path, args...)
+		cmd = exec.Command(status.Path, args...) //nolint:gosec // G204: status.Path is from our own installation check, not user input
 	}
 
 	// Set working directory
@@ -434,7 +434,7 @@ func (m *Manager) CacheStatus(status *InstallStatus) error {
 		return err
 	}
 
-	return os.WriteFile(cachePath, data, 0o644)
+	return os.WriteFile(cachePath, data, 0o644) //nolint:gosec // G306: cache file can be world-readable
 }
 
 // LoadCachedStatus loads installation status from cache.

@@ -1637,12 +1637,12 @@ func generateMessageID() string {
 
 // randomHex generates a random hex string of the specified length.
 func randomHex(n int) string {
-	bytes := make([]byte, n)
-	if _, err := rand.Read(bytes); err != nil {
+	b := make([]byte, n)
+	if _, err := rand.Read(b); err != nil {
 		// Fallback to timestamp-based ID
 		return fmt.Sprintf("%d", time.Now().UnixNano())
 	}
-	return hex.EncodeToString(bytes)
+	return hex.EncodeToString(b)
 }
 
 // mapFinishReason maps OpenAI finish_reason to Anthropic stop_reason.

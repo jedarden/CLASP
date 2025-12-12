@@ -186,8 +186,9 @@ func (s *Server) RunHTTP(ctx context.Context, addr string) error {
 	mux.HandleFunc("/mcp/sse", s.handleSSE)
 
 	server := &http.Server{
-		Addr:    addr,
-		Handler: mux,
+		Addr:              addr,
+		Handler:           mux,
+		ReadHeaderTimeout: 10 * time.Second,
 	}
 
 	log.Printf("[MCP] Starting MCP HTTP server on %s", addr)

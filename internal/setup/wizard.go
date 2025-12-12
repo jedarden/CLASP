@@ -388,7 +388,7 @@ func (w *Wizard) configureClaudeCode() (*ClaudeCodeConfig, error) {
 	w.println("")
 
 	// Default to skip permissions enabled
-	config := &ClaudeCodeConfig{
+	ccConfig := &ClaudeCodeConfig{
 		SkipPermissions: true,
 	}
 
@@ -400,7 +400,7 @@ func (w *Wizard) configureClaudeCode() (*ClaudeCodeConfig, error) {
 
 	choice = strings.TrimSpace(strings.ToLower(choice))
 	if choice == "n" || choice == "no" {
-		config.SkipPermissions = false
+		ccConfig.SkipPermissions = false
 		w.println("")
 		w.println("Automatic permissions disabled.")
 		w.println("Claude Code will ask for confirmation before using tools.")
@@ -409,7 +409,7 @@ func (w *Wizard) configureClaudeCode() (*ClaudeCodeConfig, error) {
 		w.println("Automatic permissions enabled.")
 	}
 
-	return config, nil
+	return ccConfig, nil
 }
 
 func (w *Wizard) promptAPIKey(provider string) (string, error) {

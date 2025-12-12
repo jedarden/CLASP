@@ -291,7 +291,7 @@ func findAvailablePort(startPort int) (int, error) {
 		}
 	}
 	// If all nearby ports are taken, let the OS assign one
-	ln, err := net.Listen("tcp", ":0")
+	ln, err := net.Listen("tcp", ":0") //nolint:gosec // G102: binding to all interfaces is intentional for port discovery
 	if err != nil {
 		return 0, err
 	}
