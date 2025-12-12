@@ -296,7 +296,11 @@ func findAvailablePort(startPort int) (int, error) {
 		return 0, err
 	}
 	defer ln.Close()
-	return ln.Addr().(*net.TCPAddr).Port, nil
+	tcpAddr, ok := ln.Addr().(*net.TCPAddr)
+	if !ok {
+		return 0, fmt.Errorf("unexpected address type")
+	}
+	return tcpAddr.Port, nil
 }
 
 // GetPort returns the actual port the server is running on.

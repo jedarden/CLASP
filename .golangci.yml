@@ -17,7 +17,7 @@ linters:
     - bodyclose
     - noctx
     - prealloc
-    - exportloopref
+    - copyloopvar  # Replaced deprecated exportloopref
     - gosec
     - gocritic
 

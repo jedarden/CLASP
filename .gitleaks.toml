@@ -1,0 +1,22 @@
+# Gitleaks configuration for CLASP
+# https://github.com/gitleaks/gitleaks
+
+title = "CLASP Gitleaks Configuration"
+
+# Allow test data with fake API keys
+[allowlist]
+paths = [
+    '''internal/secrets/secrets_test\.go''',
+    '''tests/.*_test\.go''',
+]
+
+# Patterns that should not trigger alerts  
+regexes = [
+    # Test API keys (obviously fake)
+    '''sk-1234567890abcdefghij''',
+    '''mysecret123456''',
+    '''test-key''',
+]
+
+# Commits to ignore
+commits = []
