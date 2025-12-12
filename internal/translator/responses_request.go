@@ -309,7 +309,7 @@ func transformAssistantMessageToInput(content []models.ContentBlock) []models.Re
 // OpenAI's native "web_search_preview" tool, which provides better search results and
 // automatic citations.
 func transformToolsToResponses(tools []models.AnthropicTool) []models.ResponsesTool {
-	var result []models.ResponsesTool
+	result := make([]models.ResponsesTool, 0, len(tools))
 	strictFalse := false // Pointer to false for explicit strict:false
 	hasWebSearch := false
 

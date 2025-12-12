@@ -262,9 +262,8 @@ func (m *ProfileSelector) updateSelectMode(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // updateRenameMode handles input in rename mode.
 func (m *ProfileSelector) updateRenameMode(msg tea.Msg) (tea.Model, tea.Cmd) {
-	switch msg := msg.(type) {
-	case tea.KeyMsg:
-		switch msg.String() {
+	if keyMsg, ok := msg.(tea.KeyMsg); ok {
+		switch keyMsg.String() {
 		case "ctrl+c", "esc":
 			// Cancel rename
 			m.mode = ModeSelect
@@ -310,9 +309,8 @@ func (m *ProfileSelector) updateRenameMode(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // updateDeleteMode handles input in delete confirmation mode.
 func (m *ProfileSelector) updateDeleteMode(msg tea.Msg) (tea.Model, tea.Cmd) {
-	switch msg := msg.(type) {
-	case tea.KeyMsg:
-		switch msg.String() {
+	if keyMsg, ok := msg.(tea.KeyMsg); ok {
+		switch keyMsg.String() {
 		case "ctrl+c", "esc", "n", "N":
 			// Cancel delete
 			m.mode = ModeSelect

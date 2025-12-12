@@ -262,8 +262,6 @@ func (sp *ResponsesStreamProcessor) handleOutputItemAdded(event *models.Response
 	}
 
 	switch event.Item.Type {
-	case "message":
-		// Will be handled by content deltas
 	case "function_call":
 		// Start tracking the function call
 		// Convert Responses API "fc_xxx" back to "call_xxx" for Anthropic format
@@ -888,18 +886,4 @@ func (sp *ResponsesStreamProcessor) writeSSE(event, data string) error {
 
 	_, err := sp.writer.Write([]byte(output))
 	return err
-}
-
-// escapeJSONString escapes special characters in a string for JSON embedding.
-func escapeJSONString(s string) string {
-	// Use json.Marshal to properly escape the string, then strip the quotes
-	data, err := json.Marshal(s)
-	if err != nil {
-		return s
-	}
-	// Remove surrounding quotes
-	if len(data) >= 2 {
-		return string(data[1 : len(data)-1])
-	}
-	return s
 }
