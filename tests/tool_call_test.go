@@ -803,9 +803,8 @@ func TestMultiTurnToolConversation(t *testing.T) {
 			assistantCount++
 		case "tool":
 			toolCount++
-		case "system":
-			// Identity filter adds system message
 		}
+		// Note: "system" role messages from identity filter are intentionally ignored
 	}
 
 	// Verify correct number of each role
