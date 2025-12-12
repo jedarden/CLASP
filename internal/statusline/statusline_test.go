@@ -57,7 +57,7 @@ func TestIsProcessAlive_ZombieDetection(t *testing.T) {
 
 	// Verify the stat file is readable and parseable
 	content := string(data)
-	if len(content) == 0 {
+	if content == "" {
 		t.Fatal("Empty stat file")
 	}
 

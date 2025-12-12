@@ -567,7 +567,8 @@ func (w *Wizard) fetchModels(provider, apiKey, baseURL, azureEndpoint string) ([
 		return nil, fmt.Errorf("unsupported provider: %s", provider)
 	}
 
-	req, err := http.NewRequest("GET", url, http.NoBody)
+	ctx := context.Background()
+	req, err := http.NewRequestWithContext(ctx, "GET", url, http.NoBody)
 	if err != nil {
 		return nil, err
 	}

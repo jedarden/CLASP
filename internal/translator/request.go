@@ -392,9 +392,7 @@ func transformMessage(msg models.AnthropicMessage) ([]models.OpenAIMessage, erro
 		}
 
 		// Add tool results (these become "tool" role messages in OpenAI format)
-		for _, tr := range toolResults {
-			result = append(result, tr)
-		}
+		result = append(result, toolResults...)
 	case "assistant":
 		assistantMsg := transformAssistantMessage(content)
 		result = append(result, assistantMsg)

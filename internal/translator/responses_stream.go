@@ -328,7 +328,7 @@ func (sp *ResponsesStreamProcessor) handleOutputItemAdded(event *models.Response
 		if event.Item.Action != nil {
 			query = event.Item.Action.Query
 		}
-		searchInput := fmt.Sprintf(`{"query":"%s"}`, escapeJSONString(query))
+		searchInput := fmt.Sprintf(`{"query":%q}`, query)
 		fcState.arguments = searchInput
 		if err := sp.emitContentBlockDelta(fcState.blockIndex, "input_json_delta", "", searchInput); err != nil {
 			return err

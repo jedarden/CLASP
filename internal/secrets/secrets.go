@@ -9,35 +9,20 @@ import (
 	"strings"
 )
 
-// Common API key patterns for detection and masking
-var (
-	// apiKeyPatterns matches common API key formats
-	apiKeyPatterns = []*regexp.Regexp{
-		regexp.MustCompile(`sk-[a-zA-Z0-9]{20,}`),                   // OpenAI/Anthropic style
-		regexp.MustCompile(`sk-or-[a-zA-Z0-9-]{20,}`),               // OpenRouter style
-		regexp.MustCompile(`sk-ant-[a-zA-Z0-9-]{20,}`),              // Anthropic style
-		regexp.MustCompile(`Bearer\s+[a-zA-Z0-9._-]+`),              // Bearer tokens
-		regexp.MustCompile(`"api[_-]?key"\s*:\s*"[^"]+"`),           // JSON api_key fields
-		regexp.MustCompile(`"authorization"\s*:\s*"[^"]+"`),         // JSON authorization fields
-		regexp.MustCompile(`"x-api-key"\s*:\s*"[^"]+"`),             // JSON x-api-key fields
-		regexp.MustCompile(`(?i)api[_-]?key[=:]\s*[a-zA-Z0-9._-]+`), // Generic key patterns
-	}
-
-	// Sensitive field names that should be masked in JSON
-	sensitiveFields = []string{
-		"api_key",
-		"apiKey",
-		"api-key",
-		"authorization",
-		"Authorization",
-		"x-api-key",
-		"X-Api-Key",
-		"secret",
-		"password",
-		"token",
-		"bearer",
-	}
-)
+// Sensitive field names that should be masked in JSON
+var sensitiveFields = []string{
+	"api_key",
+	"apiKey",
+	"api-key",
+	"authorization",
+	"Authorization",
+	"x-api-key",
+	"X-Api-Key",
+	"secret",
+	"password",
+	"token",
+	"bearer",
+}
 
 // MaskAPIKey masks an API key for safe display.
 // Shows only the first 4 and last 4 characters.

@@ -710,7 +710,7 @@ func TestTransformRequestToResponses_ToolResultOnlyMessage(t *testing.T) {
 	// 3. function_call_output item (NO empty user message before this!)
 	var foundEmptyUserMessage bool
 	var foundFCOutput bool
-	var inputTypes []string
+	inputTypes := make([]string, 0, len(result.Input))
 
 	for _, input := range result.Input {
 		inputTypes = append(inputTypes, input.Type)

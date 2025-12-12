@@ -674,7 +674,7 @@ func (sp *StreamProcessor) emitExtractedToolCall(tc extractedToolCall) error {
 	toolID := fmt.Sprintf("toolu_grok_%d", sp.xmlToolCallID)
 
 	// Calculate block index
-	blockIndex := sp.textBlockIndex
+	var blockIndex int
 	if sp.textStarted {
 		blockIndex = sp.textBlockIndex + 1 + len(sp.activeToolCalls)
 	} else {

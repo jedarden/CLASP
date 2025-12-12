@@ -1,6 +1,7 @@
 package tests
 
 import (
+	"bytes"
 	"context"
 	"sync"
 	"sync/atomic"
@@ -45,7 +46,7 @@ func TestRequestQueue_EnqueueDequeue(t *testing.T) {
 			t.Errorf("Failed to dequeue: %v", err)
 			return
 		}
-		if string(req.Body) != string(body) {
+		if !bytes.Equal(req.Body, body) {
 			t.Errorf("Body mismatch: expected %s, got %s", body, req.Body)
 		}
 		// Send result

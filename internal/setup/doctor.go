@@ -2,6 +2,7 @@
 package setup
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -109,7 +110,7 @@ func (d *Doctor) checkNodeVersion() {
 	if strings.HasPrefix(version, "v") {
 		majorStr := strings.Split(version[1:], ".")[0]
 		var major int
-		fmt.Sscanf(majorStr, "%d", &major)
+		_, _ = fmt.Sscanf(majorStr, "%d", &major)
 		if major >= 18 {
 			d.addResult("Node.js", "ok", fmt.Sprintf("Node.js %s installed", version), "")
 		} else {
@@ -257,8 +258,15 @@ func (d *Doctor) checkProviderConnectivity() {
 		{"OpenRouter API", "https://openrouter.ai"},
 	}
 
+	ctx := context.Background()
 	for _, ep := range endpoints {
-		req, _ := http.NewRequest("HEAD", ep.url, http.NoBody)
+		req, err := http.NewRequestWithContext(ctx, "HEAD", ep.url, http.NoBody)
+		if err != nil {
+			d.addResult(fmt.Sprintf("Network (%s)", ep.name), "warning",
+				fmt.Sprintf("Cannot create request for %s: %v", ep.name, err),
+				"Check your internet connection and firewall settings")
+			continue
+		}
 		resp, err := client.Do(req)
 		if err != nil {
 			d.addResult(fmt.Sprintf("Network (%s)", ep.name), "warning",

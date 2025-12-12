@@ -376,7 +376,7 @@ func (s *Server) updateStatusPeriodically() {
 
 			// Update cache stats
 			if s.cache != nil {
-				s.statusManager.UpdateCacheStats(true, cacheHitRate)
+				_ = s.statusManager.UpdateCacheStats(true, cacheHitRate)
 			}
 		}
 	}

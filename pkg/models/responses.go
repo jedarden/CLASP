@@ -124,7 +124,7 @@ type ResponsesResponse struct {
 	Object    string            `json:"object"` // "response"
 	CreatedAt int64             `json:"created_at"`
 	Model     string            `json:"model"`
-	Status    string            `json:"status"` // "completed", "in_progress", "failed", "cancelled"
+	Status    string            `json:"status"` // "completed", "in_progress", "failed", "canceled"
 	Output    []ResponsesItem   `json:"output"`
 	Usage     *ResponsesUsage   `json:"usage,omitempty"`
 	Metadata  map[string]string `json:"metadata,omitempty"`

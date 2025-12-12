@@ -111,7 +111,7 @@ func GetSupportedChatCompletionsModels() []string {
 // FilterChatCompletionsModels filters a list of models to only include
 // those that work with the Chat Completions API.
 func FilterChatCompletionsModels(models []string) []string {
-	var result []string
+	result := make([]string, 0, len(models))
 	for _, m := range models {
 		if !RequiresResponsesAPI(m) {
 			result = append(result, m)

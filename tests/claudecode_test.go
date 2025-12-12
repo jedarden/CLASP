@@ -178,10 +178,6 @@ func TestLaunchOptionsSkipPermissions(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			opts := claudecode.LaunchOptions{
-				WorkingDir:      "/tmp/test",
-				Args:            []string{"--resume"},
-				ProxyURL:        "http://localhost:8080",
-				Interactive:     true,
 				SkipPermissions: tt.skipPermissions,
 			}
 
@@ -197,8 +193,6 @@ func TestLaunchOptionsArgsWithSkipPermissions(t *testing.T) {
 	// should be prepended to the args list when launching
 	opts := claudecode.LaunchOptions{
 		Args:            []string{"--resume", "--no-color"},
-		ProxyURL:        "http://localhost:8080",
-		Interactive:     true,
 		SkipPermissions: true,
 	}
 
@@ -211,8 +205,7 @@ func TestLaunchOptionsArgsWithSkipPermissions(t *testing.T) {
 		t.Errorf("Expected 2 args, got %d", len(opts.Args))
 	}
 
-	t.Logf("SkipPermissions opts validated: Args=%v, ProxyURL=%s, Interactive=%v",
-		opts.Args, opts.ProxyURL, opts.Interactive)
+	t.Logf("SkipPermissions opts validated: Args=%v", opts.Args)
 }
 
 func TestInstallOptions(t *testing.T) {
