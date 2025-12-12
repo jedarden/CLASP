@@ -719,7 +719,7 @@ func (w *Wizard) selectModel(provider string, models []string) (string, error) {
 }
 
 // selectModelWithTier selects a model with optional tier context.
-// Returns ErrCancelled if the user cancels the selection.
+// Returns ErrCanceled if the user cancels the selection.
 func (w *Wizard) selectModelWithTier(provider string, models []string, tier string) (string, error) {
 	// If TTY available and we have models, use fuzzy picker
 	if IsTTY() && len(models) > 0 {
@@ -731,11 +731,11 @@ func (w *Wizard) selectModelWithTier(provider string, models []string, tier stri
 
 		if len(modelInfos) > 0 {
 			selected, err := RunModelPicker(modelInfos, provider, tier)
-			if err == ErrCancelled {
-				// User cancelled - propagate the cancellation
+			if err == ErrCanceled {
+				// User canceled - propagate the cancellation
 				w.println("")
-				w.println("Setup cancelled. Run 'clasp' to try again.")
-				return "", ErrCancelled
+				w.println("Setup canceled. Run 'clasp' to try again.")
+				return "", ErrCanceled
 			}
 			if err != nil {
 				// Real error - fall back to manual input

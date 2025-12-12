@@ -546,12 +546,12 @@ func MergeModelLists(fetched []string, known []ModelInfo) []ModelInfo {
 	return result
 }
 
-// ErrCancelled is returned when the user cancels the model picker (Ctrl+C or Esc).
-var ErrCancelled = fmt.Errorf("setup cancelled")
+// ErrCanceled is returned when the user cancels the model picker (Ctrl+C or Esc).
+var ErrCanceled = fmt.Errorf("setup canceled")
 
 // RunModelPicker runs the Bubble Tea model picker and returns the selected model.
-// Returns ErrCancelled if the user presses Ctrl+C or Esc to cancel.
-// Returns empty string with nil error only if no models were selected but not cancelled.
+// Returns ErrCanceled if the user presses Ctrl+C or Esc to cancel.
+// Returns empty string with nil error only if no models were selected but not canceled.
 func RunModelPicker(models []ModelInfo, provider, tier string) (string, error) {
 	if len(models) == 0 {
 		return "", fmt.Errorf("no models available")
@@ -567,7 +567,7 @@ func RunModelPicker(models []ModelInfo, provider, tier string) (string, error) {
 
 	result := m.(*ModelPicker)
 	if result.Cancelled() {
-		return "", ErrCancelled
+		return "", ErrCanceled
 	}
 	if result.Selected() == nil {
 		return "", nil

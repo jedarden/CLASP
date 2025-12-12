@@ -148,9 +148,9 @@ func main() {
 
 		if setup.IsTTY() {
 			// Interactive mode - show selector (works with 0+ profiles)
-			profileName, createNew, cancelled := setup.SelectOrCreateProfile()
-			if cancelled {
-				fmt.Println("\n[CLASP] Cancelled.")
+			profileName, createNew, canceled := setup.SelectOrCreateProfile()
+			if canceled {
+				fmt.Println("\n[CLASP] Canceled.")
 				os.Exit(0)
 			}
 			if createNew {
@@ -158,8 +158,8 @@ func main() {
 				wizard := setup.NewWizard()
 				newProfile, err := wizard.RunProfileCreate("")
 				if err != nil {
-					if err == setup.ErrCancelled {
-						fmt.Println("\n[CLASP] Setup cancelled.")
+					if err == setup.ErrCanceled {
+						fmt.Println("\n[CLASP] Setup canceled.")
 						os.Exit(0)
 					}
 					log.Fatalf("[CLASP] Failed to create profile: %v", err)
@@ -343,8 +343,8 @@ func main() {
 
 	// Enable debug file logging if debug is enabled (from either -debug flag or CLASP_DEBUG env var)
 	if cfg.Debug {
-		if err := logging.EnableDebugLogging(); err != nil {
-			log.Printf("[CLASP] Warning: Could not enable debug file logging: %v", err)
+		if debugErr := logging.EnableDebugLogging(); debugErr != nil {
+			log.Printf("[CLASP] Warning: Could not enable debug file logging: %v", debugErr)
 		} else {
 			log.Printf("[CLASP] Debug logging enabled: %s", logging.GetDebugLogPath())
 		}
@@ -525,7 +525,8 @@ func main() {
 		}
 
 		fmt.Println("[CLASP] Session ended")
-		os.Exit(0)
+		logging.Close()
+		return
 	}
 
 	// Standard proxy-only mode
@@ -1189,7 +1190,7 @@ Debug logging captures full request/response payloads. Enable it with:
 }
 
 // showLogFile displays the last 50 lines of a log file.
-func showLogFile(logPath string, logType string) {
+func showLogFile(logPath, logType string) {
 	// Check if log file exists
 	if _, err := os.Stat(logPath); os.IsNotExist(err) {
 		fmt.Printf("No %s logs found yet.\n", strings.ToLower(logType))
@@ -1226,7 +1227,7 @@ func showLogFile(logPath string, logType string) {
 }
 
 // tailLogFile follows a log file and prints new content (like tail -f).
-func tailLogFile(logPath string, logType string) {
+func tailLogFile(logPath, logType string) {
 	// Check if log file exists
 	if _, err := os.Stat(logPath); os.IsNotExist(err) {
 		fmt.Printf("No %s logs found yet. Waiting for log file to be created...\n", strings.ToLower(logType))
@@ -1299,7 +1300,7 @@ func tailLogFile(logPath string, logType string) {
 				continue
 			}
 
-			f.Seek(lastPos, 0)
+			_, _ = f.Seek(lastPos, 0)
 			buf := make([]byte, info.Size()-lastPos)
 			n, err := f.Read(buf)
 			f.Close()
@@ -1321,14 +1322,12 @@ func listAvailableModels() error {
 	}
 	for _, path := range envPaths {
 		if _, err := os.Stat(path); err == nil {
-			godotenv.Load(path)
+			_ = godotenv.Load(path)
 		}
 	}
 
-	// Try to load saved config
-	if err := setup.ApplyConfigToEnv(); err != nil {
-		// No saved config, try env
-	}
+	// Try to load saved config (ignore error if no saved config)
+	_ = setup.ApplyConfigToEnv()
 
 	// Load configuration
 	cfg, err := config.LoadFromEnv()
@@ -1413,17 +1412,23 @@ func handleMCPCommand(args []string) {
 	switch transport {
 	case "stdio":
 		if err := server.Run(ctx); err != nil && err != context.Canceled {
-			log.Fatalf("[MCP] Server error: %v", err)
+			cancel()
+			log.Printf("[MCP] Server error: %v", err)
+			os.Exit(1)
 		}
 	case "http":
 		if httpAddr == "" {
 			httpAddr = ":8081"
 		}
 		if err := server.RunHTTP(ctx, httpAddr); err != nil && err != context.Canceled {
-			log.Fatalf("[MCP] HTTP server error: %v", err)
+			cancel()
+			log.Printf("[MCP] HTTP server error: %v", err)
+			os.Exit(1)
 		}
 	default:
-		log.Fatalf("[MCP] Unknown transport: %s (use 'stdio' or 'http')", transport)
+		cancel()
+		log.Printf("[MCP] Unknown transport: %s (use 'stdio' or 'http')", transport)
+		os.Exit(1)
 	}
 }
 
@@ -1543,12 +1548,12 @@ func handleUpdateCommand(args []string) {
 		fmt.Print("Do you want to update now? [y/N]: ")
 
 		var response string
-		fmt.Scanln(&response)
+		_, _ = fmt.Scanln(&response)
 		response = strings.ToLower(strings.TrimSpace(response))
 
 		if response != "y" && response != "yes" {
 			fmt.Println("")
-			fmt.Println("Update cancelled.")
+			fmt.Println("Update canceled.")
 			fmt.Println("")
 			return
 		}
