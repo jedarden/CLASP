@@ -53,6 +53,8 @@ linters-settings:
     disabled-checks:
       - hugeParam
       - rangeValCopy
+      - exitAfterDefer  # Intentional pattern for CLI error handling
+      - unnamedResult   # Not always necessary for simple returns
 
 issues:
   exclude-rules:

@@ -30,19 +30,19 @@ type InstallOptions struct {
 
 // InstallStatus represents the current Claude Code installation state.
 type InstallStatus struct {
-	Installed       bool   `json:"installed"`
-	Version         string `json:"version"`
-	Path            string `json:"path"`
-	NeedsUpdate     bool   `json:"needs_update"`
-	LatestVersion   string `json:"latest_version,omitempty"`
-	LastChecked     int64  `json:"last_checked"`
-	InstallMethod   string `json:"install_method"` // npm, npx, binary
+	Installed     bool   `json:"installed"`
+	Version       string `json:"version"`
+	Path          string `json:"path"`
+	NeedsUpdate   bool   `json:"needs_update"`
+	LatestVersion string `json:"latest_version,omitempty"`
+	LastChecked   int64  `json:"last_checked"`
+	InstallMethod string `json:"install_method"` // npm, npx, binary
 }
 
 // NewManager creates a new Claude Code manager.
 func NewManager(proxyURL string, verbose bool) *Manager {
 	cacheDir := filepath.Join(os.Getenv("HOME"), ".clasp", "cache")
-	os.MkdirAll(cacheDir, 0755)
+	_ = os.MkdirAll(cacheDir, 0755) // Ignore error - best effort
 
 	return &Manager{
 		cacheDir: cacheDir,
@@ -71,8 +71,8 @@ func (m *Manager) CheckInstallation() (*InstallStatus, error) {
 		status.InstallMethod = "bundled"
 
 		// Get version
-		version, err := m.getClaudeVersion(bundledPath)
-		if err == nil {
+		version, versionErr := m.getClaudeVersion(bundledPath)
+		if versionErr == nil {
 			status.Version = version
 		}
 
@@ -84,15 +84,15 @@ func (m *Manager) CheckInstallation() (*InstallStatus, error) {
 	}
 
 	// Check for global claude command
-	claudePath, err := exec.LookPath("claude")
-	if err == nil {
+	claudePath, lookErr := exec.LookPath("claude")
+	if lookErr == nil {
 		status.Installed = true
 		status.Path = claudePath
 		status.InstallMethod = "npm"
 
 		// Get version
-		version, err := m.getClaudeVersion(claudePath)
-		if err == nil {
+		version, versionErr := m.getClaudeVersion(claudePath)
+		if versionErr == nil {
 			status.Version = version
 		}
 
@@ -262,8 +262,8 @@ func (m *Manager) EnsureInstalled() (*InstallStatus, error) {
 
 	// If not installed, install it
 	if !status.Installed {
-		if err := m.Install(); err != nil {
-			return nil, err
+		if installErr := m.Install(); installErr != nil {
+			return nil, installErr
 		}
 
 		// Re-check installation
@@ -275,8 +275,8 @@ func (m *Manager) EnsureInstalled() (*InstallStatus, error) {
 
 	// Check for updates if force update is requested
 	if m.installOpts.ForceUpdate && status.Installed {
-		if err := m.Update(); err != nil {
-			fmt.Printf("[CLASP] Warning: Failed to update Claude Code: %v\n", err)
+		if updateErr := m.Update(); updateErr != nil {
+			fmt.Printf("[CLASP] Warning: Failed to update Claude Code: %v\n", updateErr)
 			// Continue with existing installation
 		}
 
@@ -394,7 +394,7 @@ func clearTerminal() {
 	case "windows":
 		cmd := exec.Command("cmd", "/c", "cls")
 		cmd.Stdout = os.Stdout
-		cmd.Run()
+		_ = cmd.Run() // Ignore error - best effort
 	default:
 		// ANSI escape sequences work on macOS, Linux, and most terminals
 		// \033[H - Move cursor to home position (0,0)
@@ -475,15 +475,15 @@ func (m *Manager) CheckForUpdates(currentVersion string) (bool, string, error) {
 
 // ProxyLaunchConfig holds configuration for launching with the proxy.
 type ProxyLaunchConfig struct {
-	Port             int
-	Provider         string
-	Model            string
-	AutoInstall      bool
-	ForceUpdate      bool
-	Verbose          bool
-	ClaudeArgs       []string
-	WorkingDir       string
-	BackgroundProxy  bool // Run proxy in background
+	Port            int
+	Provider        string
+	Model           string
+	AutoInstall     bool
+	ForceUpdate     bool
+	Verbose         bool
+	ClaudeArgs      []string
+	WorkingDir      string
+	BackgroundProxy bool // Run proxy in background
 }
 
 // RunWithClaudeCode starts the CLASP proxy and launches Claude Code in one operation.
@@ -507,8 +507,8 @@ func RunWithClaudeCode(cfg ProxyLaunchConfig) error {
 
 	fmt.Printf("[CLASP] Claude Code %s ready\n", status.Version)
 
-	// Cache the status
-	manager.CacheStatus(status)
+	// Cache the status (ignore error - best effort)
+	_ = manager.CacheStatus(status)
 
 	// Check for updates (non-blocking, just informational)
 	go func() {
