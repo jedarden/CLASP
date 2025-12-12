@@ -78,12 +78,8 @@ func (p *GeminiProvider) GetStreamEndpointURL(model string) string {
 // Maps Claude model names to appropriate Gemini equivalents.
 func (p *GeminiProvider) TransformModelID(modelID string) string {
 	// Strip any provider prefix
-	if strings.HasPrefix(modelID, "gemini/") {
-		modelID = strings.TrimPrefix(modelID, "gemini/")
-	}
-	if strings.HasPrefix(modelID, "google/") {
-		modelID = strings.TrimPrefix(modelID, "google/")
-	}
+	modelID = strings.TrimPrefix(modelID, "gemini/")
+	modelID = strings.TrimPrefix(modelID, "google/")
 
 	// Map Claude model names to Gemini equivalents
 	modelLower := strings.ToLower(modelID)
@@ -142,10 +138,17 @@ func IsGeminiAvailable(apiKey string) bool {
 		return false
 	}
 
-	client := &http.Client{Timeout: 5 * time.Second}
-	url := fmt.Sprintf("%s/models?key=%s", DefaultGeminiURL, apiKey)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 
-	resp, err := client.Get(url)
+	url := fmt.Sprintf("%s/models?key=%s", DefaultGeminiURL, apiKey)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, http.NoBody)
+	if err != nil {
+		return false
+	}
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
 	if err != nil {
 		return false
 	}
@@ -177,10 +180,17 @@ func ListGeminiModels(apiKey string) ([]string, error) {
 		return nil, fmt.Errorf("API key required")
 	}
 
-	client := &http.Client{Timeout: 10 * time.Second}
-	url := fmt.Sprintf("%s/models?key=%s", DefaultGeminiURL, apiKey)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 
-	resp, err := client.Get(url)
+	url := fmt.Sprintf("%s/models?key=%s", DefaultGeminiURL, apiKey)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, http.NoBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to Gemini API: %w", err)
 	}
@@ -201,10 +211,7 @@ func ListGeminiModels(apiKey string) ([]string, error) {
 		for _, method := range m.SupportedGenerationMethods {
 			if method == "generateContent" {
 				// Extract just the model name from "models/gemini-xxx"
-				name := m.Name
-				if strings.HasPrefix(name, "models/") {
-					name = strings.TrimPrefix(name, "models/")
-				}
+				name := strings.TrimPrefix(m.Name, "models/")
 				models = append(models, name)
 				break
 			}
@@ -234,12 +241,12 @@ func WaitForGemini(ctx context.Context, apiKey string, timeout time.Duration) er
 // RecommendedGeminiModels returns recommended models for different use cases.
 func RecommendedGeminiModels() map[string]string {
 	return map[string]string{
-		"gemini-2.0-flash-exp":           "Latest flash model - fast and capable (recommended)",
-		"gemini-2.0-flash-thinking-exp":  "Enhanced reasoning - best for complex tasks",
-		"gemini-1.5-pro":                 "Production-ready pro model",
-		"gemini-1.5-flash":               "Fast and efficient for high-volume tasks",
-		"gemini-1.5-flash-8b":            "Lightweight 8B model for simple tasks",
-		"gemini-exp-1206":                "Experimental model with latest features",
+		"gemini-2.0-flash-exp":          "Latest flash model - fast and capable (recommended)",
+		"gemini-2.0-flash-thinking-exp": "Enhanced reasoning - best for complex tasks",
+		"gemini-1.5-pro":                "Production-ready pro model",
+		"gemini-1.5-flash":              "Fast and efficient for high-volume tasks",
+		"gemini-1.5-flash-8b":           "Lightweight 8B model for simple tasks",
+		"gemini-exp-1206":               "Experimental model with latest features",
 	}
 }
 

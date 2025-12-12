@@ -109,16 +109,25 @@ func IsOllamaRunning(baseURL string) bool {
 	baseURL = strings.TrimSuffix(baseURL, "/v1")
 	baseURL = strings.TrimSuffix(baseURL, "/")
 
-	// Quick connection check with timeout
-	client := &http.Client{
-		Timeout: 2 * time.Second,
-	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	client := &http.Client{}
 
 	// Try the Ollama-specific endpoint first
-	resp, err := client.Get(baseURL + "/api/tags")
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL+"/api/tags", http.NoBody)
+	if err != nil {
+		return false
+	}
+
+	resp, err := client.Do(req)
 	if err != nil {
 		// Try OpenAI-compatible endpoint as fallback
-		resp, err = client.Get(baseURL + "/v1/models")
+		req, err = http.NewRequestWithContext(ctx, http.MethodGet, baseURL+"/v1/models", http.NoBody)
+		if err != nil {
+			return false
+		}
+		resp, err = client.Do(req)
 		if err != nil {
 			return false
 		}

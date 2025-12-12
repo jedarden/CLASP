@@ -128,13 +128,16 @@ func IsDeepSeekAvailable(apiKey string) bool {
 		return false
 	}
 
-	client := &http.Client{Timeout: 5 * time.Second}
-	req, err := http.NewRequest("GET", DefaultDeepSeekURL+"/v1/models", nil)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, DefaultDeepSeekURL+"/v1/models", http.NoBody)
 	if err != nil {
 		return false
 	}
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 
+	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
 		return false
@@ -164,13 +167,16 @@ func ListDeepSeekModels(apiKey string) ([]string, error) {
 		return nil, fmt.Errorf("API key required")
 	}
 
-	client := &http.Client{Timeout: 10 * time.Second}
-	req, err := http.NewRequest("GET", DefaultDeepSeekURL+"/v1/models", nil)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, DefaultDeepSeekURL+"/v1/models", http.NoBody)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 
+	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to DeepSeek API: %w", err)
