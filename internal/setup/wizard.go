@@ -190,7 +190,7 @@ func (w *Wizard) Run() (*config.Config, error) {
 					w.println("Skipping validation. Make sure your API key is correct before use.")
 					validationFailed = true
 				case "3":
-					return nil, fmt.Errorf("setup cancelled by user")
+					return nil, fmt.Errorf("setup canceled by user")
 				default:
 					// Default to retry
 					apiKey, _ = w.promptAPIKey(provider)
@@ -935,7 +935,7 @@ func (w *Wizard) RunProfileCreate(profileName string) (*Profile, error) {
 		}
 		confirm = strings.TrimSpace(strings.ToLower(confirm))
 		if confirm != "y" && confirm != "yes" {
-			return nil, fmt.Errorf("profile creation cancelled")
+			return nil, fmt.Errorf("profile creation canceled")
 		}
 	}
 
@@ -1284,7 +1284,7 @@ func (w *Wizard) RunProfileDelete(name string) error {
 	}
 	confirm = strings.TrimSpace(strings.ToLower(confirm))
 	if confirm != "y" && confirm != "yes" {
-		w.println("Deletion cancelled.")
+		w.println("Deletion canceled.")
 		return nil
 	}
 

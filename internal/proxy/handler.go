@@ -788,7 +788,7 @@ func (h *Handler) doRequestWithRetry(ctx interface{ Done() <-chan struct{} }, re
 
 			select {
 			case <-ctx.Done():
-				return nil, fmt.Errorf("context cancelled")
+				return nil, fmt.Errorf("context canceled")
 			case <-time.After(delay):
 			}
 		}

@@ -457,7 +457,7 @@ func (m *ProfileSelector) viewDeleteMode() string {
 	return b.String()
 }
 
-// Selected returns the selected profile, or nil if cancelled or creating new.
+// Selected returns the selected profile, or nil if canceled or creating new.
 func (m *ProfileSelector) Selected() *Profile {
 	return m.selected
 }

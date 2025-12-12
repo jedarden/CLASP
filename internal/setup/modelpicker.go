@@ -335,7 +335,7 @@ func (m *ModelPicker) View() string {
 	return b.String()
 }
 
-// Selected returns the selected model, or nil if cancelled.
+// Selected returns the selected model, or nil if canceled.
 func (m *ModelPicker) Selected() *ModelInfo {
 	return m.selected
 }

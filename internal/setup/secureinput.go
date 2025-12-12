@@ -17,7 +17,7 @@ type SecureInput struct {
 	placeholder string
 	value       string
 	submitted   bool
-	cancelled   bool
+	canceled    bool
 	showLast4   bool     // Show last 4 characters
 	err         error
 }
@@ -68,7 +68,7 @@ func (s *SecureInput) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "ctrl+c":
-			s.cancelled = true
+			s.canceled = true
 			return s, tea.Quit
 
 		case "enter":
@@ -77,7 +77,7 @@ func (s *SecureInput) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return s, tea.Quit
 
 		case "esc":
-			s.cancelled = true
+			s.canceled = true
 			return s, tea.Quit
 		}
 	}
@@ -167,13 +167,13 @@ func (s *SecureInput) Submitted() bool {
 	return s.submitted
 }
 
-// Cancelled returns true if the user pressed Esc or Ctrl+C.
-func (s *SecureInput) Cancelled() bool {
-	return s.cancelled
+// Canceled returns true if the user pressed Esc or Ctrl+C.
+func (s *SecureInput) Canceled() bool {
+	return s.canceled
 }
 
 // RunSecureInput runs the secure input and returns the entered value.
-// Returns empty string if cancelled.
+// Returns empty string if canceled.
 func RunSecureInput(prompt, placeholder string, showLast4 bool) (string, error) {
 	input := NewSecureInput(prompt, placeholder, showLast4)
 
@@ -184,7 +184,7 @@ func RunSecureInput(prompt, placeholder string, showLast4 bool) (string, error) 
 	}
 
 	result := m.(*SecureInput)
-	if result.Cancelled() {
+	if result.Canceled() {
 		return "", nil
 	}
 
