@@ -59,18 +59,18 @@ type ModelCost struct {
 // These are approximate prices as of late 2024 and should be configurable
 var defaultPricing = map[string]ModelPricing{
 	// OpenAI models
-	"gpt-4o":                 {InputPer1M: 250, OutputPer1M: 1000},      // $2.50/$10.00
-	"gpt-4o-mini":            {InputPer1M: 15, OutputPer1M: 60},         // $0.15/$0.60
-	"gpt-4-turbo":            {InputPer1M: 1000, OutputPer1M: 3000},     // $10.00/$30.00
-	"gpt-4":                  {InputPer1M: 3000, OutputPer1M: 6000},     // $30.00/$60.00
-	"gpt-3.5-turbo":          {InputPer1M: 50, OutputPer1M: 150},        // $0.50/$1.50
-	"o1-preview":             {InputPer1M: 1500, OutputPer1M: 6000},     // $15.00/$60.00
-	"o1-mini":                {InputPer1M: 300, OutputPer1M: 1200},      // $3.00/$12.00
+	"gpt-4o":        {InputPer1M: 250, OutputPer1M: 1000},  // $2.50/$10.00
+	"gpt-4o-mini":   {InputPer1M: 15, OutputPer1M: 60},     // $0.15/$0.60
+	"gpt-4-turbo":   {InputPer1M: 1000, OutputPer1M: 3000}, // $10.00/$30.00
+	"gpt-4":         {InputPer1M: 3000, OutputPer1M: 6000}, // $30.00/$60.00
+	"gpt-3.5-turbo": {InputPer1M: 50, OutputPer1M: 150},    // $0.50/$1.50
+	"o1-preview":    {InputPer1M: 1500, OutputPer1M: 6000}, // $15.00/$60.00
+	"o1-mini":       {InputPer1M: 300, OutputPer1M: 1200},  // $3.00/$12.00
 
 	// Anthropic models (via passthrough)
-	"claude-3-opus-20240229":   {InputPer1M: 1500, OutputPer1M: 7500},   // $15.00/$75.00
-	"claude-3-sonnet-20240229": {InputPer1M: 300, OutputPer1M: 1500},    // $3.00/$15.00
-	"claude-3-haiku-20240307":  {InputPer1M: 25, OutputPer1M: 125},      // $0.25/$1.25
+	"claude-3-opus-20240229":     {InputPer1M: 1500, OutputPer1M: 7500}, // $15.00/$75.00
+	"claude-3-sonnet-20240229":   {InputPer1M: 300, OutputPer1M: 1500},  // $3.00/$15.00
+	"claude-3-haiku-20240307":    {InputPer1M: 25, OutputPer1M: 125},    // $0.25/$1.25
 	"claude-3-5-sonnet-20241022": {InputPer1M: 300, OutputPer1M: 1500},  // $3.00/$15.00
 	"claude-3-5-haiku-20241022":  {InputPer1M: 100, OutputPer1M: 500},   // $1.00/$5.00
 

@@ -170,8 +170,9 @@ func (rc *RequestCache) Set(key string, response *models.AnthropicResponse) {
 // removeElement removes an element from both the cache map and LRU list.
 func (rc *RequestCache) removeElement(elem *list.Element) {
 	rc.lru.Remove(elem)
-	kv := elem.Value.(*lruEntry)
-	delete(rc.cache, kv.key)
+	if kv, ok := elem.Value.(*lruEntry); ok {
+		delete(rc.cache, kv.key)
+	}
 }
 
 // removeOldest removes the oldest entry from the cache.

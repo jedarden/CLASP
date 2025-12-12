@@ -3,6 +3,7 @@ package proxy
 
 import (
 	"bytes"
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -409,7 +410,7 @@ func (h *Handler) checkCache(w http.ResponseWriter, req *models.AnthropicRequest
 		atomic.AddInt64(&h.metrics.SuccessRequests, 1)
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("X-CLASP-Cache", "HIT")
-		json.NewEncoder(w).Encode(cachedResp)
+		_ = json.NewEncoder(w).Encode(cachedResp)
 		return "HIT", true
 	}
 
@@ -579,7 +580,7 @@ func (h *Handler) handleUpstreamError(w http.ResponseWriter, resp *http.Response
 	log.Printf("[CLASP] Upstream error (%d): %s", resp.StatusCode, maskedBody)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(resp.StatusCode)
-	w.Write(body)
+	_, _ = w.Write(body)
 }
 
 // handleResponse routes the response to the appropriate handler.
@@ -645,7 +646,7 @@ func (h *Handler) handlePassthroughRequest(w http.ResponseWriter, r *http.Reques
 		log.Printf("[CLASP] Anthropic API error (%d): %s", resp.StatusCode, maskedBody)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(resp.StatusCode)
-		w.Write(body) // Send original response to client
+		_, _ = w.Write(body) // Send original response to client
 		return
 	}
 
@@ -744,7 +745,7 @@ func (h *Handler) handlePassthroughNonStreaming(w http.ResponseWriter, resp *htt
 	// Write response
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("X-CLASP-Cache", "MISS")
-	w.Write(body)
+	_, _ = w.Write(body)
 }
 
 // doRequestWithRetry executes the upstream request with exponential backoff retry.
@@ -754,8 +755,8 @@ func (h *Handler) doRequestWithRetry(ctx interface{ Done() <-chan struct{} }, re
 
 	var lastErr error
 	for attempt := 0; attempt < maxRetries; attempt++ {
-		// Create fresh request for each attempt
-		upstreamReq, err := http.NewRequest(http.MethodPost, p.GetEndpointURL(), bytes.NewReader(reqBody))
+		// Create fresh request for each attempt with context
+		upstreamReq, err := http.NewRequestWithContext(context.Background(), http.MethodPost, p.GetEndpointURL(), bytes.NewReader(reqBody))
 		if err != nil {
 			return nil, fmt.Errorf("creating request: %w", err)
 		}
@@ -822,7 +823,7 @@ func (h *Handler) getFallbackProvider(requestModel string) (provider.Provider, s
 func (h *Handler) writeErrorResponse(w http.ResponseWriter, status int, errType, message string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"type": "error",
 		"error": map[string]string{
 			"type":    errType,
@@ -875,7 +876,7 @@ func (h *Handler) handleStreamingResponse(w http.ResponseWriter, resp *http.Resp
 }
 
 // handleNonStreamingResponse handles non-streaming responses.
-func (h *Handler) handleNonStreamingResponse(w http.ResponseWriter, resp *http.Response, targetModel string, cacheKey string, cacheable bool) {
+func (h *Handler) handleNonStreamingResponse(w http.ResponseWriter, resp *http.Response, targetModel, cacheKey string, cacheable bool) {
 	// Read response body
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -949,7 +950,7 @@ func (h *Handler) handleNonStreamingResponse(w http.ResponseWriter, resp *http.R
 		// Add tool calls
 		for _, tc := range choice.Message.ToolCalls {
 			var input interface{}
-			json.Unmarshal([]byte(tc.Function.Arguments), &input)
+			_ = json.Unmarshal([]byte(tc.Function.Arguments), &input)
 
 			anthropicResp.Content = append(anthropicResp.Content, models.AnthropicContentBlock{
 				Type:  "tool_use",
