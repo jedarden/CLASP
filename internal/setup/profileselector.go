@@ -525,7 +525,7 @@ func SelectOrCreateProfile() (profileName string, createNew, canceled bool) {
 
 	// Get active profile
 	activeProfile := ""
-	if globalCfg, err := pm.GetGlobalConfig(); err == nil && globalCfg != nil {
+	if globalCfg, cfgErr := pm.GetGlobalConfig(); cfgErr == nil && globalCfg != nil {
 		activeProfile = globalCfg.ActiveProfile
 	}
 
@@ -542,8 +542,8 @@ func SelectOrCreateProfile() (profileName string, createNew, canceled bool) {
 	}
 
 	// Run the selector TUI
-	selectedProfile, createNew, cancelled, err := RunProfileSelector(profiles, activeProfile)
-	if err != nil {
+	selectedProfile, createNew, canceled, runErr := RunProfileSelector(profiles, activeProfile)
+	if runErr != nil {
 		// On error, fall back to active profile
 		if activeProfile != "" {
 			return activeProfile, false, false
@@ -551,5 +551,5 @@ func SelectOrCreateProfile() (profileName string, createNew, canceled bool) {
 		return "", true, false
 	}
 
-	return selectedProfile, createNew, cancelled
+	return selectedProfile, createNew, canceled
 }

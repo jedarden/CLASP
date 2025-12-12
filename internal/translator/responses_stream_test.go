@@ -2,7 +2,6 @@ package translator
 
 import (
 	"bytes"
-	"encoding/json"
 	"strings"
 	"testing"
 
@@ -620,26 +619,4 @@ func TestResponsesStreamProcessor_FunctionCallArgumentsDelta(t *testing.T) {
 	if !strings.Contains(output, `\"Hello world\"}`) {
 		t.Errorf("output should contain second argument chunk (escaped), got: %s", output)
 	}
-}
-
-// Helper to verify JSON structure in output
-func parseSSEEvents(output string) ([]map[string]interface{}, error) {
-	var events []map[string]interface{}
-	lines := strings.Split(output, "\n")
-
-	for _, line := range lines {
-		if strings.HasPrefix(line, "data: ") {
-			data := strings.TrimPrefix(line, "data: ")
-			if data == "[DONE]" {
-				continue
-			}
-			var event map[string]interface{}
-			if err := json.Unmarshal([]byte(data), &event); err != nil {
-				continue // Skip non-JSON lines
-			}
-			events = append(events, event)
-		}
-	}
-
-	return events, nil
 }

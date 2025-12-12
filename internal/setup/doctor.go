@@ -258,7 +258,7 @@ func (d *Doctor) checkProviderConnectivity() {
 	}
 
 	for _, ep := range endpoints {
-		req, _ := http.NewRequest("HEAD", ep.url, nil)
+		req, _ := http.NewRequest("HEAD", ep.url, http.NoBody)
 		resp, err := client.Do(req)
 		if err != nil {
 			d.addResult(fmt.Sprintf("Network (%s)", ep.name), "warning",

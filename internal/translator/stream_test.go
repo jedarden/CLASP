@@ -3,7 +3,6 @@ package translator
 
 import (
 	"bytes"
-	"encoding/json"
 	"strings"
 	"testing"
 
@@ -550,24 +549,6 @@ func TestStreamState_Constants(t *testing.T) {
 	if StateDone != 4 {
 		t.Errorf("StateDone = %d, want 4", StateDone)
 	}
-}
-
-// Helper to parse SSE event data
-func parseSSEEvent(line string) (string, map[string]interface{}, error) {
-	parts := strings.SplitN(line, "\n", 2)
-	if len(parts) < 2 {
-		return "", nil, nil
-	}
-
-	eventType := strings.TrimPrefix(parts[0], "event: ")
-	dataLine := strings.TrimPrefix(parts[1], "data: ")
-
-	var data map[string]interface{}
-	if err := json.Unmarshal([]byte(dataLine), &data); err != nil {
-		return eventType, nil, err
-	}
-
-	return eventType, data, nil
 }
 
 // Grok XML extraction tests

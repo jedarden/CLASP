@@ -422,7 +422,7 @@ func ListAllInstances() ([]InstanceInfo, error) {
 	statusDir := filepath.Join(homeDir, ".clasp", "status")
 
 	// Ensure directory exists
-	if _, err := os.Stat(statusDir); os.IsNotExist(err) {
+	if _, statErr := os.Stat(statusDir); os.IsNotExist(statErr) {
 		return []InstanceInfo{}, nil
 	}
 
