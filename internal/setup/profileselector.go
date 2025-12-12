@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/bubbles/list"
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -43,17 +44,37 @@ const (
 	ProfileResultSelected ProfileSelectorResult = iota
 	ProfileResultCreateNew
 	ProfileResultCancelled
+	ProfileResultRenamed
+	ProfileResultDeleted
+)
+
+// ProfileSelectorMode represents the current mode of the selector.
+type ProfileSelectorMode int
+
+const (
+	ModeSelect ProfileSelectorMode = iota
+	ModeRename
+	ModeDeleteConfirm
 )
 
 // ProfileSelector is a Bubble Tea model for profile selection.
 type ProfileSelector struct {
-	list           list.Model
-	profiles       []*Profile
-	selected       *Profile
-	result         ProfileSelectorResult
-	width          int
-	height         int
-	activeProfile  string
+	list          list.Model
+	profiles      []*Profile
+	selected      *Profile
+	result        ProfileSelectorResult
+	width         int
+	height        int
+	activeProfile string
+
+	// Mode handling for rename/delete
+	mode        ProfileSelectorMode
+	renameInput textinput.Model
+	errorMsg    string
+	successMsg  string
+
+	// Profile manager for operations
+	pm *ProfileManager
 }
 
 // Styles for the profile selector
@@ -75,6 +96,21 @@ var (
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(lipgloss.Color("39")).
 		Padding(0, 1)
+
+	profileErrorStyle = lipgloss.NewStyle().
+		Foreground(lipgloss.Color("196")).
+		MarginLeft(2)
+
+	profileSuccessStyle = lipgloss.NewStyle().
+		Foreground(lipgloss.Color("76")).
+		MarginLeft(2)
+
+	profileWarningStyle = lipgloss.NewStyle().
+		Foreground(lipgloss.Color("214")).
+		MarginLeft(2)
+
+	profileInputStyle = lipgloss.NewStyle().
+		MarginLeft(2)
 )
 
 // createNewItem is a special item for creating a new profile.
@@ -113,12 +149,21 @@ func NewProfileSelector(profiles []*Profile, activeProfile string) *ProfileSelec
 	l.SetShowHelp(false)
 	l.DisableQuitKeybindings()
 
+	// Create rename input
+	ti := textinput.New()
+	ti.Placeholder = "Enter new profile name"
+	ti.CharLimit = 50
+	ti.Width = 40
+
 	return &ProfileSelector{
 		list:          l,
 		profiles:      profiles,
 		activeProfile: activeProfile,
 		width:         80,
 		height:        20,
+		mode:          ModeSelect,
+		renameInput:   ti,
+		pm:            NewProfileManager(),
 	}
 }
 
@@ -129,11 +174,29 @@ func (m *ProfileSelector) Init() tea.Cmd {
 
 // Update handles input and updates the profile selector state.
 func (m *ProfileSelector) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// Clear messages on any input
+	if _, ok := msg.(tea.KeyMsg); ok {
+		m.errorMsg = ""
+		m.successMsg = ""
+	}
+
+	switch m.mode {
+	case ModeRename:
+		return m.updateRenameMode(msg)
+	case ModeDeleteConfirm:
+		return m.updateDeleteMode(msg)
+	default:
+		return m.updateSelectMode(msg)
+	}
+}
+
+// updateSelectMode handles input in the main selection mode.
+func (m *ProfileSelector) updateSelectMode(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		m.list.SetSize(msg.Width-4, msg.Height-8)
+		m.list.SetSize(msg.Width-4, msg.Height-10)
 		return m, nil
 
 	case tea.KeyMsg:
@@ -162,6 +225,36 @@ func (m *ProfileSelector) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Quick key for "New Profile"
 			m.result = ProfileResultCreateNew
 			return m, tea.Quit
+
+		case "r":
+			// Rename the selected profile
+			if item := m.list.SelectedItem(); item != nil {
+				if profileItem, ok := item.(ProfileItem); ok {
+					if profileItem.Profile.Name == "default" {
+						m.errorMsg = "Cannot rename the default profile"
+						return m, nil
+					}
+					m.selected = profileItem.Profile
+					m.mode = ModeRename
+					m.renameInput.SetValue(profileItem.Profile.Name)
+					m.renameInput.Focus()
+					return m, textinput.Blink
+				}
+			}
+
+		case "d", "backspace", "delete":
+			// Delete the selected profile
+			if item := m.list.SelectedItem(); item != nil {
+				if profileItem, ok := item.(ProfileItem); ok {
+					if profileItem.Profile.Name == "default" {
+						m.errorMsg = "Cannot delete the default profile"
+						return m, nil
+					}
+					m.selected = profileItem.Profile
+					m.mode = ModeDeleteConfirm
+					return m, nil
+				}
+			}
 		}
 	}
 
@@ -170,6 +263,112 @@ func (m *ProfileSelector) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	m.list, cmd = m.list.Update(msg)
 
 	return m, cmd
+}
+
+// updateRenameMode handles input in rename mode.
+func (m *ProfileSelector) updateRenameMode(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "ctrl+c", "esc":
+			// Cancel rename
+			m.mode = ModeSelect
+			m.renameInput.SetValue("")
+			return m, nil
+
+		case "enter":
+			// Perform rename
+			newName := strings.TrimSpace(m.renameInput.Value())
+			if newName == "" {
+				m.errorMsg = "Profile name cannot be empty"
+				return m, nil
+			}
+
+			oldName := m.selected.Name
+			if err := m.pm.RenameProfile(oldName, newName); err != nil {
+				m.errorMsg = err.Error()
+				return m, nil
+			}
+
+			// Update the profile in our list
+			m.selected.Name = newName
+
+			// Refresh the list
+			m.refreshProfileList()
+
+			// Update active profile reference if needed
+			if m.activeProfile == oldName {
+				m.activeProfile = newName
+			}
+
+			m.successMsg = fmt.Sprintf("Profile renamed to '%s'", newName)
+			m.mode = ModeSelect
+			m.renameInput.SetValue("")
+			return m, nil
+		}
+	}
+
+	var cmd tea.Cmd
+	m.renameInput, cmd = m.renameInput.Update(msg)
+	return m, cmd
+}
+
+// updateDeleteMode handles input in delete confirmation mode.
+func (m *ProfileSelector) updateDeleteMode(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "ctrl+c", "esc", "n", "N":
+			// Cancel delete
+			m.mode = ModeSelect
+			return m, nil
+
+		case "y", "Y", "enter":
+			// Perform delete
+			profileName := m.selected.Name
+			if err := m.pm.DeleteProfile(profileName); err != nil {
+				m.errorMsg = err.Error()
+				m.mode = ModeSelect
+				return m, nil
+			}
+
+			// Refresh the list
+			m.refreshProfileList()
+
+			// Update active profile if deleted
+			if m.activeProfile == profileName {
+				m.activeProfile = "default"
+			}
+
+			m.successMsg = fmt.Sprintf("Profile '%s' deleted", profileName)
+			m.mode = ModeSelect
+			m.selected = nil
+			return m, nil
+		}
+	}
+
+	return m, nil
+}
+
+// refreshProfileList reloads profiles from disk and updates the list.
+func (m *ProfileSelector) refreshProfileList() {
+	profiles, err := m.pm.ListProfiles()
+	if err != nil {
+		return
+	}
+	m.profiles = profiles
+
+	// Rebuild list items
+	items := make([]list.Item, 0, len(profiles)+1)
+	for _, p := range profiles {
+		items = append(items, ProfileItem{
+			Profile:  p,
+			IsActive: p.Name == m.activeProfile,
+		})
+	}
+	items = append(items, createNewItem{})
+
+	m.list.SetItems(items)
 }
 
 // View renders the profile selector.
@@ -190,12 +389,74 @@ func (m *ProfileSelector) View() string {
 		b.WriteString("\n\n")
 	}
 
+	// Show error or success message
+	if m.errorMsg != "" {
+		b.WriteString(profileErrorStyle.Render("✗ " + m.errorMsg))
+		b.WriteString("\n\n")
+	}
+	if m.successMsg != "" {
+		b.WriteString(profileSuccessStyle.Render("✓ " + m.successMsg))
+		b.WriteString("\n\n")
+	}
+
+	// Mode-specific views
+	switch m.mode {
+	case ModeRename:
+		b.WriteString(m.viewRenameMode())
+	case ModeDeleteConfirm:
+		b.WriteString(m.viewDeleteMode())
+	default:
+		b.WriteString(m.viewSelectMode())
+	}
+
+	return b.String()
+}
+
+// viewSelectMode renders the main selection view.
+func (m *ProfileSelector) viewSelectMode() string {
+	var b strings.Builder
+
 	// Profile list
 	b.WriteString(m.list.View())
 	b.WriteString("\n\n")
 
 	// Help text
-	b.WriteString(profileHelpStyle.Render("↑/↓ Navigate • Enter Select • n New Profile • q Quit"))
+	b.WriteString(profileHelpStyle.Render("↑/↓ Navigate • Enter Select • n New • r Rename • d Delete • q Quit"))
+	b.WriteString("\n")
+
+	return b.String()
+}
+
+// viewRenameMode renders the rename input view.
+func (m *ProfileSelector) viewRenameMode() string {
+	var b strings.Builder
+
+	b.WriteString(profileWarningStyle.Render(fmt.Sprintf("Renaming profile: %s", m.selected.Name)))
+	b.WriteString("\n\n")
+
+	b.WriteString(profileInputStyle.Render("New name: "))
+	b.WriteString(m.renameInput.View())
+	b.WriteString("\n\n")
+
+	b.WriteString(profileHelpStyle.Render("Enter Confirm • Esc Cancel"))
+	b.WriteString("\n")
+
+	return b.String()
+}
+
+// viewDeleteMode renders the delete confirmation view.
+func (m *ProfileSelector) viewDeleteMode() string {
+	var b strings.Builder
+
+	b.WriteString(profileErrorStyle.Render(fmt.Sprintf("Delete profile '%s'?", m.selected.Name)))
+	b.WriteString("\n\n")
+
+	b.WriteString(profileHelpStyle.Render(fmt.Sprintf("This will permanently remove the profile '%s'.", m.selected.Name)))
+	b.WriteString("\n")
+	b.WriteString(profileHelpStyle.Render("This action cannot be undone."))
+	b.WriteString("\n\n")
+
+	b.WriteString(profileWarningStyle.Render("Press Y to confirm, N or Esc to cancel"))
 	b.WriteString("\n")
 
 	return b.String()

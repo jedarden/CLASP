@@ -178,6 +178,63 @@ func (pm *ProfileManager) DeleteProfile(name string) error {
 	return nil
 }
 
+// RenameProfile renames a profile.
+func (pm *ProfileManager) RenameProfile(oldName, newName string) error {
+	if oldName == "default" {
+		return fmt.Errorf("cannot rename the default profile")
+	}
+
+	if newName == "" {
+		return fmt.Errorf("new profile name is required")
+	}
+
+	if oldName == newName {
+		return nil // No change needed
+	}
+
+	// Check if old profile exists
+	if !pm.ProfileExists(oldName) {
+		return fmt.Errorf("profile '%s' not found", oldName)
+	}
+
+	// Check if new name is already taken
+	if pm.ProfileExists(newName) {
+		return fmt.Errorf("profile '%s' already exists", newName)
+	}
+
+	// Get the existing profile
+	profile, err := pm.GetProfile(oldName)
+	if err != nil {
+		return err
+	}
+
+	// Update profile name and timestamp
+	profile.Name = newName
+	profile.UpdatedAt = time.Now().Format(time.RFC3339)
+
+	// Save with new name
+	if err := pm.saveProfile(profile); err != nil {
+		return fmt.Errorf("failed to save renamed profile: %w", err)
+	}
+
+	// Delete old profile file
+	oldPath := pm.getProfilePath(oldName)
+	if err := os.Remove(oldPath); err != nil {
+		// Try to clean up new file on failure
+		os.Remove(pm.getProfilePath(newName))
+		return fmt.Errorf("failed to remove old profile: %w", err)
+	}
+
+	// Update active profile if this was it
+	globalCfg, err := pm.GetGlobalConfig()
+	if err == nil && globalCfg.ActiveProfile == oldName {
+		globalCfg.ActiveProfile = newName
+		pm.SaveGlobalConfig(globalCfg)
+	}
+
+	return nil
+}
+
 // ListProfiles returns all available profiles.
 func (pm *ProfileManager) ListProfiles() ([]*Profile, error) {
 	profilesDir := pm.GetProfilesDir()
