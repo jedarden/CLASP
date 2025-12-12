@@ -48,7 +48,7 @@ func SetSessionPort(port int) {
 
 		// Open new port-specific log file
 		newLogPath := GetLogPathForPort(port)
-		f, err := os.OpenFile(newLogPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+		f, err := os.OpenFile(newLogPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 		if err == nil {
 			logFile = f
 			logFilePath = newLogPath
@@ -65,7 +65,7 @@ func SetSessionPort(port int) {
 
 		// Open new port-specific debug log file
 		newDebugPath := GetDebugLogPathForPort(port)
-		f, err := os.OpenFile(newDebugPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+		f, err := os.OpenFile(newDebugPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 		if err == nil {
 			debugFile = f
 			debugFilePath = newDebugPath
@@ -138,7 +138,7 @@ func ConfigureForClaudeCode() error {
 	logDir := filepath.Dir(logFilePath)
 
 	// Create logs directory if it doesn't exist
-	if err := os.MkdirAll(logDir, 0755); err != nil {
+	if err := os.MkdirAll(logDir, 0o755); err != nil {
 		return fmt.Errorf("failed to create log directory: %w", err)
 	}
 
@@ -150,7 +150,7 @@ func ConfigureForClaudeCode() error {
 	}
 
 	// Open log file for appending
-	f, err := os.OpenFile(logFilePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	f, err := os.OpenFile(logFilePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 	if err != nil {
 		return fmt.Errorf("failed to open log file: %w", err)
 	}
@@ -203,8 +203,8 @@ func rotateLog() {
 		logFile = nil
 	}
 
-	// Rename current log file
-	os.Rename(logFilePath, rotatedPath)
+	// Rename current log file (ignore error - best effort)
+	_ = os.Rename(logFilePath, rotatedPath)
 
 	// Keep only last 5 rotated logs
 	cleanOldLogs()
@@ -286,7 +286,7 @@ func EnableDebugLogging() error {
 	logDir := filepath.Dir(debugFilePath)
 
 	// Create logs directory if it doesn't exist
-	if err := os.MkdirAll(logDir, 0755); err != nil {
+	if err := os.MkdirAll(logDir, 0o755); err != nil {
 		return fmt.Errorf("failed to create debug log directory: %w", err)
 	}
 
@@ -298,7 +298,7 @@ func EnableDebugLogging() error {
 	}
 
 	// Open debug log file for appending
-	f, err := os.OpenFile(debugFilePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	f, err := os.OpenFile(debugFilePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 	if err != nil {
 		return fmt.Errorf("failed to open debug log file: %w", err)
 	}
@@ -337,7 +337,7 @@ func IsDebugEnabled() bool {
 // LogDebugRequest logs a full request payload to the debug log.
 // The payload is pretty-printed JSON for easier reading.
 // Includes session ID for multi-instance tracking.
-func LogDebugRequest(direction string, endpoint string, payload interface{}) {
+func LogDebugRequest(direction, endpoint string, payload interface{}) {
 	mu.Lock()
 	defer mu.Unlock()
 

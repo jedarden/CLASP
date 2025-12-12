@@ -42,7 +42,7 @@ type InstallStatus struct {
 // NewManager creates a new Claude Code manager.
 func NewManager(proxyURL string, verbose bool) *Manager {
 	cacheDir := filepath.Join(os.Getenv("HOME"), ".clasp", "cache")
-	_ = os.MkdirAll(cacheDir, 0755) // Ignore error - best effort
+	_ = os.MkdirAll(cacheDir, 0o755) // Ignore error - best effort
 
 	return &Manager{
 		cacheDir: cacheDir,
@@ -434,7 +434,7 @@ func (m *Manager) CacheStatus(status *InstallStatus) error {
 		return err
 	}
 
-	return os.WriteFile(cachePath, data, 0644)
+	return os.WriteFile(cachePath, data, 0o644)
 }
 
 // LoadCachedStatus loads installation status from cache.

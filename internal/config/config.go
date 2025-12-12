@@ -51,15 +51,15 @@ type Config struct {
 	CustomAPIKey     string
 
 	// Endpoints
-	OpenAIBaseURL        string
-	AzureEndpoint        string
-	AzureDeploymentName  string
-	AzureAPIVersion      string
-	OpenRouterBaseURL    string
-	OllamaBaseURL        string // Default: http://localhost:11434
-	GeminiBaseURL        string // Default: https://generativelanguage.googleapis.com/v1beta
-	DeepSeekBaseURL      string // Default: https://api.deepseek.com
-	CustomBaseURL        string
+	OpenAIBaseURL       string
+	AzureEndpoint       string
+	AzureDeploymentName string
+	AzureAPIVersion     string
+	OpenRouterBaseURL   string
+	OllamaBaseURL       string // Default: http://localhost:11434
+	GeminiBaseURL       string // Default: https://generativelanguage.googleapis.com/v1beta
+	DeepSeekBaseURL     string // Default: https://api.deepseek.com
+	CustomBaseURL       string
 
 	// Model mapping
 	DefaultModel string
@@ -90,34 +90,34 @@ type Config struct {
 	DebugResponses bool
 
 	// Rate limiting settings
-	RateLimitEnabled   bool
-	RateLimitRequests  int     // Requests per window
-	RateLimitWindow    int     // Window in seconds
-	RateLimitBurst     int     // Burst allowance
+	RateLimitEnabled  bool
+	RateLimitRequests int // Requests per window
+	RateLimitWindow   int // Window in seconds
+	RateLimitBurst    int // Burst allowance
 
 	// Cache settings
-	CacheEnabled  bool
-	CacheMaxSize  int   // Maximum number of entries
-	CacheTTL      int   // Time-to-live in seconds (0 = no expiry)
+	CacheEnabled bool
+	CacheMaxSize int // Maximum number of entries
+	CacheTTL     int // Time-to-live in seconds (0 = no expiry)
 
 	// Authentication settings
-	AuthEnabled              bool
-	AuthAPIKey               string
+	AuthEnabled               bool
+	AuthAPIKey                string
 	AuthAllowAnonymousHealth  bool
 	AuthAllowAnonymousMetrics bool
 
 	// Queue settings
-	QueueEnabled           bool
-	QueueMaxSize           int   // Maximum requests to queue
-	QueueMaxWaitSeconds    int   // Maximum time a request can wait
-	QueueRetryDelayMs      int   // Delay between retries in milliseconds
-	QueueMaxRetries        int   // Maximum retries per request
+	QueueEnabled        bool
+	QueueMaxSize        int // Maximum requests to queue
+	QueueMaxWaitSeconds int // Maximum time a request can wait
+	QueueRetryDelayMs   int // Delay between retries in milliseconds
+	QueueMaxRetries     int // Maximum retries per request
 
 	// Circuit breaker settings
-	CircuitBreakerEnabled      bool
-	CircuitBreakerThreshold    int   // Failures before opening
-	CircuitBreakerRecovery     int   // Successes to close
-	CircuitBreakerTimeoutSec   int   // Timeout before half-open
+	CircuitBreakerEnabled    bool
+	CircuitBreakerThreshold  int // Failures before opening
+	CircuitBreakerRecovery   int // Successes to close
+	CircuitBreakerTimeoutSec int // Timeout before half-open
 
 	// HTTP client settings
 	HTTPClientTimeoutSec int // Timeout for upstream requests (default: 300 = 5 minutes)
@@ -129,32 +129,32 @@ type Config struct {
 // DefaultConfig returns the default configuration.
 func DefaultConfig() *Config {
 	return &Config{
-		Provider:           ProviderOpenAI,
-		OpenAIBaseURL:      "https://api.openai.com/v1",
-		OpenRouterBaseURL:  "https://openrouter.ai/api/v1",
-		OllamaBaseURL:      "http://localhost:11434",
-		GeminiBaseURL:      "https://generativelanguage.googleapis.com/v1beta",
-		DeepSeekBaseURL:    "https://api.deepseek.com",
-		AzureAPIVersion:    "2024-02-15-preview",
-		Port:               8080,
-		LogLevel:           "info",
-		DefaultModel:       "gpt-4o",
-		RateLimitEnabled:   false,
-		RateLimitRequests:  60,   // 60 requests per window (default)
-		RateLimitWindow:    60,   // 60 second window (default)
-		RateLimitBurst:     10,   // Allow burst of 10 (default)
-		CacheEnabled:             false,
-		CacheMaxSize:             1000, // Default 1000 entries
-		CacheTTL:                 3600, // Default 1 hour TTL
-		AuthEnabled:              false,
+		Provider:                  ProviderOpenAI,
+		OpenAIBaseURL:             "https://api.openai.com/v1",
+		OpenRouterBaseURL:         "https://openrouter.ai/api/v1",
+		OllamaBaseURL:             "http://localhost:11434",
+		GeminiBaseURL:             "https://generativelanguage.googleapis.com/v1beta",
+		DeepSeekBaseURL:           "https://api.deepseek.com",
+		AzureAPIVersion:           "2024-02-15-preview",
+		Port:                      8080,
+		LogLevel:                  "info",
+		DefaultModel:              "gpt-4o",
+		RateLimitEnabled:          false,
+		RateLimitRequests:         60, // 60 requests per window (default)
+		RateLimitWindow:           60, // 60 second window (default)
+		RateLimitBurst:            10, // Allow burst of 10 (default)
+		CacheEnabled:              false,
+		CacheMaxSize:              1000, // Default 1000 entries
+		CacheTTL:                  3600, // Default 1 hour TTL
+		AuthEnabled:               false,
 		AuthAllowAnonymousHealth:  true, // Allow health checks without auth by default
 		AuthAllowAnonymousMetrics: false,
 		// Queue defaults
-		QueueEnabled:           false,
-		QueueMaxSize:           100,
-		QueueMaxWaitSeconds:    30,
-		QueueRetryDelayMs:      1000,
-		QueueMaxRetries:        3,
+		QueueEnabled:        false,
+		QueueMaxSize:        100,
+		QueueMaxWaitSeconds: 30,
+		QueueRetryDelayMs:   1000,
+		QueueMaxRetries:     3,
 		// Circuit breaker defaults
 		CircuitBreakerEnabled:    false,
 		CircuitBreakerThreshold:  5,  // Open after 5 failures
@@ -181,8 +181,8 @@ func LoadFromEnv() (*Config, error) {
 	cfg.AzureAPIKey = os.Getenv("AZURE_API_KEY")
 	cfg.OpenRouterAPIKey = os.Getenv("OPENROUTER_API_KEY")
 	cfg.AnthropicAPIKey = os.Getenv("ANTHROPIC_API_KEY")
-	cfg.OllamaAPIKey = os.Getenv("OLLAMA_API_KEY") // Optional
-	cfg.GeminiAPIKey = os.Getenv("GEMINI_API_KEY") // Google AI Studio key
+	cfg.OllamaAPIKey = os.Getenv("OLLAMA_API_KEY")     // Optional
+	cfg.GeminiAPIKey = os.Getenv("GEMINI_API_KEY")     // Google AI Studio key
 	cfg.DeepSeekAPIKey = os.Getenv("DEEPSEEK_API_KEY") // DeepSeek API key
 	cfg.CustomAPIKey = os.Getenv("CUSTOM_API_KEY")
 
@@ -744,10 +744,10 @@ func GetModelTier(model string) ModelTier {
 func contains(s, substr string) bool {
 	return len(s) >= len(substr) &&
 		(s == substr ||
-		 len(s) > len(substr) &&
-		 (s[:len(substr)] == substr ||
-		  s[len(s)-len(substr):] == substr ||
-		  containsMiddle(s, substr)))
+			len(s) > len(substr) &&
+				(s[:len(substr)] == substr ||
+					s[len(s)-len(substr):] == substr ||
+					containsMiddle(s, substr)))
 }
 
 func containsMiddle(s, substr string) bool {
