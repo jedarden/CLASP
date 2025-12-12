@@ -395,13 +395,22 @@ func TestStdioHandler(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
 
-	// Run handler (will timeout on EOF)
-	go server.handleStdio(ctx, input, output)
+	// Run handler synchronously (will return on EOF or context timeout)
+	done := make(chan struct{})
+	go func() {
+		server.handleStdio(ctx, input, output)
+		close(done)
+	}()
 
-	// Wait for processing
-	time.Sleep(50 * time.Millisecond)
+	// Wait for handler to finish
+	select {
+	case <-done:
+		// Handler finished
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("Handler did not finish in time")
+	}
 
-	// Check output
+	// Now safe to check output
 	if output.Len() == 0 {
 		t.Error("Expected response output")
 	}
