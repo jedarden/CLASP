@@ -624,4 +624,17 @@ func TestOpenRouterModelInfo(t *testing.T) {
 	if info.ContextLength != 128000 {
 		t.Errorf("Expected ContextLength 128000, got %d", info.ContextLength)
 	}
+	// Verify all fields are set correctly
+	if info.Name != "GPT-4o" {
+		t.Errorf("Expected Name 'GPT-4o', got %s", info.Name)
+	}
+	if info.Description != "OpenAI's most advanced model" {
+		t.Errorf("Expected Description, got %s", info.Description)
+	}
+	if info.InputPrice != 2.5 {
+		t.Errorf("Expected InputPrice 2.5, got %f", info.InputPrice)
+	}
+	if info.OutputPrice != 10.0 {
+		t.Errorf("Expected OutputPrice 10.0, got %f", info.OutputPrice)
+	}
 }

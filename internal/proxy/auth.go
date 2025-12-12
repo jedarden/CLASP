@@ -97,7 +97,7 @@ func writeAuthError(w http.ResponseWriter, status int, errType, message string) 
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("WWW-Authenticate", "Bearer")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"type": "error",
 		"error": map[string]string{
 			"type":    errType,

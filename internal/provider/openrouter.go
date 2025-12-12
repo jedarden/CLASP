@@ -97,13 +97,13 @@ type OpenRouterModelLimits struct {
 
 // OpenRouterModel represents a model from OpenRouter's models endpoint.
 type OpenRouterModel struct {
-	ID               string                      `json:"id"`
-	Name             string                      `json:"name"`
-	Description      string                      `json:"description"`
-	ContextLength    int                         `json:"context_length"`
-	Pricing          OpenRouterModelPricing      `json:"pricing"`
-	TopProvider      OpenRouterModelTopProvider  `json:"top_provider"`
-	PerRequestLimits *OpenRouterModelLimits      `json:"per_request_limits,omitempty"`
+	ID               string                     `json:"id"`
+	Name             string                     `json:"name"`
+	Description      string                     `json:"description"`
+	ContextLength    int                        `json:"context_length"`
+	Pricing          OpenRouterModelPricing     `json:"pricing"`
+	TopProvider      OpenRouterModelTopProvider `json:"top_provider"`
+	PerRequestLimits *OpenRouterModelLimits     `json:"per_request_limits,omitempty"`
 }
 
 // OpenRouterModelsResponse is the response from /models endpoint.
@@ -216,10 +216,9 @@ func (p *OpenRouterProvider) ListModelsByProvider(provider string) ([]OpenRouter
 		return nil, err
 	}
 
-	provider = strings.ToLower(provider)
 	var filtered []OpenRouterModelInfo
 	for _, m := range models {
-		if strings.ToLower(m.Provider) == provider {
+		if strings.EqualFold(m.Provider, provider) {
 			filtered = append(filtered, m)
 		}
 	}
@@ -235,7 +234,7 @@ func (p *OpenRouterProvider) GetChatModels() ([]OpenRouterModelInfo, error) {
 		return nil, err
 	}
 
-	var chatModels []OpenRouterModelInfo
+	chatModels := make([]OpenRouterModelInfo, 0, len(models))
 	for _, m := range models {
 		id := strings.ToLower(m.ID)
 		// Skip embedding models

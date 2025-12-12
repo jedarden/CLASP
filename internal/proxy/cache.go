@@ -112,7 +112,12 @@ func (rc *RequestCache) Get(key string) (*models.AnthropicResponse, bool) {
 		return nil, false
 	}
 
-	entry := elem.Value.(*lruEntry).entry
+	lruEnt, ok := elem.Value.(*lruEntry)
+	if !ok {
+		rc.misses++
+		return nil, false
+	}
+	entry := lruEnt.entry
 
 	// Check TTL
 	if rc.ttl > 0 && time.Since(entry.CreatedAt) > rc.ttl {
@@ -139,9 +144,11 @@ func (rc *RequestCache) Set(key string, response *models.AnthropicResponse) {
 	if elem, ok := rc.cache[key]; ok {
 		// Update existing entry
 		rc.lru.MoveToFront(elem)
-		elem.Value.(*lruEntry).entry = &CacheEntry{
-			Response:  response,
-			CreatedAt: time.Now(),
+		if lruEnt, typeOK := elem.Value.(*lruEntry); typeOK {
+			lruEnt.entry = &CacheEntry{
+				Response:  response,
+				CreatedAt: time.Now(),
+			}
 		}
 		return
 	}
