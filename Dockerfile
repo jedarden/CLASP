@@ -22,7 +22,7 @@ RUN CGO_ENABLED=0 go build \
     -o /clasp ./cmd/clasp
 
 # Runtime stage
-FROM alpine:3.19
+FROM alpine:3.23
 
 # Install ca-certificates for HTTPS
 RUN apk add --no-cache ca-certificates
