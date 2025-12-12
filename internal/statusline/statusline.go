@@ -316,7 +316,7 @@ func (m *Manager) ConfigureClaudeCode() error {
 			return fmt.Errorf("reading settings.json: %w", err)
 		}
 	} else {
-		if err := json.Unmarshal(data, &settings); err != nil {
+		if unmarshalErr := json.Unmarshal(data, &settings); unmarshalErr != nil {
 			// If settings is malformed, start fresh
 			settings = make(map[string]interface{})
 		}
@@ -330,13 +330,13 @@ func (m *Manager) ConfigureClaudeCode() error {
 	}
 
 	// Write updated settings
-	output, err := json.MarshalIndent(settings, "", "  ")
-	if err != nil {
-		return fmt.Errorf("marshaling settings: %w", err)
+	output, marshalErr := json.MarshalIndent(settings, "", "  ")
+	if marshalErr != nil {
+		return fmt.Errorf("marshaling settings: %w", marshalErr)
 	}
 
-	if err := os.WriteFile(settingsPath, output, 0o600); err != nil {
-		return fmt.Errorf("writing settings.json: %w", err)
+	if writeErr := os.WriteFile(settingsPath, output, 0o600); writeErr != nil {
+		return fmt.Errorf("writing settings.json: %w", writeErr)
 	}
 
 	return nil
@@ -439,13 +439,13 @@ func ListAllInstances() ([]InstanceInfo, error) {
 		}
 
 		statusPath := filepath.Join(statusDir, entry.Name())
-		data, err := os.ReadFile(statusPath)
-		if err != nil {
+		data, readErr := os.ReadFile(statusPath)
+		if readErr != nil {
 			continue
 		}
 
 		var status Status
-		if err := json.Unmarshal(data, &status); err != nil {
+		if unmarshalErr := json.Unmarshal(data, &status); unmarshalErr != nil {
 			continue
 		}
 
@@ -538,8 +538,8 @@ func isProcessAlive(pid int) bool {
 
 	// On Linux, check /proc/[pid]/stat for zombie state
 	statPath := fmt.Sprintf("/proc/%d/stat", pid)
-	data, err := os.ReadFile(statPath)
-	if err != nil {
+	data, readErr := os.ReadFile(statPath)
+	if readErr != nil {
 		// If we can't read /proc, fall back to just the signal check (non-Linux)
 		return true
 	}

@@ -277,7 +277,7 @@ func TestResponsesStreamProcessor_EventSequence(t *testing.T) {
 	sp := NewResponsesStreamProcessor(&buf, "msg_test", "gpt-5")
 
 	events := []struct {
-		Type string
+		Type  string
 		Event *models.ResponsesStreamEvent
 	}{
 		{"created", &models.ResponsesStreamEvent{Type: models.EventResponseCreated, Response: &models.ResponsesResponse{ID: "resp_1"}}},
@@ -396,11 +396,11 @@ func TestResponsesStreamProcessor_FullStream(t *testing.T) {
 			Item: &models.ResponsesItem{Type: "message", ID: "item_1"},
 		},
 		{
-			Type: models.EventContentPartDelta,
+			Type:  models.EventContentPartDelta,
 			Delta: &models.ResponsesDelta{Type: "text_delta", Text: "Hello, "},
 		},
 		{
-			Type: models.EventContentPartDelta,
+			Type:  models.EventContentPartDelta,
 			Delta: &models.ResponsesDelta{Type: "text_delta", Text: "world!"},
 		},
 		{

@@ -1,3 +1,4 @@
+//go:build integration
 // +build integration
 
 package tests
@@ -28,11 +29,11 @@ func TestIntegration_LiveOpenAI(t *testing.T) {
 
 	// Create config
 	cfg := &config.Config{
-		Provider:     config.ProviderOpenAI,
-		OpenAIAPIKey: apiKey,
+		Provider:      config.ProviderOpenAI,
+		OpenAIAPIKey:  apiKey,
 		OpenAIBaseURL: "https://api.openai.com/v1",
-		DefaultModel: "gpt-4o-mini",
-		Port:        8080,
+		DefaultModel:  "gpt-4o-mini",
+		Port:          8080,
 	}
 
 	// Create server
@@ -117,11 +118,11 @@ func TestIntegration_StreamingOpenAI(t *testing.T) {
 
 	// Create config
 	cfg := &config.Config{
-		Provider:     config.ProviderOpenAI,
-		OpenAIAPIKey: apiKey,
+		Provider:      config.ProviderOpenAI,
+		OpenAIAPIKey:  apiKey,
 		OpenAIBaseURL: "https://api.openai.com/v1",
-		DefaultModel: "gpt-4o-mini",
-		Port:        8080,
+		DefaultModel:  "gpt-4o-mini",
+		Port:          8080,
 	}
 
 	handler, err := proxy.NewHandler(cfg)
@@ -192,11 +193,11 @@ func TestIntegration_ToolCallOpenAI(t *testing.T) {
 	}
 
 	cfg := &config.Config{
-		Provider:     config.ProviderOpenAI,
-		OpenAIAPIKey: apiKey,
+		Provider:      config.ProviderOpenAI,
+		OpenAIAPIKey:  apiKey,
 		OpenAIBaseURL: "https://api.openai.com/v1",
-		DefaultModel: "gpt-4o-mini",
-		Port:        8080,
+		DefaultModel:  "gpt-4o-mini",
+		Port:          8080,
 	}
 
 	handler, err := proxy.NewHandler(cfg)
@@ -279,11 +280,11 @@ func TestIntegration_ToolCallOpenAI(t *testing.T) {
 // TestIntegration_HealthCheck tests the health endpoint
 func TestIntegration_HealthCheck(t *testing.T) {
 	cfg := &config.Config{
-		Provider:     config.ProviderOpenAI,
-		OpenAIAPIKey: "test-key",
+		Provider:      config.ProviderOpenAI,
+		OpenAIAPIKey:  "test-key",
 		OpenAIBaseURL: "https://api.openai.com/v1",
-		DefaultModel: "gpt-4o",
-		Port:        8080,
+		DefaultModel:  "gpt-4o",
+		Port:          8080,
 	}
 
 	handler, err := proxy.NewHandler(cfg)
@@ -291,7 +292,7 @@ func TestIntegration_HealthCheck(t *testing.T) {
 		t.Fatalf("Failed to create handler: %v", err)
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/health", nil)
+	req := httptest.NewRequest(http.MethodGet, "/health", http.NoBody)
 	rec := httptest.NewRecorder()
 	handler.HandleHealth(rec, req)
 
@@ -317,11 +318,11 @@ func TestIntegration_HealthCheck(t *testing.T) {
 // TestIntegration_PrometheusMetrics tests the Prometheus metrics endpoint
 func TestIntegration_PrometheusMetrics(t *testing.T) {
 	cfg := &config.Config{
-		Provider:     config.ProviderOpenAI,
-		OpenAIAPIKey: "test-key",
+		Provider:      config.ProviderOpenAI,
+		OpenAIAPIKey:  "test-key",
 		OpenAIBaseURL: "https://api.openai.com/v1",
-		DefaultModel: "gpt-4o",
-		Port:        8080,
+		DefaultModel:  "gpt-4o",
+		Port:          8080,
 	}
 
 	handler, err := proxy.NewHandler(cfg)
@@ -329,7 +330,7 @@ func TestIntegration_PrometheusMetrics(t *testing.T) {
 		t.Fatalf("Failed to create handler: %v", err)
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/metrics/prometheus", nil)
+	req := httptest.NewRequest(http.MethodGet, "/metrics/prometheus", http.NoBody)
 	rec := httptest.NewRecorder()
 	handler.HandleMetricsPrometheus(rec, req)
 
@@ -391,11 +392,11 @@ func TestIntegration_Timeout(t *testing.T) {
 	}
 
 	cfg := &config.Config{
-		Provider:     config.ProviderOpenAI,
-		OpenAIAPIKey: apiKey,
+		Provider:      config.ProviderOpenAI,
+		OpenAIAPIKey:  apiKey,
 		OpenAIBaseURL: "https://api.openai.com/v1",
-		DefaultModel: "gpt-4o-mini",
-		Port:        8080,
+		DefaultModel:  "gpt-4o-mini",
+		Port:          8080,
 	}
 
 	handler, err := proxy.NewHandler(cfg)

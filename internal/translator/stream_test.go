@@ -598,7 +598,7 @@ func TestIsGrokModelStream(t *testing.T) {
 
 func TestParseXMLParameters(t *testing.T) {
 	xmlContent := `<xai:parameter name="location">NYC</xai:parameter><xai:parameter name="unit">celsius</xai:parameter>`
-	
+
 	params := parseXMLParameters(xmlContent)
 
 	if params["location"] != "NYC" {
@@ -611,7 +611,7 @@ func TestParseXMLParameters(t *testing.T) {
 
 func TestParseXMLParameters_JSONValue(t *testing.T) {
 	xmlContent := `<xai:parameter name="count">42</xai:parameter><xai:parameter name="enabled">true</xai:parameter>`
-	
+
 	params := parseXMLParameters(xmlContent)
 
 	// Numbers and booleans should be parsed from JSON
@@ -625,9 +625,9 @@ func TestParseXMLParameters_JSONValue(t *testing.T) {
 
 func TestProcessGrokXML_CompleteToolCall(t *testing.T) {
 	sp := NewStreamProcessor(&bytes.Buffer{}, "msg_123", "x-ai/grok-3-beta")
-	
+
 	text := `Here is the result: <xai:function_call name="get_weather"><xai:parameter name="location">NYC</xai:parameter></xai:function_call>`
-	
+
 	cleanedText, toolCalls := sp.processGrokXML(text)
 
 	if strings.Contains(cleanedText, "<xai:function_call") {
@@ -646,7 +646,7 @@ func TestProcessGrokXML_CompleteToolCall(t *testing.T) {
 
 func TestProcessGrokXML_PartialXML_Buffering(t *testing.T) {
 	sp := NewStreamProcessor(&bytes.Buffer{}, "msg_123", "x-ai/grok-3-beta")
-	
+
 	// First chunk: partial XML
 	text1 := `Let me call the tool: <xai:function_call name="test"`
 	cleanedText, toolCalls := sp.processGrokXML(text1)
@@ -673,7 +673,7 @@ func TestProcessGrokXML_PartialXML_Buffering(t *testing.T) {
 
 func TestProcessGrokXML_NoXML(t *testing.T) {
 	sp := NewStreamProcessor(&bytes.Buffer{}, "msg_123", "x-ai/grok-3-beta")
-	
+
 	text := "This is just regular text without any XML."
 	cleanedText, toolCalls := sp.processGrokXML(text)
 
@@ -739,7 +739,7 @@ data: [DONE]
 		"\"type\":\"thinking_delta\"",
 		"\"thinking\":\"Let me think about this...\"",
 		"\"thinking\":\" I should analyze the problem.\"",
-		"event: content_block_stop", // thinking block stop
+		"event: content_block_stop",  // thinking block stop
 		"event: content_block_start", // text block start
 		"\"type\":\"text\"",
 		"\"text\":\"Here's my answer.\"",

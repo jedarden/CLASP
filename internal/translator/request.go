@@ -14,11 +14,11 @@ import (
 // These limits represent the maximum output tokens each model supports.
 var modelMaxTokenLimits = map[string]int{
 	// GPT-4o series
-	"gpt-4o":            16384,
-	"gpt-4o-2024-11-20": 16384,
-	"gpt-4o-2024-08-06": 16384,
-	"gpt-4o-2024-05-13": 4096,
-	"gpt-4o-mini":       16384,
+	"gpt-4o":                 16384,
+	"gpt-4o-2024-11-20":      16384,
+	"gpt-4o-2024-08-06":      16384,
+	"gpt-4o-2024-05-13":      4096,
+	"gpt-4o-mini":            16384,
 	"gpt-4o-mini-2024-07-18": 16384,
 	// GPT-4 Turbo
 	"gpt-4-turbo":            4096,
@@ -27,15 +27,15 @@ var modelMaxTokenLimits = map[string]int{
 	"gpt-4-0125-preview":     4096,
 	"gpt-4-1106-preview":     4096,
 	// GPT-4
-	"gpt-4":       8192,
-	"gpt-4-32k":   8192,
-	"gpt-4-0613":  8192,
+	"gpt-4":          8192,
+	"gpt-4-32k":      8192,
+	"gpt-4-0613":     8192,
 	"gpt-4-32k-0613": 8192,
 	// GPT-3.5 Turbo
-	"gpt-3.5-turbo":             4096,
-	"gpt-3.5-turbo-0125":        4096,
-	"gpt-3.5-turbo-1106":        4096,
-	"gpt-3.5-turbo-16k":         4096,
+	"gpt-3.5-turbo":      4096,
+	"gpt-3.5-turbo-0125": 4096,
+	"gpt-3.5-turbo-1106": 4096,
+	"gpt-3.5-turbo-16k":  4096,
 	// O1 models (reasoning models)
 	"o1":         100000,
 	"o1-preview": 32768,
@@ -305,7 +305,7 @@ func transformMessages(req *models.AnthropicRequest, targetModel string) ([]mode
 
 			// Add Grok-specific JSON tool format instruction
 			if isGrokModel(targetModel) {
-				systemContent = systemContent + "\n\nIMPORTANT: When calling tools, you MUST use the OpenAI tool_calls format with JSON. NEVER use XML format like <xai:function_call>."
+				systemContent += "\n\nIMPORTANT: When calling tools, you MUST use the OpenAI tool_calls format with JSON. NEVER use XML format like <xai:function_call>."
 			}
 
 			messages = append(messages, models.OpenAIMessage{
@@ -532,11 +532,12 @@ func extractToolResults(content []models.ContentBlock) []models.OpenAIMessage {
 				output = "[Error] " + output
 			}
 
-			results = append(results, models.OpenAIMessage{
+			toolMsg := models.OpenAIMessage{
 				Role:       "tool",
 				Content:    output,
 				ToolCallID: block.ToolUseID,
-			})
+			}
+			results = append(results, toolMsg)
 		}
 	}
 
@@ -883,8 +884,9 @@ func cleanupSchemaMapForChatCompletions(schema map[string]interface{}) {
 // 3. It's not nullable
 // 4. It doesn't have a description containing optional-indicating phrases
 // 5. It's not a boolean type (booleans are almost always optional flags)
-func identifyTrulyRequiredForChat(props map[string]interface{}, schema map[string]interface{}) []string {
-	var trulyRequired []string
+func identifyTrulyRequiredForChat(props, schema map[string]interface{}) []string {
+	// Pre-allocate with estimated capacity
+	trulyRequired := make([]string, 0, len(props)/2)
 
 	// Get original required array
 	originalRequired := make(map[string]bool)

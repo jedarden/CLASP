@@ -85,10 +85,10 @@ func TestCacheStatus(t *testing.T) {
 
 func TestParseClaudeArgs(t *testing.T) {
 	tests := []struct {
-		name         string
-		args         []string
-		wantClasp    []string
-		wantClaude   []string
+		name       string
+		args       []string
+		wantClasp  []string
+		wantClaude []string
 	}{
 		{
 			name:       "no separator",
@@ -140,6 +140,7 @@ func TestLaunchOptions(t *testing.T) {
 		Interactive: true,
 	}
 
+	// Verify all fields are set correctly
 	if opts.WorkingDir != "/tmp/test" {
 		t.Error("WorkingDir not set correctly")
 	}
@@ -159,6 +160,9 @@ func TestLaunchOptions(t *testing.T) {
 	if !opts.Interactive {
 		t.Error("Interactive not set correctly")
 	}
+
+	t.Logf("LaunchOptions validated: WorkingDir=%s, Args=%v, ProxyURL=%s, Interactive=%v",
+		opts.WorkingDir, opts.Args, opts.ProxyURL, opts.Interactive)
 }
 
 func TestLaunchOptionsSkipPermissions(t *testing.T) {
@@ -206,6 +210,9 @@ func TestLaunchOptionsArgsWithSkipPermissions(t *testing.T) {
 	if len(opts.Args) != 2 {
 		t.Errorf("Expected 2 args, got %d", len(opts.Args))
 	}
+
+	t.Logf("SkipPermissions opts validated: Args=%v, ProxyURL=%s, Interactive=%v",
+		opts.Args, opts.ProxyURL, opts.Interactive)
 }
 
 func TestInstallOptions(t *testing.T) {
@@ -258,6 +265,9 @@ func TestProxyLaunchConfig(t *testing.T) {
 	if !cfg.Verbose {
 		t.Error("Verbose not set correctly")
 	}
+
+	t.Logf("ProxyLaunchConfig validated: Port=%d, Provider=%s, Model=%s, ClaudeArgs=%v, WorkingDir=%s, BackgroundProxy=%v",
+		cfg.Port, cfg.Provider, cfg.Model, cfg.ClaudeArgs, cfg.WorkingDir, cfg.BackgroundProxy)
 }
 
 // Note: We can't test actual installation/launching without mocking

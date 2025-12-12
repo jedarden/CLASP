@@ -98,11 +98,11 @@ type OpenAIRequest struct {
 	StreamOptions       *StreamOptions  `json:"stream_options,omitempty"`
 	ReasoningEffort     string          `json:"reasoning_effort,omitempty"` // O1/O3: "minimal", "low", "medium", "high"
 	// Provider-specific reasoning parameters (OpenRouter)
-	ThinkingConfig *OpenRouterThinkingConfig `json:"thinking_config,omitempty"`   // Gemini 2.5
-	ThinkingLevel  string                    `json:"thinking_level,omitempty"`    // Gemini 3
-	EnableThinking *bool                     `json:"enable_thinking,omitempty"`   // Qwen
-	ThinkingBudget int                       `json:"thinking_budget,omitempty"`   // Qwen
-	ReasoningSplit *bool                     `json:"reasoning_split,omitempty"`   // MiniMax
+	ThinkingConfig *OpenRouterThinkingConfig `json:"thinking_config,omitempty"` // Gemini 2.5
+	ThinkingLevel  string                    `json:"thinking_level,omitempty"`  // Gemini 3
+	EnableThinking *bool                     `json:"enable_thinking,omitempty"` // Qwen
+	ThinkingBudget int                       `json:"thinking_budget,omitempty"` // Qwen
+	ReasoningSplit *bool                     `json:"reasoning_split,omitempty"` // MiniMax
 }
 
 // OpenRouterThinkingConfig for Gemini 2.5 models.
@@ -132,10 +132,10 @@ type ImageURL struct {
 
 // OpenAIToolCall represents a tool call in OpenAI format.
 type OpenAIToolCall struct {
-	ID       string               `json:"id"`
-	Type     string               `json:"type"`
-	Function OpenAIFunctionCall   `json:"function"`
-	Index    int                  `json:"index,omitempty"`
+	ID       string             `json:"id"`
+	Type     string             `json:"type"`
+	Function OpenAIFunctionCall `json:"function"`
+	Index    int                `json:"index,omitempty"`
 }
 
 // OpenAIFunctionCall represents a function call in OpenAI format.
@@ -175,9 +175,9 @@ type OpenAIStreamChunk struct {
 
 // StreamChoice represents a choice in a streaming chunk.
 type StreamChoice struct {
-	Index        int          `json:"index"`
-	Delta        StreamDelta  `json:"delta"`
-	FinishReason string       `json:"finish_reason,omitempty"`
+	Index        int         `json:"index"`
+	Delta        StreamDelta `json:"delta"`
+	FinishReason string      `json:"finish_reason,omitempty"`
 }
 
 // StreamDelta represents the delta content in a streaming chunk.
@@ -264,9 +264,9 @@ type ContentBlockStartData struct {
 
 // ContentBlockDeltaEvent represents a content_block_delta SSE event.
 type ContentBlockDeltaEvent struct {
-	Type  string     `json:"type"`
-	Index int        `json:"index"`
-	Delta DeltaData  `json:"delta"`
+	Type  string    `json:"type"`
+	Index int       `json:"index"`
+	Delta DeltaData `json:"delta"`
 }
 
 // DeltaData represents the delta in a content_block_delta event.

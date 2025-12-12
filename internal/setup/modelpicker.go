@@ -16,14 +16,14 @@ import (
 
 // ModelInfo contains metadata about a model.
 type ModelInfo struct {
-	ID           string  // Model ID (e.g., "gpt-4o")
-	Name         string  // Display name (e.g., "GPT-4o")
-	Desc         string  // Short description
-	Provider     string  // Provider name
-	InputPrice   float64 // Price per 1M input tokens in USD
-	OutputPrice  float64 // Price per 1M output tokens in USD
-	ContextSize  int     // Context window size in tokens
-	IsRecommended bool   // Whether this is a recommended model
+	ID            string  // Model ID (e.g., "gpt-4o")
+	Name          string  // Display name (e.g., "GPT-4o")
+	Desc          string  // Short description
+	Provider      string  // Provider name
+	InputPrice    float64 // Price per 1M input tokens in USD
+	OutputPrice   float64 // Price per 1M output tokens in USD
+	ContextSize   int     // Context window size in tokens
+	IsRecommended bool    // Whether this is a recommended model
 }
 
 // Implement list.Item interface
@@ -60,7 +60,6 @@ type ModelPicker struct {
 	tier           string // Optional: which tier we're selecting for (opus/sonnet/haiku)
 	showHelp       bool
 	err            error
-	cursorBlink    bool   // For cursor animation
 	lastFilterText string // Track previous filter for change detection
 }
 
@@ -71,13 +70,6 @@ var (
 			Foreground(lipgloss.Color("39")).
 			MarginLeft(2)
 
-	itemStyle = lipgloss.NewStyle().
-			PaddingLeft(4)
-
-	selectedItemStyle = lipgloss.NewStyle().
-				PaddingLeft(2).
-				Foreground(lipgloss.Color("170"))
-
 	paginationStyle = lipgloss.NewStyle().
 			PaddingLeft(4)
 
@@ -87,10 +79,6 @@ var (
 
 	filterPromptStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.Color("39"))
-
-	recommendedStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("76")).
-				SetString("★ ")
 
 	filterLabelStyle = lipgloss.NewStyle().
 				Bold(true).
@@ -105,8 +93,8 @@ var (
 			Bold(true)
 
 	separatorStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("241")).
-				PaddingLeft(2)
+			Foreground(lipgloss.Color("241")).
+			PaddingLeft(2)
 
 	countStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("241")).
@@ -232,7 +220,7 @@ func (m *ModelPicker) applyFilter(filter string) {
 	}
 
 	// Fuzzy match against model IDs and names
-	var sources []string
+	sources := make([]string, 0, len(m.models))
 	for _, model := range m.models {
 		sources = append(sources, model.ID+" "+model.Name+" "+model.Desc)
 	}

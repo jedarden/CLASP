@@ -19,10 +19,10 @@ type Profile struct {
 	Description string `json:"description,omitempty"`
 
 	// Provider configuration
-	Provider   string `json:"provider"`
-	APIKey     string `json:"api_key,omitempty"`
-	APIKeyEnv  string `json:"api_key_env,omitempty"` // Reference to env var instead of storing key
-	BaseURL    string `json:"base_url,omitempty"`
+	Provider  string `json:"provider"`
+	APIKey    string `json:"api_key,omitempty"`
+	APIKeyEnv string `json:"api_key_env,omitempty"` // Reference to env var instead of storing key
+	BaseURL   string `json:"base_url,omitempty"`
 
 	// Azure-specific
 	AzureEndpoint   string `json:"azure_endpoint,omitempty"`
@@ -56,11 +56,11 @@ type Profile struct {
 
 // TierMapping represents model mapping for a specific tier.
 type TierMapping struct {
-	Provider string `json:"provider,omitempty"`
-	Model    string `json:"model"`
-	APIKey   string `json:"api_key,omitempty"`
+	Provider  string `json:"provider,omitempty"`
+	Model     string `json:"model"`
+	APIKey    string `json:"api_key,omitempty"`
 	APIKeyEnv string `json:"api_key_env,omitempty"`
-	BaseURL  string `json:"base_url,omitempty"`
+	BaseURL   string `json:"base_url,omitempty"`
 }
 
 // GlobalConfig holds global settings and active profile reference.
@@ -213,21 +213,21 @@ func (pm *ProfileManager) RenameProfile(oldName, newName string) error {
 	profile.UpdatedAt = time.Now().Format(time.RFC3339)
 
 	// Save with new name
-	if err := pm.saveProfile(profile); err != nil {
-		return fmt.Errorf("failed to save renamed profile: %w", err)
+	if saveErr := pm.saveProfile(profile); saveErr != nil {
+		return fmt.Errorf("failed to save renamed profile: %w", saveErr)
 	}
 
 	// Delete old profile file
 	oldPath := pm.getProfilePath(oldName)
-	if err := os.Remove(oldPath); err != nil {
+	if removeErr := os.Remove(oldPath); removeErr != nil {
 		// Try to clean up new file on failure
 		os.Remove(pm.getProfilePath(newName))
-		return fmt.Errorf("failed to remove old profile: %w", err)
+		return fmt.Errorf("failed to remove old profile: %w", removeErr)
 	}
 
 	// Update active profile if this was it
-	globalCfg, err := pm.GetGlobalConfig()
-	if err == nil && globalCfg.ActiveProfile == oldName {
+	globalCfg, globalErr := pm.GetGlobalConfig()
+	if globalErr == nil && globalCfg.ActiveProfile == oldName {
 		globalCfg.ActiveProfile = newName
 		_ = pm.SaveGlobalConfig(globalCfg)
 	}
@@ -247,7 +247,7 @@ func (pm *ProfileManager) ListProfiles() ([]*Profile, error) {
 		return nil, err
 	}
 
-	var profiles []*Profile
+	profiles := make([]*Profile, 0, len(entries))
 	for _, entry := range entries {
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
 			continue

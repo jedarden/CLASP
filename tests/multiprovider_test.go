@@ -47,18 +47,16 @@ func TestMultiProviderConfig_Enabled(t *testing.T) {
 	os.Setenv("CLASP_HAIKU_MODEL", "llama3.1")
 	os.Setenv("CLASP_HAIKU_BASE_URL", "http://localhost:11434/v1")
 
-	defer func() {
-		os.Unsetenv("OPENAI_API_KEY")
-		os.Unsetenv("OPENROUTER_API_KEY")
-		os.Unsetenv("CLASP_MULTI_PROVIDER")
-		os.Unsetenv("CLASP_OPUS_PROVIDER")
-		os.Unsetenv("CLASP_OPUS_MODEL")
-		os.Unsetenv("CLASP_SONNET_PROVIDER")
-		os.Unsetenv("CLASP_SONNET_MODEL")
-		os.Unsetenv("CLASP_HAIKU_PROVIDER")
-		os.Unsetenv("CLASP_HAIKU_MODEL")
-		os.Unsetenv("CLASP_HAIKU_BASE_URL")
-	}()
+	defer os.Unsetenv("OPENAI_API_KEY")
+	defer os.Unsetenv("OPENROUTER_API_KEY")
+	defer os.Unsetenv("CLASP_MULTI_PROVIDER")
+	defer os.Unsetenv("CLASP_OPUS_PROVIDER")
+	defer os.Unsetenv("CLASP_OPUS_MODEL")
+	defer os.Unsetenv("CLASP_SONNET_PROVIDER")
+	defer os.Unsetenv("CLASP_SONNET_MODEL")
+	defer os.Unsetenv("CLASP_HAIKU_PROVIDER")
+	defer os.Unsetenv("CLASP_HAIKU_MODEL")
+	defer os.Unsetenv("CLASP_HAIKU_BASE_URL")
 
 	cfg, err := config.LoadFromEnv()
 	if err != nil {
@@ -144,12 +142,10 @@ func TestMultiProviderConfig_PartialTiers(t *testing.T) {
 	os.Setenv("CLASP_OPUS_PROVIDER", "openai")
 	os.Setenv("CLASP_OPUS_MODEL", "gpt-4o")
 
-	defer func() {
-		os.Unsetenv("OPENAI_API_KEY")
-		os.Unsetenv("CLASP_MULTI_PROVIDER")
-		os.Unsetenv("CLASP_OPUS_PROVIDER")
-		os.Unsetenv("CLASP_OPUS_MODEL")
-	}()
+	defer os.Unsetenv("OPENAI_API_KEY")
+	defer os.Unsetenv("CLASP_MULTI_PROVIDER")
+	defer os.Unsetenv("CLASP_OPUS_PROVIDER")
+	defer os.Unsetenv("CLASP_OPUS_MODEL")
 
 	cfg, err := config.LoadFromEnv()
 	if err != nil {
@@ -182,13 +178,11 @@ func TestMultiProviderConfig_TierSpecificAPIKey(t *testing.T) {
 	os.Setenv("CLASP_OPUS_MODEL", "gpt-4o")
 	os.Setenv("CLASP_OPUS_API_KEY", "tier-specific-key")
 
-	defer func() {
-		os.Unsetenv("OPENAI_API_KEY")
-		os.Unsetenv("CLASP_MULTI_PROVIDER")
-		os.Unsetenv("CLASP_OPUS_PROVIDER")
-		os.Unsetenv("CLASP_OPUS_MODEL")
-		os.Unsetenv("CLASP_OPUS_API_KEY")
-	}()
+	defer os.Unsetenv("OPENAI_API_KEY")
+	defer os.Unsetenv("CLASP_MULTI_PROVIDER")
+	defer os.Unsetenv("CLASP_OPUS_PROVIDER")
+	defer os.Unsetenv("CLASP_OPUS_MODEL")
+	defer os.Unsetenv("CLASP_OPUS_API_KEY")
 
 	cfg, err := config.LoadFromEnv()
 	if err != nil {

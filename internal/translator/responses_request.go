@@ -11,7 +11,7 @@ import (
 
 // TransformRequestToResponses converts an Anthropic request to OpenAI Responses API format.
 // This is used for models that require the /v1/responses endpoint.
-func TransformRequestToResponses(req *models.AnthropicRequest, targetModel string, previousResponseID string) (*models.ResponsesRequest, error) {
+func TransformRequestToResponses(req *models.AnthropicRequest, targetModel, previousResponseID string) (*models.ResponsesRequest, error) {
 	// Enforce minimum max_output_tokens of 16 (Responses API requirement)
 	maxOutputTokens := req.MaxTokens
 	if maxOutputTokens < 16 {
@@ -64,7 +64,8 @@ func TransformRequestToResponses(req *models.AnthropicRequest, targetModel strin
 
 // transformMessagesToInput converts Anthropic messages to Responses input format.
 func transformMessagesToInput(req *models.AnthropicRequest) ([]models.ResponsesInput, error) {
-	var inputs []models.ResponsesInput
+	// Pre-allocate with estimated capacity (at least one input per message, often more)
+	inputs := make([]models.ResponsesInput, 0, len(req.Messages)*2)
 
 	for _, msg := range req.Messages {
 		content, err := parseContent(msg.Content)
@@ -151,7 +152,7 @@ func transformUserMessageToInput(content []models.ContentBlock) models.Responses
 }
 
 // contentPartsToResponsesInterface converts content parts to interface for JSON marshaling.
-func contentPartsToResponsesInterface(parts []models.ResponsesContentPart) interface{} {
+func contentPartsToResponsesInterface(parts []models.ResponsesContentPart) []interface{} {
 	result := make([]interface{}, len(parts))
 	for i, p := range parts {
 		result[i] = p
@@ -187,7 +188,8 @@ func translateToolCallID(id string) string {
 
 // extractToolResultsForResponses extracts tool results and converts to function_call_output items.
 func extractToolResultsForResponses(content []models.ContentBlock) []models.ResponsesInput {
-	var results []models.ResponsesInput
+	// Pre-allocate with estimated capacity
+	results := make([]models.ResponsesInput, 0, len(content)/2)
 
 	for _, block := range content {
 		if block.Type == "tool_result" {
@@ -251,7 +253,8 @@ func extractToolResultContent(block models.ContentBlock) string {
 
 // transformAssistantMessageToInput converts an assistant message to Responses input items.
 func transformAssistantMessageToInput(content []models.ContentBlock) []models.ResponsesInput {
-	var inputs []models.ResponsesInput
+	// Pre-allocate with estimated capacity
+	inputs := make([]models.ResponsesInput, 0, len(content))
 	var textParts []string
 
 	for _, block := range content {
@@ -429,8 +432,9 @@ func cleanupSchemaMapForResponses(schema map[string]interface{}) {
 // 3. It's not nullable
 // 4. It doesn't have a description containing optional-indicating phrases
 // 5. It's not a boolean type (booleans are almost always optional flags)
-func identifyTrulyRequired(props map[string]interface{}, schema map[string]interface{}) []string {
-	var trulyRequired []string
+func identifyTrulyRequired(props, schema map[string]interface{}) []string {
+	// Pre-allocate with estimated capacity
+	trulyRequired := make([]string, 0, len(props)/2)
 
 	// Get original required array
 	originalRequired := make(map[string]bool)

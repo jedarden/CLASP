@@ -39,13 +39,11 @@ func TestFallbackConfig_GlobalEnabled(t *testing.T) {
 	os.Setenv("CLASP_FALLBACK_PROVIDER", "openrouter")
 	os.Setenv("CLASP_FALLBACK_MODEL", "openai/gpt-4o")
 
-	defer func() {
-		os.Unsetenv("OPENAI_API_KEY")
-		os.Unsetenv("OPENROUTER_API_KEY")
-		os.Unsetenv("CLASP_FALLBACK")
-		os.Unsetenv("CLASP_FALLBACK_PROVIDER")
-		os.Unsetenv("CLASP_FALLBACK_MODEL")
-	}()
+	defer os.Unsetenv("OPENAI_API_KEY")
+	defer os.Unsetenv("OPENROUTER_API_KEY")
+	defer os.Unsetenv("CLASP_FALLBACK")
+	defer os.Unsetenv("CLASP_FALLBACK_PROVIDER")
+	defer os.Unsetenv("CLASP_FALLBACK_MODEL")
 
 	cfg, err := config.LoadFromEnv()
 	if err != nil {
@@ -81,13 +79,11 @@ func TestFallbackConfig_GlobalFallbackConfig(t *testing.T) {
 	os.Setenv("CLASP_FALLBACK_PROVIDER", "openrouter")
 	os.Setenv("CLASP_FALLBACK_MODEL", "openai/gpt-4o")
 
-	defer func() {
-		os.Unsetenv("OPENAI_API_KEY")
-		os.Unsetenv("OPENROUTER_API_KEY")
-		os.Unsetenv("CLASP_FALLBACK")
-		os.Unsetenv("CLASP_FALLBACK_PROVIDER")
-		os.Unsetenv("CLASP_FALLBACK_MODEL")
-	}()
+	defer os.Unsetenv("OPENAI_API_KEY")
+	defer os.Unsetenv("OPENROUTER_API_KEY")
+	defer os.Unsetenv("CLASP_FALLBACK")
+	defer os.Unsetenv("CLASP_FALLBACK_PROVIDER")
+	defer os.Unsetenv("CLASP_FALLBACK_MODEL")
 
 	cfg, err := config.LoadFromEnv()
 	if err != nil {
@@ -124,15 +120,13 @@ func TestFallbackConfig_TierSpecificFallback(t *testing.T) {
 	os.Setenv("CLASP_OPUS_FALLBACK_PROVIDER", "openrouter")
 	os.Setenv("CLASP_OPUS_FALLBACK_MODEL", "openai/gpt-4-turbo")
 
-	defer func() {
-		os.Unsetenv("OPENAI_API_KEY")
-		os.Unsetenv("OPENROUTER_API_KEY")
-		os.Unsetenv("CLASP_MULTI_PROVIDER")
-		os.Unsetenv("CLASP_OPUS_PROVIDER")
-		os.Unsetenv("CLASP_OPUS_MODEL")
-		os.Unsetenv("CLASP_OPUS_FALLBACK_PROVIDER")
-		os.Unsetenv("CLASP_OPUS_FALLBACK_MODEL")
-	}()
+	defer os.Unsetenv("OPENAI_API_KEY")
+	defer os.Unsetenv("OPENROUTER_API_KEY")
+	defer os.Unsetenv("CLASP_MULTI_PROVIDER")
+	defer os.Unsetenv("CLASP_OPUS_PROVIDER")
+	defer os.Unsetenv("CLASP_OPUS_MODEL")
+	defer os.Unsetenv("CLASP_OPUS_FALLBACK_PROVIDER")
+	defer os.Unsetenv("CLASP_OPUS_FALLBACK_MODEL")
 
 	cfg, err := config.LoadFromEnv()
 	if err != nil {
@@ -171,15 +165,13 @@ func TestFallbackConfig_TierGetFallbackConfig(t *testing.T) {
 	os.Setenv("CLASP_OPUS_FALLBACK_PROVIDER", "openrouter")
 	os.Setenv("CLASP_OPUS_FALLBACK_MODEL", "openai/gpt-4-turbo")
 
-	defer func() {
-		os.Unsetenv("OPENAI_API_KEY")
-		os.Unsetenv("OPENROUTER_API_KEY")
-		os.Unsetenv("CLASP_MULTI_PROVIDER")
-		os.Unsetenv("CLASP_OPUS_PROVIDER")
-		os.Unsetenv("CLASP_OPUS_MODEL")
-		os.Unsetenv("CLASP_OPUS_FALLBACK_PROVIDER")
-		os.Unsetenv("CLASP_OPUS_FALLBACK_MODEL")
-	}()
+	defer os.Unsetenv("OPENAI_API_KEY")
+	defer os.Unsetenv("OPENROUTER_API_KEY")
+	defer os.Unsetenv("CLASP_MULTI_PROVIDER")
+	defer os.Unsetenv("CLASP_OPUS_PROVIDER")
+	defer os.Unsetenv("CLASP_OPUS_MODEL")
+	defer os.Unsetenv("CLASP_OPUS_FALLBACK_PROVIDER")
+	defer os.Unsetenv("CLASP_OPUS_FALLBACK_MODEL")
 
 	cfg, err := config.LoadFromEnv()
 	if err != nil {
@@ -212,12 +204,10 @@ func TestFallbackConfig_NoFallback(t *testing.T) {
 	os.Setenv("CLASP_OPUS_MODEL", "gpt-4o")
 	// No fallback configured
 
-	defer func() {
-		os.Unsetenv("OPENAI_API_KEY")
-		os.Unsetenv("CLASP_MULTI_PROVIDER")
-		os.Unsetenv("CLASP_OPUS_PROVIDER")
-		os.Unsetenv("CLASP_OPUS_MODEL")
-	}()
+	defer os.Unsetenv("OPENAI_API_KEY")
+	defer os.Unsetenv("CLASP_MULTI_PROVIDER")
+	defer os.Unsetenv("CLASP_OPUS_PROVIDER")
+	defer os.Unsetenv("CLASP_OPUS_MODEL")
 
 	cfg, err := config.LoadFromEnv()
 	if err != nil {
@@ -248,14 +238,12 @@ func TestFallbackConfig_CustomAPIKey(t *testing.T) {
 	os.Setenv("CLASP_FALLBACK_MODEL", "openai/gpt-4o")
 	os.Setenv("CLASP_FALLBACK_API_KEY", "custom-fallback-key")
 
-	defer func() {
-		os.Unsetenv("OPENAI_API_KEY")
-		os.Unsetenv("OPENROUTER_API_KEY")
-		os.Unsetenv("CLASP_FALLBACK")
-		os.Unsetenv("CLASP_FALLBACK_PROVIDER")
-		os.Unsetenv("CLASP_FALLBACK_MODEL")
-		os.Unsetenv("CLASP_FALLBACK_API_KEY")
-	}()
+	defer os.Unsetenv("OPENAI_API_KEY")
+	defer os.Unsetenv("OPENROUTER_API_KEY")
+	defer os.Unsetenv("CLASP_FALLBACK")
+	defer os.Unsetenv("CLASP_FALLBACK_PROVIDER")
+	defer os.Unsetenv("CLASP_FALLBACK_MODEL")
+	defer os.Unsetenv("CLASP_FALLBACK_API_KEY")
 
 	cfg, err := config.LoadFromEnv()
 	if err != nil {
@@ -276,13 +264,11 @@ func TestFallbackConfig_CustomBaseURL(t *testing.T) {
 	os.Setenv("CLASP_FALLBACK_MODEL", "llama3.1")
 	os.Setenv("CLASP_FALLBACK_BASE_URL", "http://localhost:11434/v1")
 
-	defer func() {
-		os.Unsetenv("OPENAI_API_KEY")
-		os.Unsetenv("CLASP_FALLBACK")
-		os.Unsetenv("CLASP_FALLBACK_PROVIDER")
-		os.Unsetenv("CLASP_FALLBACK_MODEL")
-		os.Unsetenv("CLASP_FALLBACK_BASE_URL")
-	}()
+	defer os.Unsetenv("OPENAI_API_KEY")
+	defer os.Unsetenv("CLASP_FALLBACK")
+	defer os.Unsetenv("CLASP_FALLBACK_PROVIDER")
+	defer os.Unsetenv("CLASP_FALLBACK_MODEL")
+	defer os.Unsetenv("CLASP_FALLBACK_BASE_URL")
 
 	cfg, err := config.LoadFromEnv()
 	if err != nil {

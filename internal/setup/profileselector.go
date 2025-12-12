@@ -80,32 +80,32 @@ type ProfileSelector struct {
 // Styles for the profile selector
 var (
 	profileTitleStyle = lipgloss.NewStyle().
-		Bold(true).
-		Foreground(lipgloss.Color("39")).
-		MarginLeft(2).
-		MarginBottom(1)
+				Bold(true).
+				Foreground(lipgloss.Color("39")).
+				MarginLeft(2).
+				MarginBottom(1)
 
 	profileHelpStyle = lipgloss.NewStyle().
-		Foreground(lipgloss.Color("241")).
-		MarginLeft(2)
+				Foreground(lipgloss.Color("241")).
+				MarginLeft(2)
 
 	profileActiveStyle = lipgloss.NewStyle().
-		Foreground(lipgloss.Color("76"))
+				Foreground(lipgloss.Color("76"))
 
 	profileErrorStyle = lipgloss.NewStyle().
-		Foreground(lipgloss.Color("196")).
-		MarginLeft(2)
+				Foreground(lipgloss.Color("196")).
+				MarginLeft(2)
 
 	profileSuccessStyle = lipgloss.NewStyle().
-		Foreground(lipgloss.Color("76")).
-		MarginLeft(2)
+				Foreground(lipgloss.Color("76")).
+				MarginLeft(2)
 
 	profileWarningStyle = lipgloss.NewStyle().
-		Foreground(lipgloss.Color("214")).
-		MarginLeft(2)
+				Foreground(lipgloss.Color("214")).
+				MarginLeft(2)
 
 	profileInputStyle = lipgloss.NewStyle().
-		MarginLeft(2)
+				MarginLeft(2)
 )
 
 // createNewItem is a special item for creating a new profile.

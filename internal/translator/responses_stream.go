@@ -19,10 +19,10 @@ type ResponsesStreamProcessor struct {
 	mu sync.Mutex
 
 	// State tracking
-	state        StreamState
-	messageID    string
-	targetModel  string
-	responseID   string // Tracks the Responses API response ID
+	state       StreamState
+	messageID   string
+	targetModel string
+	responseID  string // Tracks the Responses API response ID
 
 	// Thinking/reasoning tracking
 	thinkingStarted    bool
@@ -33,8 +33,8 @@ type ResponsesStreamProcessor struct {
 	textBlockIndex int
 
 	// Function call tracking
-	funcCallIndex    int
-	activeFuncCalls  map[int]*funcCallState
+	funcCallIndex   int
+	activeFuncCalls map[int]*funcCallState
 
 	// Web search citation tracking
 	// Citations are collected during streaming and appended to text at the end
@@ -276,7 +276,7 @@ func (sp *ResponsesStreamProcessor) handleOutputItemAdded(event *models.Response
 		sp.activeFuncCalls[sp.funcCallIndex] = fcState
 		sp.funcCallIndex++
 
-		// Close text block if open
+		// Close text block if open, then emit content_block_start for tool_use
 		if sp.textStarted && sp.state == StateTextContent {
 			if err := sp.emitContentBlockStop(sp.textBlockIndex); err != nil {
 				return err
@@ -432,13 +432,14 @@ func (sp *ResponsesStreamProcessor) handleFunctionCallDelta(event *models.Respon
 
 	// Find the matching function call state
 	for _, fcState := range sp.activeFuncCalls {
-		if fcState.started && !fcState.closed {
-			fcState.arguments += deltaStr
-			if err := sp.emitContentBlockDelta(fcState.blockIndex, "input_json_delta", "", deltaStr); err != nil {
-				return err
-			}
-			break
+		if !fcState.started || fcState.closed {
+			continue
 		}
+		fcState.arguments += deltaStr
+		if err := sp.emitContentBlockDelta(fcState.blockIndex, "input_json_delta", "", deltaStr); err != nil {
+			return err
+		}
+		break
 	}
 
 	return nil
@@ -470,25 +471,27 @@ func (sp *ResponsesStreamProcessor) handleOutputItemDone(event *models.Responses
 		// in Responses API format (fc_xxx). We need to translate for comparison.
 		translatedCallID := TranslateResponsesIDToAnthropic(event.Item.CallID)
 		for _, fcState := range sp.activeFuncCalls {
-			if fcState.started && !fcState.closed && fcState.id == translatedCallID {
-				if err := sp.emitContentBlockStop(fcState.blockIndex); err != nil {
-					return err
-				}
-				fcState.closed = true
-				break
+			if !fcState.started || fcState.closed || fcState.id != translatedCallID {
+				continue
 			}
+			if err := sp.emitContentBlockStop(fcState.blockIndex); err != nil {
+				return err
+			}
+			fcState.closed = true
+			break
 		}
 	case "web_search_call":
 		// Close the WebSearch tool_use block
 		// Find the fcState by matching the WebSearch name
 		for _, fcState := range sp.activeFuncCalls {
-			if fcState.started && !fcState.closed && fcState.name == "WebSearch" {
-				if err := sp.emitContentBlockStop(fcState.blockIndex); err != nil {
-					return err
-				}
-				fcState.closed = true
-				break
+			if !fcState.started || fcState.closed || fcState.name != "WebSearch" {
+				continue
 			}
+			if err := sp.emitContentBlockStop(fcState.blockIndex); err != nil {
+				return err
+			}
+			fcState.closed = true
+			break
 		}
 	}
 
@@ -525,12 +528,13 @@ func (sp *ResponsesStreamProcessor) handleResponseCompleted(event *models.Respon
 
 	// Close any open function call blocks
 	for _, fcState := range sp.activeFuncCalls {
-		if fcState.started && !fcState.closed {
-			if err := sp.emitContentBlockStop(fcState.blockIndex); err != nil {
-				return err
-			}
-			fcState.closed = true
+		if !fcState.started || fcState.closed {
+			continue
 		}
+		if err := sp.emitContentBlockStop(fcState.blockIndex); err != nil {
+			return err
+		}
+		fcState.closed = true
 	}
 
 	// Determine stop reason
@@ -594,12 +598,13 @@ func (sp *ResponsesStreamProcessor) handleResponseIncomplete(event *models.Respo
 	}
 
 	for _, fcState := range sp.activeFuncCalls {
-		if fcState.started && !fcState.closed {
-			if err := sp.emitContentBlockStop(fcState.blockIndex); err != nil {
-				return err
-			}
-			fcState.closed = true
+		if !fcState.started || fcState.closed {
+			continue
 		}
+		if err := sp.emitContentBlockStop(fcState.blockIndex); err != nil {
+			return err
+		}
+		fcState.closed = true
 	}
 
 	// Use max_tokens as the stop reason for incomplete responses

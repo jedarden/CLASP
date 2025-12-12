@@ -13,14 +13,14 @@ import (
 var (
 	// apiKeyPatterns matches common API key formats
 	apiKeyPatterns = []*regexp.Regexp{
-		regexp.MustCompile(`sk-[a-zA-Z0-9]{20,}`),                    // OpenAI/Anthropic style
-		regexp.MustCompile(`sk-or-[a-zA-Z0-9-]{20,}`),                // OpenRouter style
-		regexp.MustCompile(`sk-ant-[a-zA-Z0-9-]{20,}`),               // Anthropic style
-		regexp.MustCompile(`Bearer\s+[a-zA-Z0-9._-]+`),               // Bearer tokens
-		regexp.MustCompile(`"api[_-]?key"\s*:\s*"[^"]+"`),            // JSON api_key fields
-		regexp.MustCompile(`"authorization"\s*:\s*"[^"]+"`),          // JSON authorization fields
-		regexp.MustCompile(`"x-api-key"\s*:\s*"[^"]+"`),              // JSON x-api-key fields
-		regexp.MustCompile(`(?i)api[_-]?key[=:]\s*[a-zA-Z0-9._-]+`),  // Generic key patterns
+		regexp.MustCompile(`sk-[a-zA-Z0-9]{20,}`),                   // OpenAI/Anthropic style
+		regexp.MustCompile(`sk-or-[a-zA-Z0-9-]{20,}`),               // OpenRouter style
+		regexp.MustCompile(`sk-ant-[a-zA-Z0-9-]{20,}`),              // Anthropic style
+		regexp.MustCompile(`Bearer\s+[a-zA-Z0-9._-]+`),              // Bearer tokens
+		regexp.MustCompile(`"api[_-]?key"\s*:\s*"[^"]+"`),           // JSON api_key fields
+		regexp.MustCompile(`"authorization"\s*:\s*"[^"]+"`),         // JSON authorization fields
+		regexp.MustCompile(`"x-api-key"\s*:\s*"[^"]+"`),             // JSON x-api-key fields
+		regexp.MustCompile(`(?i)api[_-]?key[=:]\s*[a-zA-Z0-9._-]+`), // Generic key patterns
 	}
 
 	// Sensitive field names that should be masked in JSON
@@ -71,21 +71,15 @@ func MaskAllSecrets(s string) string {
 
 	// Mask sk-* style keys
 	skPattern := regexp.MustCompile(`sk-[a-zA-Z0-9_-]{10,}`)
-	result = skPattern.ReplaceAllStringFunc(result, func(match string) string {
-		return MaskAPIKey(match)
-	})
+	result = skPattern.ReplaceAllStringFunc(result, MaskAPIKey)
 
 	// Mask sk-or-* style keys
 	skOrPattern := regexp.MustCompile(`sk-or-[a-zA-Z0-9_-]{10,}`)
-	result = skOrPattern.ReplaceAllStringFunc(result, func(match string) string {
-		return MaskAPIKey(match)
-	})
+	result = skOrPattern.ReplaceAllStringFunc(result, MaskAPIKey)
 
 	// Mask sk-ant-* style keys
 	skAntPattern := regexp.MustCompile(`sk-ant-[a-zA-Z0-9_-]{10,}`)
-	result = skAntPattern.ReplaceAllStringFunc(result, func(match string) string {
-		return MaskAPIKey(match)
-	})
+	result = skAntPattern.ReplaceAllStringFunc(result, MaskAPIKey)
 
 	// Mask Bearer tokens
 	result = MaskBearer(result)
@@ -139,22 +133,6 @@ func maskMapSecrets(data map[string]interface{}) {
 	}
 }
 
-// maskSliceSecrets recursively masks sensitive fields in a slice.
-// Note: This modifies the slice in place.
-func maskSliceSecrets(data []interface{}) {
-	for i, value := range data {
-		switch v := value.(type) {
-		case map[string]interface{}:
-			maskMapSecrets(v)
-			data[i] = v
-		case []interface{}:
-			data[i] = maskSliceSecretsAndReturn(v)
-		case string:
-			data[i] = MaskAllSecrets(v)
-		}
-	}
-}
-
 // maskSliceSecretsAndReturn recursively masks sensitive fields in a slice and returns it.
 func maskSliceSecretsAndReturn(data []interface{}) []interface{} {
 	result := make([]interface{}, len(data))
@@ -180,7 +158,7 @@ func isSensitiveField(name string) bool {
 
 	// Check exact matches first
 	for _, sensitive := range sensitiveFields {
-		if strings.ToLower(sensitive) == nameLower {
+		if strings.EqualFold(sensitive, nameLower) {
 			return true
 		}
 	}
@@ -191,14 +169,14 @@ func isSensitiveField(name string) bool {
 		"completion_tokens", "prompt_tokens", "tokenCount", "token_count",
 	}
 	for _, ns := range nonSensitive {
-		if strings.ToLower(ns) == nameLower {
+		if strings.EqualFold(ns, nameLower) {
 			return false
 		}
 	}
 
 	// Check for common patterns only for fields that look like they might be credentials
 	// Must contain "key" or "secret" but not in a numeric/token context
-	if (strings.Contains(nameLower, "api_key") ||
+	if strings.Contains(nameLower, "api_key") ||
 		strings.Contains(nameLower, "apikey") ||
 		strings.Contains(nameLower, "api-key") ||
 		strings.Contains(nameLower, "secret_key") ||
@@ -206,7 +184,7 @@ func isSensitiveField(name string) bool {
 		strings.Contains(nameLower, "private_key") ||
 		nameLower == "secret" ||
 		nameLower == "password" ||
-		strings.Contains(nameLower, "credential")) {
+		strings.Contains(nameLower, "credential") {
 		return true
 	}
 
@@ -220,11 +198,11 @@ func SanitizeHeaders(headers map[string][]string) map[string][]string {
 	for key, values := range headers {
 		keyLower := strings.ToLower(key)
 		if keyLower == "authorization" ||
-		   keyLower == "x-api-key" ||
-		   keyLower == "api-key" ||
-		   strings.Contains(keyLower, "key") ||
-		   strings.Contains(keyLower, "token") ||
-		   strings.Contains(keyLower, "secret") {
+			keyLower == "x-api-key" ||
+			keyLower == "api-key" ||
+			strings.Contains(keyLower, "key") ||
+			strings.Contains(keyLower, "token") ||
+			strings.Contains(keyLower, "secret") {
 			// Mask all values
 			maskedValues := make([]string, len(values))
 			for i, v := range values {

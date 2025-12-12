@@ -2,6 +2,7 @@
 package translator
 
 import (
+	"bytes"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -279,7 +280,7 @@ func TestTransformRequest_ToolChoice(t *testing.T) {
 			// Compare as JSON for complex types
 			expectedJSON, _ := json.Marshal(tt.expected)
 			resultJSON, _ := json.Marshal(result.ToolChoice)
-			if string(expectedJSON) != string(resultJSON) {
+			if !bytes.Equal(expectedJSON, resultJSON) {
 				t.Errorf("ToolChoice = %s, want %s", resultJSON, expectedJSON)
 			}
 		})
@@ -467,7 +468,7 @@ func TestTransformToolChoice(t *testing.T) {
 			}
 			expectedJSON, _ := json.Marshal(tt.expected)
 			resultJSON, _ := json.Marshal(result)
-			if string(expectedJSON) != string(resultJSON) {
+			if !bytes.Equal(expectedJSON, resultJSON) {
 				t.Errorf("transformToolChoice = %s, want %s", resultJSON, expectedJSON)
 			}
 		})
@@ -1257,7 +1258,7 @@ func TestCleanupSchemaForChatCompletions_FiltersOptionalParams(t *testing.T) {
 					"verbose": map[string]interface{}{
 						"type":        "boolean",
 						"description": "Enable verbose output",
-						"default":    false,
+						"default":     false,
 					},
 				},
 				"required": []interface{}{"name", "verbose"},
@@ -1329,7 +1330,7 @@ func TestIdentifyTrulyRequiredForChat(t *testing.T) {
 				"name": map[string]interface{}{
 					"type":        "string",
 					"description": "The name",
-					"nullable":   true,
+					"nullable":    true,
 				},
 			},
 			schema: map[string]interface{}{

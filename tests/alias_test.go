@@ -20,11 +20,11 @@ func TestModelAlias_ResolveAlias(t *testing.T) {
 		expected string
 	}{
 		{"fast", "gpt-4o-mini"},
-		{"FAST", "gpt-4o-mini"},   // Case insensitive
-		{"Fast", "gpt-4o-mini"},   // Case insensitive
+		{"FAST", "gpt-4o-mini"}, // Case insensitive
+		{"Fast", "gpt-4o-mini"}, // Case insensitive
 		{"smart", "gpt-4o"},
 		{"best", "o1-preview"},
-		{"gpt-4o", "gpt-4o"},      // Non-alias passes through
+		{"gpt-4o", "gpt-4o"},               // Non-alias passes through
 		{"claude-3-opus", "claude-3-opus"}, // Non-alias passes through
 	}
 

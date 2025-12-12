@@ -96,7 +96,7 @@ func TestRateLimitMiddleware_AllowsNormalRequests(t *testing.T) {
 	middleware := proxy.RateLimitMiddleware(limiter)
 	wrapped := middleware(handler)
 
-	req := httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+	req := httptest.NewRequest(http.MethodPost, "/v1/messages", http.NoBody)
 	rec := httptest.NewRecorder()
 
 	wrapped.ServeHTTP(rec, req)
@@ -120,7 +120,7 @@ func TestRateLimitMiddleware_RejectsExcessRequests(t *testing.T) {
 	// Make many requests quickly
 	deniedCount := 0
 	for i := 0; i < 10; i++ {
-		req := httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+		req := httptest.NewRequest(http.MethodPost, "/v1/messages", http.NoBody)
 		rec := httptest.NewRecorder()
 		wrapped.ServeHTTP(rec, req)
 
@@ -148,7 +148,7 @@ func TestRateLimitMiddleware_BypassesNonAPIEndpoints(t *testing.T) {
 
 	// Health endpoint should always be allowed
 	for i := 0; i < 10; i++ {
-		req := httptest.NewRequest(http.MethodGet, "/health", nil)
+		req := httptest.NewRequest(http.MethodGet, "/health", http.NoBody)
 		rec := httptest.NewRecorder()
 		wrapped.ServeHTTP(rec, req)
 
@@ -171,7 +171,7 @@ func TestRateLimitMiddleware_ReturnsProperError(t *testing.T) {
 
 	// Make requests until one is denied
 	for i := 0; i < 10; i++ {
-		req := httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+		req := httptest.NewRequest(http.MethodPost, "/v1/messages", http.NoBody)
 		rec := httptest.NewRecorder()
 		wrapped.ServeHTTP(rec, req)
 
@@ -210,15 +210,15 @@ func TestRateLimitMiddleware_ReturnsProperError(t *testing.T) {
 
 func TestIntegration_RateLimitWithHandler(t *testing.T) {
 	cfg := &config.Config{
-		Provider:           config.ProviderOpenAI,
-		OpenAIAPIKey:       "test-key",
-		OpenAIBaseURL:      "https://api.openai.com/v1",
-		DefaultModel:       "gpt-4o",
-		Port:               8080,
-		RateLimitEnabled:   true,
-		RateLimitRequests:  2,
-		RateLimitWindow:    1,
-		RateLimitBurst:     1,
+		Provider:          config.ProviderOpenAI,
+		OpenAIAPIKey:      "test-key",
+		OpenAIBaseURL:     "https://api.openai.com/v1",
+		DefaultModel:      "gpt-4o",
+		Port:              8080,
+		RateLimitEnabled:  true,
+		RateLimitRequests: 2,
+		RateLimitWindow:   1,
+		RateLimitBurst:    1,
 	}
 
 	handler, err := proxy.NewHandler(cfg)
@@ -272,7 +272,7 @@ func TestIntegration_RateLimitWithHandler(t *testing.T) {
 	}
 
 	// Check metrics endpoint includes rate limit info
-	metricsReq := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	metricsReq := httptest.NewRequest(http.MethodGet, "/metrics", http.NoBody)
 	metricsRec := httptest.NewRecorder()
 	wrapped.ServeHTTP(metricsRec, metricsReq)
 

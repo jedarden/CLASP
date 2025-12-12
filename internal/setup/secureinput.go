@@ -18,8 +18,7 @@ type SecureInput struct {
 	value       string
 	submitted   bool
 	canceled    bool
-	showLast4   bool     // Show last 4 characters
-	err         error
+	showLast4   bool // Show last 4 characters
 }
 
 // Styles for secure input
@@ -64,9 +63,8 @@ func (s *SecureInput) Init() tea.Cmd {
 
 // Update handles input and updates the secure input state.
 func (s *SecureInput) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	switch msg := msg.(type) {
-	case tea.KeyMsg:
-		switch msg.String() {
+	if keyMsg, ok := msg.(tea.KeyMsg); ok {
+		switch keyMsg.String() {
 		case "ctrl+c":
 			s.canceled = true
 			return s, tea.Quit
@@ -92,40 +90,40 @@ func (s *SecureInput) View() string {
 	var b strings.Builder
 
 	// Prompt
-	b.WriteString("\n")
-	b.WriteString(securePromptStyle.Render(s.prompt))
-	b.WriteString("\n\n")
+	_, _ = b.WriteString("\n")
+	_, _ = b.WriteString(securePromptStyle.Render(s.prompt))
+	_, _ = b.WriteString("\n\n")
 
 	// Text input with masked display
-	b.WriteString("  ")
-	b.WriteString(s.textInput.View())
-	b.WriteString("\n")
+	_, _ = b.WriteString("  ")
+	_, _ = b.WriteString(s.textInput.View())
+	_, _ = b.WriteString("\n")
 
 	// Show preview with last 4 chars if enabled and has value
 	if s.showLast4 && len(s.textInput.Value()) > 4 {
 		value := s.textInput.Value()
 		last4 := value[len(value)-4:]
 		masked := strings.Repeat("•", len(value)-4) + last4
-		b.WriteString("\n")
-		b.WriteString(secureHintStyle.Render(fmt.Sprintf("  Preview: %s", masked)))
-		b.WriteString("\n")
+		_, _ = b.WriteString("\n")
+		_, _ = b.WriteString(secureHintStyle.Render(fmt.Sprintf("  Preview: %s", masked)))
+		_, _ = b.WriteString("\n")
 	}
 
 	// Validation hint
-	b.WriteString("\n")
+	_, _ = b.WriteString("\n")
 	if s.validateAPIKey() {
-		b.WriteString(validKeyStyle.Render("  ✓ Key format looks valid"))
-	} else if len(s.textInput.Value()) > 0 {
-		b.WriteString(secureHintStyle.Render("  Enter your API key (press Enter when done)"))
+		_, _ = b.WriteString(validKeyStyle.Render("  ✓ Key format looks valid"))
+	} else if s.textInput.Value() != "" {
+		_, _ = b.WriteString(secureHintStyle.Render("  Enter your API key (press Enter when done)"))
 	} else {
-		b.WriteString(secureHintStyle.Render("  Paste or type your API key"))
+		_, _ = b.WriteString(secureHintStyle.Render("  Paste or type your API key"))
 	}
-	b.WriteString("\n")
+	_, _ = b.WriteString("\n")
 
 	// Help
-	b.WriteString("\n")
-	b.WriteString(secureHintStyle.Render("  Press Enter to confirm • Esc to cancel"))
-	b.WriteString("\n")
+	_, _ = b.WriteString("\n")
+	_, _ = b.WriteString(secureHintStyle.Render("  Press Enter to confirm • Esc to cancel"))
+	_, _ = b.WriteString("\n")
 
 	return b.String()
 }
@@ -139,12 +137,12 @@ func (s *SecureInput) validateAPIKey() bool {
 
 	// Check common API key prefixes
 	prefixes := []string{
-		"sk-",       // OpenAI, Anthropic
-		"sk-or-",    // OpenRouter
-		"sk-ant-",   // Anthropic
-		"sk-proj-",  // OpenAI project keys
-		"xai-",      // xAI
-		"AIza",      // Google
+		"sk-",      // OpenAI, Anthropic
+		"sk-or-",   // OpenRouter
+		"sk-ant-",  // Anthropic
+		"sk-proj-", // OpenAI project keys
+		"xai-",     // xAI
+		"AIza",     // Google
 	}
 
 	for _, prefix := range prefixes {

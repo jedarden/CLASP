@@ -22,7 +22,7 @@ func TestAuthMiddleware_DisabledAuth(t *testing.T) {
 
 	middleware := proxy.AuthMiddleware(config)(handler)
 
-	req := httptest.NewRequest(http.MethodGet, "/v1/messages", nil)
+	req := httptest.NewRequest(http.MethodGet, "/v1/messages", http.NoBody)
 	rec := httptest.NewRecorder()
 
 	middleware.ServeHTTP(rec, req)
@@ -45,7 +45,7 @@ func TestAuthMiddleware_ValidAPIKey_XAPIKeyHeader(t *testing.T) {
 
 	middleware := proxy.AuthMiddleware(config)(handler)
 
-	req := httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+	req := httptest.NewRequest(http.MethodPost, "/v1/messages", http.NoBody)
 	req.Header.Set("x-api-key", "test-secret-key")
 	rec := httptest.NewRecorder()
 
@@ -69,7 +69,7 @@ func TestAuthMiddleware_ValidAPIKey_BearerToken(t *testing.T) {
 
 	middleware := proxy.AuthMiddleware(config)(handler)
 
-	req := httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+	req := httptest.NewRequest(http.MethodPost, "/v1/messages", http.NoBody)
 	req.Header.Set("Authorization", "Bearer test-secret-key")
 	rec := httptest.NewRecorder()
 
@@ -93,7 +93,7 @@ func TestAuthMiddleware_MissingAPIKey(t *testing.T) {
 
 	middleware := proxy.AuthMiddleware(config)(handler)
 
-	req := httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+	req := httptest.NewRequest(http.MethodPost, "/v1/messages", http.NoBody)
 	rec := httptest.NewRecorder()
 
 	middleware.ServeHTTP(rec, req)
@@ -135,7 +135,7 @@ func TestAuthMiddleware_InvalidAPIKey(t *testing.T) {
 
 	middleware := proxy.AuthMiddleware(config)(handler)
 
-	req := httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+	req := httptest.NewRequest(http.MethodPost, "/v1/messages", http.NoBody)
 	req.Header.Set("x-api-key", "wrong-key")
 	rec := httptest.NewRecorder()
 
@@ -160,7 +160,7 @@ func TestAuthMiddleware_AnonymousHealthAllowed(t *testing.T) {
 
 	middleware := proxy.AuthMiddleware(config)(handler)
 
-	req := httptest.NewRequest(http.MethodGet, "/health", nil)
+	req := httptest.NewRequest(http.MethodGet, "/health", http.NoBody)
 	rec := httptest.NewRecorder()
 
 	middleware.ServeHTTP(rec, req)
@@ -184,7 +184,7 @@ func TestAuthMiddleware_AnonymousHealthDenied(t *testing.T) {
 
 	middleware := proxy.AuthMiddleware(config)(handler)
 
-	req := httptest.NewRequest(http.MethodGet, "/health", nil)
+	req := httptest.NewRequest(http.MethodGet, "/health", http.NoBody)
 	rec := httptest.NewRecorder()
 
 	middleware.ServeHTTP(rec, req)
@@ -209,7 +209,7 @@ func TestAuthMiddleware_AnonymousMetricsAllowed(t *testing.T) {
 	middleware := proxy.AuthMiddleware(config)(handler)
 
 	// Test /metrics endpoint
-	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	req := httptest.NewRequest(http.MethodGet, "/metrics", http.NoBody)
 	rec := httptest.NewRecorder()
 	middleware.ServeHTTP(rec, req)
 
@@ -218,7 +218,7 @@ func TestAuthMiddleware_AnonymousMetricsAllowed(t *testing.T) {
 	}
 
 	// Test /metrics/prometheus endpoint
-	req = httptest.NewRequest(http.MethodGet, "/metrics/prometheus", nil)
+	req = httptest.NewRequest(http.MethodGet, "/metrics/prometheus", http.NoBody)
 	rec = httptest.NewRecorder()
 	middleware.ServeHTTP(rec, req)
 
@@ -241,7 +241,7 @@ func TestAuthMiddleware_AnonymousMetricsDenied(t *testing.T) {
 
 	middleware := proxy.AuthMiddleware(config)(handler)
 
-	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	req := httptest.NewRequest(http.MethodGet, "/metrics", http.NoBody)
 	rec := httptest.NewRecorder()
 	middleware.ServeHTTP(rec, req)
 
@@ -263,7 +263,7 @@ func TestAuthMiddleware_RootEndpointAlwaysAccessible(t *testing.T) {
 
 	middleware := proxy.AuthMiddleware(config)(handler)
 
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req := httptest.NewRequest(http.MethodGet, "/", http.NoBody)
 	rec := httptest.NewRecorder()
 	middleware.ServeHTTP(rec, req)
 
@@ -284,7 +284,7 @@ func TestAuthMiddleware_WWWAuthenticateHeader(t *testing.T) {
 
 	middleware := proxy.AuthMiddleware(config)(handler)
 
-	req := httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+	req := httptest.NewRequest(http.MethodPost, "/v1/messages", http.NoBody)
 	rec := httptest.NewRecorder()
 	middleware.ServeHTTP(rec, req)
 
@@ -307,7 +307,7 @@ func TestAuthMiddleware_RawAuthorizationHeader(t *testing.T) {
 	middleware := proxy.AuthMiddleware(config)(handler)
 
 	// Test with raw Authorization header (no Bearer prefix)
-	req := httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+	req := httptest.NewRequest(http.MethodPost, "/v1/messages", http.NoBody)
 	req.Header.Set("Authorization", "test-secret-key")
 	rec := httptest.NewRecorder()
 

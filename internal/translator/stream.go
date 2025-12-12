@@ -68,12 +68,12 @@ type StreamProcessor struct {
 }
 
 type toolCallState struct {
-	id          string
-	name        string
-	arguments   string
-	blockIndex  int
-	started     bool
-	closed      bool
+	id         string
+	name       string
+	arguments  string
+	blockIndex int
+	started    bool
+	closed     bool
 }
 
 // NewStreamProcessor creates a new stream processor.

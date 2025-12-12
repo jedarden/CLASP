@@ -20,15 +20,15 @@ import (
 
 // ConfigFile represents the saved configuration format.
 type ConfigFile struct {
-	Provider         string            `json:"provider"`
-	Model            string            `json:"model,omitempty"`
-	APIKey           string            `json:"api_key,omitempty"`
-	BaseURL          string            `json:"base_url,omitempty"`
-	AzureEndpoint    string            `json:"azure_endpoint,omitempty"`
-	AzureDeployment  string            `json:"azure_deployment,omitempty"`
-	ModelAliases     map[string]string `json:"model_aliases,omitempty"`
-	CreatedAt        string            `json:"created_at"`
-	UpdatedAt        string            `json:"updated_at"`
+	Provider        string            `json:"provider"`
+	Model           string            `json:"model,omitempty"`
+	APIKey          string            `json:"api_key,omitempty"`
+	BaseURL         string            `json:"base_url,omitempty"`
+	AzureEndpoint   string            `json:"azure_endpoint,omitempty"`
+	AzureDeployment string            `json:"azure_deployment,omitempty"`
+	ModelAliases    map[string]string `json:"model_aliases,omitempty"`
+	CreatedAt       string            `json:"created_at"`
+	UpdatedAt       string            `json:"updated_at"`
 	// Claude Code settings
 	ClaudeCodeConfig *ClaudeCodeConfig `json:"claude_code,omitempty"`
 }
@@ -43,9 +43,9 @@ type ClaudeCodeConfig struct {
 
 // Wizard handles the interactive setup process.
 type Wizard struct {
-	reader  *bufio.Reader
-	writer  io.Writer
-	client  *http.Client
+	reader *bufio.Reader
+	writer io.Writer
+	client *http.Client
 }
 
 // NewWizard creates a new setup wizard.

@@ -115,10 +115,8 @@ func TestAnthropicConfig_Validation(t *testing.T) {
 	os.Setenv("PROVIDER", "anthropic")
 	os.Setenv("ANTHROPIC_API_KEY", "test-anthropic-key")
 
-	defer func() {
-		os.Unsetenv("PROVIDER")
-		os.Unsetenv("ANTHROPIC_API_KEY")
-	}()
+	defer os.Unsetenv("PROVIDER")
+	defer os.Unsetenv("ANTHROPIC_API_KEY")
 
 	cfg, err := config.LoadFromEnv()
 	if err != nil {
@@ -144,9 +142,7 @@ func TestAnthropicConfig_ValidationError(t *testing.T) {
 	os.Setenv("PROVIDER", "anthropic")
 	os.Unsetenv("ANTHROPIC_API_KEY")
 
-	defer func() {
-		os.Unsetenv("PROVIDER")
-	}()
+	defer os.Unsetenv("PROVIDER")
 
 	_, err := config.LoadFromEnv()
 	if err == nil {
@@ -163,9 +159,7 @@ func TestAnthropicConfig_AutoDetect(t *testing.T) {
 	os.Unsetenv("CUSTOM_API_KEY")
 	os.Setenv("ANTHROPIC_API_KEY", "test-anthropic-key")
 
-	defer func() {
-		os.Unsetenv("ANTHROPIC_API_KEY")
-	}()
+	defer os.Unsetenv("ANTHROPIC_API_KEY")
 
 	cfg, err := config.LoadFromEnv()
 	if err != nil {
@@ -304,15 +298,13 @@ func TestMultiProviderWithAnthropicTier(t *testing.T) {
 	os.Setenv("CLASP_SONNET_PROVIDER", "openai")
 	os.Setenv("CLASP_SONNET_MODEL", "gpt-4o")
 
-	defer func() {
-		os.Unsetenv("OPENAI_API_KEY")
-		os.Unsetenv("ANTHROPIC_API_KEY")
-		os.Unsetenv("CLASP_MULTI_PROVIDER")
-		os.Unsetenv("CLASP_OPUS_PROVIDER")
-		os.Unsetenv("CLASP_OPUS_MODEL")
-		os.Unsetenv("CLASP_SONNET_PROVIDER")
-		os.Unsetenv("CLASP_SONNET_MODEL")
-	}()
+	defer os.Unsetenv("OPENAI_API_KEY")
+	defer os.Unsetenv("ANTHROPIC_API_KEY")
+	defer os.Unsetenv("CLASP_MULTI_PROVIDER")
+	defer os.Unsetenv("CLASP_OPUS_PROVIDER")
+	defer os.Unsetenv("CLASP_OPUS_MODEL")
+	defer os.Unsetenv("CLASP_SONNET_PROVIDER")
+	defer os.Unsetenv("CLASP_SONNET_MODEL")
 
 	cfg, err := config.LoadFromEnv()
 	if err != nil {
@@ -351,9 +343,9 @@ func TestMultiProviderWithAnthropicTier(t *testing.T) {
 
 func TestProviderRequiresTransformation(t *testing.T) {
 	tests := []struct {
-		name            string
-		provider        provider.Provider
-		needsTransform  bool
+		name           string
+		provider       provider.Provider
+		needsTransform bool
 	}{
 		{
 			name:           "OpenAI requires transformation",

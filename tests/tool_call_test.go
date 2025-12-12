@@ -273,24 +273,24 @@ func TestToolDefinitionTranslation_ComplexSchema(t *testing.T) {
 // TestToolChoiceTranslation tests all tool_choice variations.
 func TestToolChoiceTranslation(t *testing.T) {
 	tests := []struct {
-		name           string
+		name            string
 		anthropicChoice interface{}
-		expectedOpenAI interface{}
+		expectedOpenAI  interface{}
 	}{
 		{
-			name:           "none - disable tool use",
+			name:            "none - disable tool use",
 			anthropicChoice: map[string]interface{}{"type": "none"},
-			expectedOpenAI: "none",
+			expectedOpenAI:  "none",
 		},
 		{
-			name:           "any - force tool use (required)",
+			name:            "any - force tool use (required)",
 			anthropicChoice: map[string]interface{}{"type": "any"},
-			expectedOpenAI: "required",
+			expectedOpenAI:  "required",
 		},
 		{
-			name:           "auto - let model decide",
+			name:            "auto - let model decide",
 			anthropicChoice: map[string]interface{}{"type": "auto"},
-			expectedOpenAI: "auto",
+			expectedOpenAI:  "auto",
 		},
 		{
 			name: "specific tool - force specific function",
@@ -333,7 +333,7 @@ func TestToolChoiceTranslation(t *testing.T) {
 			// Compare as JSON for complex types
 			expectedJSON, _ := json.Marshal(tt.expectedOpenAI)
 			resultJSON, _ := json.Marshal(result.ToolChoice)
-			if string(expectedJSON) != string(resultJSON) {
+			if !bytes.Equal(expectedJSON, resultJSON) {
 				t.Errorf("tool_choice = %s, want %s", resultJSON, expectedJSON)
 			}
 		})

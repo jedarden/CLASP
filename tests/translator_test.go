@@ -1,7 +1,6 @@
 package tests
 
 import (
-	"encoding/json"
 	"strings"
 	"testing"
 
@@ -178,24 +177,24 @@ func TestTransformRequest_WithContentBlocks(t *testing.T) {
 
 func TestTransformRequest_ToolChoice(t *testing.T) {
 	tests := []struct {
-		name           string
+		name            string
 		anthropicChoice interface{}
-		expectedOpenAI interface{}
+		expectedOpenAI  interface{}
 	}{
 		{
-			name:           "none",
+			name:            "none",
 			anthropicChoice: map[string]interface{}{"type": "none"},
-			expectedOpenAI: "none",
+			expectedOpenAI:  "none",
 		},
 		{
-			name:           "any",
+			name:            "any",
 			anthropicChoice: map[string]interface{}{"type": "any"},
-			expectedOpenAI: "required",
+			expectedOpenAI:  "required",
 		},
 		{
-			name:           "auto",
+			name:            "auto",
 			anthropicChoice: map[string]interface{}{"type": "auto"},
-			expectedOpenAI: "auto",
+			expectedOpenAI:  "auto",
 		},
 	}
 
@@ -439,12 +438,6 @@ func BenchmarkTransformRequest(b *testing.B) {
 	}
 }
 
-// Helper to pretty print JSON for debugging
-func prettyJSON(v interface{}) string {
-	b, _ := json.MarshalIndent(v, "", "  ")
-	return string(b)
-}
-
 func TestTransformRequest_ComputerUseTools(t *testing.T) {
 	tests := []struct {
 		name           string
@@ -547,9 +540,9 @@ func TestTransformRequest_WithCacheControl(t *testing.T) {
 		},
 		Tools: []models.AnthropicTool{
 			{
-				Name:        "Read",
-				Description: "Read a file",
-				InputSchema: map[string]interface{}{"type": "object"},
+				Name:         "Read",
+				Description:  "Read a file",
+				InputSchema:  map[string]interface{}{"type": "object"},
 				CacheControl: &models.CacheControl{Type: "ephemeral"},
 			},
 		},

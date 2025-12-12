@@ -326,9 +326,9 @@ func TestMapBudgetToReasoningEffortResponses(t *testing.T) {
 
 func TestTransformRequestToResponses_MaxOutputTokensMinimum(t *testing.T) {
 	tests := []struct {
-		name          string
-		maxTokens     int
-		expectedMin   int
+		name        string
+		maxTokens   int
+		expectedMin int
 	}{
 		{"below minimum", 1, 16},
 		{"at minimum", 16, 16},
@@ -585,8 +585,8 @@ func TestTranslateResponsesIDToAnthropic(t *testing.T) {
 func TestToolCallIDRoundTrip(t *testing.T) {
 	// Test that converting call_ -> fc_ -> call_ preserves the original ID suffix
 	tests := []struct {
-		name    string
-		input   string
+		name  string
+		input string
 	}{
 		{"Standard call ID", "call_abc123"},
 		{"Numeric call ID", "call_12345"},
@@ -627,7 +627,7 @@ func TestTransformRequestToResponses_ToolResultIDTranslation(t *testing.T) {
 				Content: []interface{}{
 					map[string]interface{}{
 						"type":        "tool_result",
-						"tool_use_id": "call_abc123",  // Chat Completions format
+						"tool_use_id": "call_abc123", // Chat Completions format
 						"content":     "Result from tool",
 					},
 				},
@@ -936,9 +936,9 @@ func TestIdentifyTrulyRequired(t *testing.T) {
 			expected: []string{"name"},
 		},
 		{
-			name:   "Empty properties",
-			props:  map[string]interface{}{},
-			schema: map[string]interface{}{},
+			name:     "Empty properties",
+			props:    map[string]interface{}{},
+			schema:   map[string]interface{}{},
 			expected: nil,
 		},
 	}
