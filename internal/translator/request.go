@@ -102,7 +102,14 @@ func capMaxTokens(maxTokens int, targetModel string) int {
 }
 
 // TransformRequest converts an Anthropic request to OpenAI format.
+// This is a convenience wrapper that auto-detects the provider from the model name.
 func TransformRequest(req *models.AnthropicRequest, targetModel string) (*models.OpenAIRequest, error) {
+	provider := DetectProviderFromModel(targetModel)
+	return TransformRequestWithProvider(req, targetModel, provider)
+}
+
+// TransformRequestWithProvider converts an Anthropic request to provider-specific format.
+func TransformRequestWithProvider(req *models.AnthropicRequest, targetModel string, provider ProviderType) (*models.OpenAIRequest, error) {
 	openAIReq := &models.OpenAIRequest{
 		Model:       targetModel,
 		Stream:      req.Stream,
@@ -123,9 +130,12 @@ func TransformRequest(req *models.AnthropicRequest, targetModel string) (*models
 	}
 	openAIReq.Messages = messages
 
-	// Transform tools
+	// Transform tools with provider-specific handling
 	if len(req.Tools) > 0 {
-		openAIReq.Tools = transformTools(req.Tools)
+		if ProviderSupportsTools(provider, targetModel) {
+			openAIReq.Tools = TransformToolsForProvider(req.Tools, provider, targetModel)
+		}
+		// If provider doesn't support tools, they are silently omitted
 	}
 
 	// Transform tool choice
@@ -157,6 +167,16 @@ func applyThinkingParameters(req *models.AnthropicRequest, openAIReq *models.Ope
 
 	// Detect model family and apply appropriate reasoning parameters
 	switch {
+	case isGPT5Model(targetModel):
+		// GPT-5.x series uses reasoning_effort with levels: none, low, medium, high
+		// GPT-5.1 defaults to "none" for speed, GPT-5.2+ supports "xhigh"
+		openAIReq.ReasoningEffort = mapBudgetToGPT5ReasoningEffort(budgetTokens, targetModel)
+		// GPT-5 series uses max_completion_tokens via Responses API
+		if openAIReq.MaxTokens > 0 {
+			openAIReq.MaxCompletionTokens = openAIReq.MaxTokens
+			openAIReq.MaxTokens = 0
+		}
+
 	case isO1OrO3Model(targetModel):
 		// OpenAI O1/O3 models use reasoning_effort
 		openAIReq.ReasoningEffort = mapBudgetToReasoningEffort(budgetTokens)
@@ -203,23 +223,102 @@ func applyThinkingParameters(req *models.AnthropicRequest, openAIReq *models.Ope
 		enabled := true
 		openAIReq.ReasoningSplit = &enabled
 
+	case isDeepSeekThinkingModel(targetModel):
+		// DeepSeek V3.1+ supports thinking mode with tool calls
+		// Set thinking mode flag (handled via separate API parameter)
+		enabled := true
+		openAIReq.EnableThinking = &enabled
+
 	case isDeepSeekModel(targetModel):
-		// DeepSeek R1 doesn't support reasoning params via API
+		// DeepSeek base models don't support reasoning params via API
 		// Just strip the thinking parameter (no-op)
 	}
 }
 
-// mapBudgetToReasoningEffort converts budget_tokens to OpenAI reasoning_effort.
-func mapBudgetToReasoningEffort(budgetTokens int) string {
+// isGPT5Model checks if the model is a GPT-5.x series model.
+func isGPT5Model(model string) bool {
+	m := strings.ToLower(model)
+	return strings.HasPrefix(m, "gpt-5") || strings.HasPrefix(m, "gpt5") ||
+		strings.Contains(m, "openai/gpt-5") || strings.Contains(m, "codex")
+}
+
+// mapBudgetToGPT5ReasoningEffort converts budget_tokens to GPT-5 reasoning_effort.
+// GPT-5.1 defaults to "none" for speed. GPT-5.2+ supports "xhigh".
+// Levels: none (fastest), low, medium, high, xhigh (GPT-5.2+ only)
+func mapBudgetToGPT5ReasoningEffort(budgetTokens int, model string) string {
+	m := strings.ToLower(model)
+	supportsXHigh := strings.Contains(m, "gpt-5.2") || strings.Contains(m, "gpt-5.3") ||
+		strings.Contains(m, "gpt5.2") || strings.Contains(m, "gpt5.3")
+
 	switch {
-	case budgetTokens < 4000:
-		return "minimal"
-	case budgetTokens < 16000:
-		return "low"
-	case budgetTokens < 32000:
-		return "medium"
-	default:
+	case budgetTokens >= 80000 && supportsXHigh:
+		return "xhigh"
+	case budgetTokens >= 64000:
 		return "high"
+	case budgetTokens >= 32000:
+		return "high"
+	case budgetTokens >= 16000:
+		return "medium"
+	case budgetTokens >= 4000:
+		return "low"
+	case budgetTokens > 0:
+		return "low" // GPT-5 should use at least low when thinking is requested
+	default:
+		return "none" // GPT-5.1 default - fastest, no reasoning
+	}
+}
+
+// isDeepSeekThinkingModel checks if the model is a DeepSeek model that supports thinking.
+func isDeepSeekThinkingModel(model string) bool {
+	m := strings.ToLower(model)
+	return (strings.Contains(m, "deepseek") || strings.HasPrefix(m, "deepseek/")) &&
+		(strings.Contains(m, "r1") || strings.Contains(m, "v3.1") ||
+			strings.Contains(m, "v3.2") || strings.Contains(m, "thinking"))
+}
+
+// mapBudgetToReasoningEffort converts budget_tokens to OpenAI reasoning_effort.
+// Uses ratio-based calculation for more accurate mapping:
+// - xhigh: 95% of context (very intensive reasoning)
+// - high: 80% of context
+// - medium: 50% of context
+// - low: 20% of context
+// - minimal: 10% of context
+func mapBudgetToReasoningEffort(budgetTokens int) string {
+	// Use absolute thresholds based on typical Claude context (200k)
+	// These map to approximate ratios of max_tokens
+	switch {
+	case budgetTokens >= 64000:
+		return "high" // OpenAI doesn't have xhigh, map to high
+	case budgetTokens >= 32000:
+		return "high"
+	case budgetTokens >= 16000:
+		return "medium"
+	case budgetTokens >= 4000:
+		return "low"
+	default:
+		return "minimal"
+	}
+}
+
+// mapBudgetToReasoningEffortWithRatio converts budget_tokens to reasoning_effort
+// using the ratio relative to max_tokens for more accurate per-request mapping.
+func mapBudgetToReasoningEffortWithRatio(budgetTokens, maxTokens int) string {
+	if maxTokens <= 0 {
+		return mapBudgetToReasoningEffort(budgetTokens)
+	}
+
+	ratio := float64(budgetTokens) / float64(maxTokens)
+	switch {
+	case ratio >= 0.95:
+		return "high" // Map xhigh to high (OpenAI max)
+	case ratio >= 0.80:
+		return "high"
+	case ratio >= 0.50:
+		return "medium"
+	case ratio >= 0.20:
+		return "low"
+	default:
+		return "minimal"
 	}
 }
 
@@ -643,6 +742,9 @@ func transformTools(tools []models.AnthropicTool) []models.OpenAITool {
 		if isComputerUseTool(tool.Type) {
 			// Transform computer use tool to generic function
 			toolName, toolDescription, toolParams = transformComputerUseTool(tool)
+		} else if IsClaudeCodeTool(tool.Name) {
+			// Transform Claude Code tools to ensure proper schema for all providers
+			toolName, toolDescription, toolParams = GetClaudeCodeToolDefinition(tool)
 		}
 
 		// Clean up input schema (remove format: "uri" which OpenAI doesn't support)

@@ -12,7 +12,7 @@ const path = require('path');
 const { execSync } = require('child_process');
 const os = require('os');
 
-const VERSION = '0.48.9';
+const VERSION = '0.50.23';
 const REPO = 'jedarden/CLASP';
 const BINARY_NAME = 'clasp';
 

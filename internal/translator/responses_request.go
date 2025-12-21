@@ -320,21 +320,30 @@ func transformToolsToResponses(tools []models.AnthropicTool) []models.ResponsesT
 			continue // Skip adding as function, will add web_search_preview instead
 		}
 
+		// Get tool definition - use Claude Code tool definitions if applicable
+		toolName := tool.Name
+		toolDescription := tool.Description
+		toolParams := tool.InputSchema
+
+		if IsClaudeCodeTool(tool.Name) {
+			toolName, toolDescription, toolParams = GetClaudeCodeToolDefinition(tool)
+		}
+
 		// Clean up input schema and fix required array
-		params := cleanupSchemaForResponses(tool.InputSchema)
+		params := cleanupSchemaForResponses(toolParams)
 
 		// Responses API uses a flattened structure with name at top level
 		result = append(result, models.ResponsesTool{
 			Type:        "function",
-			Name:        tool.Name,
-			Description: tool.Description,
+			Name:        toolName,
+			Description: toolDescription,
 			Parameters:  params,
 			Strict:      &strictFalse, // CRITICAL: Must set strict:false at top level for Responses API
 			// Also set Function for backwards compatibility, but Responses API
 			// primarily uses the top-level fields
 			Function: &models.ResponsesFunction{
-				Name:        tool.Name,
-				Description: tool.Description,
+				Name:        toolName,
+				Description: toolDescription,
 				Parameters:  params,
 				Strict:      false, // CRITICAL: Don't use strict mode - Anthropic marks all params as required
 			},
