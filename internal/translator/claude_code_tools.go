@@ -19,12 +19,15 @@ const (
 	ToolNotebookEdit    = "NotebookEdit"
 	ToolTask            = "Task"
 	ToolSkill           = "Skill"
-	ToolTodoWrite       = "TodoWrite"
 	ToolAskUserQuestion = "AskUserQuestion"
 	ToolEnterPlanMode   = "EnterPlanMode"
 	ToolExitPlanMode    = "ExitPlanMode"
 	ToolTaskOutput      = "TaskOutput"
-	ToolKillShell       = "KillShell"
+	ToolTaskStop        = "TaskStop"
+	ToolTaskCreate      = "TaskCreate"
+	ToolTaskGet         = "TaskGet"
+	ToolTaskUpdate      = "TaskUpdate"
+	ToolTaskList        = "TaskList"
 )
 
 // IsClaudeCodeTool checks if the tool name is a known Claude Code tool.
@@ -32,8 +35,9 @@ func IsClaudeCodeTool(toolName string) bool {
 	switch toolName {
 	case ToolRead, ToolWrite, ToolEdit, ToolGlob, ToolGrep, ToolBash,
 		ToolWebFetch, ToolWebSearch, ToolLSP, ToolNotebookEdit,
-		ToolTask, ToolSkill, ToolTodoWrite, ToolAskUserQuestion,
-		ToolEnterPlanMode, ToolExitPlanMode, ToolTaskOutput, ToolKillShell:
+		ToolTask, ToolSkill, ToolAskUserQuestion,
+		ToolEnterPlanMode, ToolExitPlanMode, ToolTaskOutput, ToolTaskStop,
+		ToolTaskCreate, ToolTaskGet, ToolTaskUpdate, ToolTaskList:
 		return true
 	default:
 		return false
@@ -68,8 +72,6 @@ func GetClaudeCodeToolDefinition(tool models.AnthropicTool) (name, description s
 		return transformTaskTool(tool)
 	case ToolSkill:
 		return transformSkillTool(tool)
-	case ToolTodoWrite:
-		return transformTodoWriteTool(tool)
 	case ToolAskUserQuestion:
 		return transformAskUserQuestionTool(tool)
 	case ToolEnterPlanMode:
@@ -78,8 +80,16 @@ func GetClaudeCodeToolDefinition(tool models.AnthropicTool) (name, description s
 		return transformExitPlanModeTool(tool)
 	case ToolTaskOutput:
 		return transformTaskOutputTool(tool)
-	case ToolKillShell:
-		return transformKillShellTool(tool)
+	case ToolTaskStop:
+		return transformTaskStopTool(tool)
+	case ToolTaskCreate:
+		return transformTaskCreateTool(tool)
+	case ToolTaskGet:
+		return transformTaskGetTool(tool)
+	case ToolTaskUpdate:
+		return transformTaskUpdateTool(tool)
+	case ToolTaskList:
+		return transformTaskListTool(tool)
 	default:
 		// Pass through unchanged
 		return tool.Name, tool.Description, tool.InputSchema
@@ -426,6 +436,15 @@ func transformTaskTool(tool models.AnthropicTool) (string, string, interface{}) 
 					"type":        "boolean",
 					"description": "Run agent in background. Optional.",
 				},
+				"allowed_tools": map[string]interface{}{
+					"type":        "array",
+					"items":       map[string]interface{}{"type": "string"},
+					"description": "Tools to grant this agent. User will be prompted to approve if not already allowed. Optional.",
+				},
+				"max_turns": map[string]interface{}{
+					"type":        "integer",
+					"description": "Maximum number of agentic turns before stopping. Optional.",
+				},
 			},
 			"required":             []string{"description", "prompt", "subagent_type"},
 			"additionalProperties": false,
@@ -449,42 +468,6 @@ func transformSkillTool(tool models.AnthropicTool) (string, string, interface{})
 				},
 			},
 			"required":             []string{"skill"},
-			"additionalProperties": false,
-		}
-}
-
-// transformTodoWriteTool creates an OpenAI-compatible schema for the TodoWrite tool.
-func transformTodoWriteTool(tool models.AnthropicTool) (string, string, interface{}) {
-	return "TodoWrite",
-		"Create and manage a structured task list for tracking progress. Helps organize complex tasks and show progress to users.",
-		map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"todos": map[string]interface{}{
-					"type": "array",
-					"items": map[string]interface{}{
-						"type": "object",
-						"properties": map[string]interface{}{
-							"content": map[string]interface{}{
-								"type":        "string",
-								"description": "The imperative form describing what needs to be done",
-							},
-							"status": map[string]interface{}{
-								"type":        "string",
-								"enum":        []string{"pending", "in_progress", "completed"},
-								"description": "The current status of the task",
-							},
-							"activeForm": map[string]interface{}{
-								"type":        "string",
-								"description": "The present continuous form shown during execution",
-							},
-						},
-						"required": []string{"content", "status", "activeForm"},
-					},
-					"description": "The updated todo list",
-				},
-			},
-			"required":             []string{"todos"},
 			"additionalProperties": false,
 		}
 }
@@ -534,6 +517,16 @@ func transformAskUserQuestionTool(tool models.AnthropicTool) (string, string, in
 					"type":        "object",
 					"description": "User answers from permission component. Optional.",
 				},
+				"metadata": map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"source": map[string]interface{}{
+							"type":        "string",
+							"description": "Optional identifier for the source of this question. Used for analytics.",
+						},
+					},
+					"description": "Optional metadata for tracking and analytics purposes.",
+				},
 			},
 			"required":             []string{"questions"},
 			"additionalProperties": false,
@@ -556,8 +549,44 @@ func transformExitPlanModeTool(tool models.AnthropicTool) (string, string, inter
 	return "ExitPlanMode",
 		"Signal that planning is complete and the plan file is ready for user approval.",
 		map[string]interface{}{
-			"type":                 "object",
-			"properties":           map[string]interface{}{},
+			"type": "object",
+			"properties": map[string]interface{}{
+				"allowedPrompts": map[string]interface{}{
+					"type": "array",
+					"items": map[string]interface{}{
+						"type": "object",
+						"properties": map[string]interface{}{
+							"tool": map[string]interface{}{
+								"type":        "string",
+								"enum":        []string{"Bash"},
+								"description": "The tool this prompt applies to",
+							},
+							"prompt": map[string]interface{}{
+								"type":        "string",
+								"description": "Semantic description of the action",
+							},
+						},
+						"required": []string{"tool", "prompt"},
+					},
+					"description": "Prompt-based permissions needed to implement the plan. Optional.",
+				},
+				"pushToRemote": map[string]interface{}{
+					"type":        "boolean",
+					"description": "Whether to push the plan to a remote Claude.ai session. Optional.",
+				},
+				"remoteSessionId": map[string]interface{}{
+					"type":        "string",
+					"description": "The remote session ID if pushed to remote. Optional.",
+				},
+				"remoteSessionTitle": map[string]interface{}{
+					"type":        "string",
+					"description": "The remote session title if pushed to remote. Optional.",
+				},
+				"remoteSessionUrl": map[string]interface{}{
+					"type":        "string",
+					"description": "The remote session URL if pushed to remote. Optional.",
+				},
+			},
 			"additionalProperties": false,
 		}
 }
@@ -575,31 +604,147 @@ func transformTaskOutputTool(tool models.AnthropicTool) (string, string, interfa
 				},
 				"block": map[string]interface{}{
 					"type":        "boolean",
-					"description": "Wait for task completion. Optional, defaults to true.",
+					"default":     true,
+					"description": "Whether to wait for task completion",
 				},
 				"timeout": map[string]interface{}{
-					"type":        "integer",
-					"description": "Max wait time in ms. Optional, defaults to 30000.",
+					"type":        "number",
+					"default":     30000,
+					"minimum":     0,
+					"maximum":     600000,
+					"description": "Max wait time in ms",
 				},
 			},
-			"required":             []string{"task_id"},
+			"required":             []string{"task_id", "block", "timeout"},
 			"additionalProperties": false,
 		}
 }
 
-// transformKillShellTool creates an OpenAI-compatible schema for the KillShell tool.
-func transformKillShellTool(tool models.AnthropicTool) (string, string, interface{}) {
-	return "KillShell",
-		"Kill a running background bash shell by its ID.",
+// transformTaskStopTool creates an OpenAI-compatible schema for the TaskStop tool.
+func transformTaskStopTool(tool models.AnthropicTool) (string, string, interface{}) {
+	return "TaskStop",
+		"Stop a running background task by its ID. Works with background shells, async agents, and remote sessions.",
 		map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
+				"task_id": map[string]interface{}{
+					"type":        "string",
+					"description": "The ID of the background task to stop",
+				},
 				"shell_id": map[string]interface{}{
 					"type":        "string",
-					"description": "The ID of the background shell to kill",
+					"description": "Deprecated: use task_id instead",
 				},
 			},
-			"required":             []string{"shell_id"},
+			"additionalProperties": false,
+		}
+}
+
+// transformTaskCreateTool creates an OpenAI-compatible schema for the TaskCreate tool.
+func transformTaskCreateTool(tool models.AnthropicTool) (string, string, interface{}) {
+	return "TaskCreate",
+		"Create a structured task for tracking progress. Helps organize complex tasks and show progress to users.",
+		map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"subject": map[string]interface{}{
+					"type":        "string",
+					"description": "A brief title for the task in imperative form (e.g., 'Fix authentication bug')",
+				},
+				"description": map[string]interface{}{
+					"type":        "string",
+					"description": "A detailed description of what needs to be done, including context and acceptance criteria",
+				},
+				"activeForm": map[string]interface{}{
+					"type":        "string",
+					"description": "Present continuous form shown in spinner when in_progress (e.g., 'Fixing authentication bug')",
+				},
+				"metadata": map[string]interface{}{
+					"type":        "object",
+					"description": "Arbitrary metadata to attach to the task. Optional.",
+				},
+			},
+			"required":             []string{"subject", "description"},
+			"additionalProperties": false,
+		}
+}
+
+// transformTaskGetTool creates an OpenAI-compatible schema for the TaskGet tool.
+func transformTaskGetTool(tool models.AnthropicTool) (string, string, interface{}) {
+	return "TaskGet",
+		"Retrieve a task by its ID to get full details including description, status, and dependencies.",
+		map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"taskId": map[string]interface{}{
+					"type":        "string",
+					"description": "The ID of the task to retrieve",
+				},
+			},
+			"required":             []string{"taskId"},
+			"additionalProperties": false,
+		}
+}
+
+// transformTaskUpdateTool creates an OpenAI-compatible schema for the TaskUpdate tool.
+func transformTaskUpdateTool(tool models.AnthropicTool) (string, string, interface{}) {
+	return "TaskUpdate",
+		"Update a task's status, details, or dependencies. Use to mark tasks as in_progress or completed.",
+		map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"taskId": map[string]interface{}{
+					"type":        "string",
+					"description": "The ID of the task to update",
+				},
+				"status": map[string]interface{}{
+					"type":        "string",
+					"enum":        []string{"pending", "in_progress", "completed"},
+					"description": "New status for the task. Optional.",
+				},
+				"subject": map[string]interface{}{
+					"type":        "string",
+					"description": "New subject for the task. Optional.",
+				},
+				"description": map[string]interface{}{
+					"type":        "string",
+					"description": "New description for the task. Optional.",
+				},
+				"activeForm": map[string]interface{}{
+					"type":        "string",
+					"description": "Present continuous form shown in spinner when in_progress. Optional.",
+				},
+				"owner": map[string]interface{}{
+					"type":        "string",
+					"description": "New owner for the task. Optional.",
+				},
+				"metadata": map[string]interface{}{
+					"type":        "object",
+					"description": "Metadata keys to merge into the task. Set a key to null to delete it. Optional.",
+				},
+				"addBlocks": map[string]interface{}{
+					"type":        "array",
+					"items":       map[string]interface{}{"type": "string"},
+					"description": "Task IDs that this task blocks. Optional.",
+				},
+				"addBlockedBy": map[string]interface{}{
+					"type":        "array",
+					"items":       map[string]interface{}{"type": "string"},
+					"description": "Task IDs that block this task. Optional.",
+				},
+			},
+			"required":             []string{"taskId"},
+			"additionalProperties": false,
+		}
+}
+
+// transformTaskListTool creates an OpenAI-compatible schema for the TaskList tool.
+func transformTaskListTool(tool models.AnthropicTool) (string, string, interface{}) {
+	return "TaskList",
+		"List all tasks to see available work, check progress, or find blocked tasks.",
+		map[string]interface{}{
+			"type":                 "object",
+			"properties":           map[string]interface{}{},
 			"additionalProperties": false,
 		}
 }

@@ -123,10 +123,29 @@ while IFS= read -r line; do
                                 echo -e "${GRAY}  └─ in: $PATH_ARG${NC}"
                             fi
                             ;;
-                        "TodoWrite")
-                            TODO_COUNT=$(echo "$TOOL_INPUT" | jq -r '.todos | length // 0' 2>/dev/null)
-                            echo -e "${CYAN}${BOLD}▶ TodoWrite:${NC} ${WHITE}$TODO_COUNT items${NC}"
-                            echo "$TOOL_INPUT" | jq -r '.todos[]? | "  " + (if .status == "completed" then "✅" elif .status == "in_progress" then "🔄" else "⏳" end) + " " + .content' 2>/dev/null | head -8
+                        "TaskCreate")
+                            SUBJECT=$(echo "$TOOL_INPUT" | jq -r '.subject // empty' 2>/dev/null)
+                            echo -e "${CYAN}${BOLD}▶ TaskCreate:${NC} ${WHITE}$SUBJECT${NC}"
+                            ;;
+                        "TaskGet")
+                            TASK_ID=$(echo "$TOOL_INPUT" | jq -r '.taskId // empty' 2>/dev/null)
+                            echo -e "${CYAN}${BOLD}▶ TaskGet:${NC} ${WHITE}ID: $TASK_ID${NC}"
+                            ;;
+                        "TaskUpdate")
+                            TASK_ID=$(echo "$TOOL_INPUT" | jq -r '.taskId // empty' 2>/dev/null)
+                            STATUS=$(echo "$TOOL_INPUT" | jq -r '.status // empty' 2>/dev/null)
+                            if [ -n "$STATUS" ] && [ "$STATUS" != "null" ]; then
+                                echo -e "${CYAN}${BOLD}▶ TaskUpdate:${NC} ${WHITE}ID: $TASK_ID → $STATUS${NC}"
+                            else
+                                echo -e "${CYAN}${BOLD}▶ TaskUpdate:${NC} ${WHITE}ID: $TASK_ID${NC}"
+                            fi
+                            ;;
+                        "TaskList")
+                            echo -e "${CYAN}${BOLD}▶ TaskList${NC}"
+                            ;;
+                        "TaskStop")
+                            TASK_ID=$(echo "$TOOL_INPUT" | jq -r '.task_id // .shell_id // empty' 2>/dev/null)
+                            echo -e "${CYAN}${BOLD}▶ TaskStop:${NC} ${WHITE}ID: $TASK_ID${NC}"
                             ;;
                         "Task")
                             DESC=$(echo "$TOOL_INPUT" | jq -r '.description // empty' 2>/dev/null)
