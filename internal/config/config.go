@@ -19,6 +19,9 @@ const (
 	ProviderOllama     ProviderType = "ollama"
 	ProviderGemini     ProviderType = "gemini"
 	ProviderDeepSeek   ProviderType = "deepseek"
+	ProviderGrok       ProviderType = "grok"
+	ProviderQwen       ProviderType = "qwen"
+	ProviderMiniMax    ProviderType = "minimax"
 	ProviderCustom     ProviderType = "custom"
 )
 
@@ -48,6 +51,9 @@ type Config struct {
 	OllamaAPIKey     string // Optional, most Ollama instances don't need auth
 	GeminiAPIKey     string // Google AI Studio API key
 	DeepSeekAPIKey   string // DeepSeek API key
+	GrokAPIKey       string // xAI Grok API key
+	QwenAPIKey       string // Alibaba Qwen API key (DashScope)
+	MiniMaxAPIKey    string // MiniMax API key
 	CustomAPIKey     string
 
 	// Endpoints
@@ -59,6 +65,9 @@ type Config struct {
 	OllamaBaseURL       string // Default: http://localhost:11434
 	GeminiBaseURL       string // Default: https://generativelanguage.googleapis.com/v1beta
 	DeepSeekBaseURL     string // Default: https://api.deepseek.com
+	GrokBaseURL         string // Default: https://api.x.ai
+	QwenBaseURL         string // Default: https://dashscope.aliyuncs.com/compatible-mode
+	MiniMaxBaseURL      string // Default: https://api.minimax.chat
 	CustomBaseURL       string
 
 	// Model mapping
@@ -184,6 +193,9 @@ func LoadFromEnv() (*Config, error) {
 	cfg.OllamaAPIKey = os.Getenv("OLLAMA_API_KEY")     // Optional
 	cfg.GeminiAPIKey = os.Getenv("GEMINI_API_KEY")     // Google AI Studio key
 	cfg.DeepSeekAPIKey = os.Getenv("DEEPSEEK_API_KEY") // DeepSeek API key
+	cfg.GrokAPIKey = os.Getenv("GROK_API_KEY")         // xAI Grok API key
+	cfg.QwenAPIKey = os.Getenv("QWEN_API_KEY")         // Alibaba Qwen API key
+	cfg.MiniMaxAPIKey = os.Getenv("MINIMAX_API_KEY")   // MiniMax API key
 	cfg.CustomAPIKey = os.Getenv("CUSTOM_API_KEY")
 
 	// Endpoints
@@ -206,6 +218,15 @@ func LoadFromEnv() (*Config, error) {
 	}
 	if baseURL := os.Getenv("DEEPSEEK_BASE_URL"); baseURL != "" {
 		cfg.DeepSeekBaseURL = baseURL
+	}
+	if baseURL := os.Getenv("GROK_BASE_URL"); baseURL != "" {
+		cfg.GrokBaseURL = baseURL
+	}
+	if baseURL := os.Getenv("QWEN_BASE_URL"); baseURL != "" {
+		cfg.QwenBaseURL = baseURL
+	}
+	if baseURL := os.Getenv("MINIMAX_BASE_URL"); baseURL != "" {
+		cfg.MiniMaxBaseURL = baseURL
 	}
 	cfg.CustomBaseURL = os.Getenv("CUSTOM_BASE_URL")
 
@@ -418,6 +439,15 @@ func detectProvider(cfg *Config) ProviderType {
 	if cfg.DeepSeekAPIKey != "" {
 		return ProviderDeepSeek
 	}
+	if cfg.GrokAPIKey != "" {
+		return ProviderGrok
+	}
+	if cfg.QwenAPIKey != "" {
+		return ProviderQwen
+	}
+	if cfg.MiniMaxAPIKey != "" {
+		return ProviderMiniMax
+	}
 	// Ollama doesn't require API key, check if base URL is set or use detection
 	if cfg.OllamaBaseURL != "" && cfg.OllamaBaseURL != "http://localhost:11434" {
 		return ProviderOllama
@@ -466,6 +496,12 @@ func loadTierConfig(tier string, cfg *Config) *TierConfig {
 			tierCfg.APIKey = cfg.GeminiAPIKey
 		case ProviderDeepSeek:
 			tierCfg.APIKey = cfg.DeepSeekAPIKey
+		case ProviderGrok:
+			tierCfg.APIKey = cfg.GrokAPIKey
+		case ProviderQwen:
+			tierCfg.APIKey = cfg.QwenAPIKey
+		case ProviderMiniMax:
+			tierCfg.APIKey = cfg.MiniMaxAPIKey
 		case ProviderCustom:
 			tierCfg.APIKey = cfg.CustomAPIKey
 		}
@@ -484,6 +520,12 @@ func loadTierConfig(tier string, cfg *Config) *TierConfig {
 			tierCfg.BaseURL = cfg.GeminiBaseURL + "/openai"
 		case ProviderDeepSeek:
 			tierCfg.BaseURL = cfg.DeepSeekBaseURL + "/v1"
+		case ProviderGrok:
+			tierCfg.BaseURL = cfg.GrokBaseURL + "/v1"
+		case ProviderQwen:
+			tierCfg.BaseURL = cfg.QwenBaseURL + "/v1"
+		case ProviderMiniMax:
+			tierCfg.BaseURL = cfg.MiniMaxBaseURL + "/v1"
 		case ProviderCustom:
 			tierCfg.BaseURL = cfg.CustomBaseURL
 		}
@@ -514,6 +556,12 @@ func loadTierConfig(tier string, cfg *Config) *TierConfig {
 				tierCfg.FallbackAPIKey = cfg.GeminiAPIKey
 			case ProviderDeepSeek:
 				tierCfg.FallbackAPIKey = cfg.DeepSeekAPIKey
+			case ProviderGrok:
+				tierCfg.FallbackAPIKey = cfg.GrokAPIKey
+			case ProviderQwen:
+				tierCfg.FallbackAPIKey = cfg.QwenAPIKey
+			case ProviderMiniMax:
+				tierCfg.FallbackAPIKey = cfg.MiniMaxAPIKey
 			case ProviderCustom:
 				tierCfg.FallbackAPIKey = cfg.CustomAPIKey
 			}
@@ -559,6 +607,18 @@ func (c *Config) Validate() error {
 		if c.DeepSeekAPIKey == "" {
 			return fmt.Errorf("DEEPSEEK_API_KEY is required for provider 'deepseek'")
 		}
+	case ProviderGrok:
+		if c.GrokAPIKey == "" {
+			return fmt.Errorf("GROK_API_KEY is required for provider 'grok'")
+		}
+	case ProviderQwen:
+		if c.QwenAPIKey == "" {
+			return fmt.Errorf("QWEN_API_KEY is required for provider 'qwen'")
+		}
+	case ProviderMiniMax:
+		if c.MiniMaxAPIKey == "" {
+			return fmt.Errorf("MINIMAX_API_KEY is required for provider 'minimax'")
+		}
 	case ProviderCustom:
 		if c.CustomBaseURL == "" {
 			return fmt.Errorf("CUSTOM_BASE_URL is required for provider 'custom'")
@@ -587,6 +647,12 @@ func (c *Config) GetAPIKey() string {
 		return c.GeminiAPIKey
 	case ProviderDeepSeek:
 		return c.DeepSeekAPIKey
+	case ProviderGrok:
+		return c.GrokAPIKey
+	case ProviderQwen:
+		return c.QwenAPIKey
+	case ProviderMiniMax:
+		return c.MiniMaxAPIKey
 	case ProviderCustom:
 		return c.CustomAPIKey
 	default:
@@ -614,6 +680,15 @@ func (c *Config) GetBaseURL() string {
 	case ProviderDeepSeek:
 		// DeepSeek uses standard OpenAI-compatible /v1 endpoint
 		return c.DeepSeekBaseURL + "/v1"
+	case ProviderGrok:
+		// Grok uses standard OpenAI-compatible /v1 endpoint
+		return c.GrokBaseURL + "/v1"
+	case ProviderQwen:
+		// Qwen uses OpenAI-compatible /v1 endpoint via DashScope
+		return c.QwenBaseURL + "/v1"
+	case ProviderMiniMax:
+		// MiniMax uses standard OpenAI-compatible /v1 endpoint
+		return c.MiniMaxBaseURL + "/v1"
 	case ProviderCustom:
 		return c.CustomBaseURL
 	default:
