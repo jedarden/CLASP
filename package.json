@@ -1,5 +1,5 @@
 {
-  "name": "@ai-manditrade/clasp-ai",
+  "name": "clasp-ai-manditrade",
   "version": "0.53.1",
   "description": "CLASP proxy with system-reminder filtering for Azure OpenAI compatibility",
   "author": "AI-Manditrade",
