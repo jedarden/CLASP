@@ -12,8 +12,8 @@ const path = require('path');
 const { execSync } = require('child_process');
 const os = require('os');
 
-const VERSION = '0.50.23';
-const REPO = 'jedarden/CLASP';
+const VERSION = '0.53.1';
+const REPO = 'AI-Manditrade/CLASP';
 const BINARY_NAME = 'clasp';
 
 // Platform mappings

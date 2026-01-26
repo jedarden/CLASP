@@ -429,7 +429,59 @@ func transformMessages(req *models.AnthropicRequest, targetModel string) ([]mode
 		messages = append(messages, openAIMsg...)
 	}
 
-	return messages, nil
+	return filterSystemReminders(messages), nil
+}
+
+// filterSystemReminders buffers ALL user messages that appear between
+// assistant tool_calls and tool responses to comply with Azure OpenAI's strict
+// message sequencing requirement: assistant with tool_calls MUST be immediately
+// followed by tool responses, with NO user messages in between.
+func filterSystemReminders(messages []models.OpenAIMessage) []models.OpenAIMessage {
+	filtered := make([]models.OpenAIMessage, 0, len(messages))
+	pendingToolCallIDs := make(map[string]bool)
+	bufferedMessages := []models.OpenAIMessage{}
+
+	for _, msg := range messages {
+		// Assistant with tool_calls - track pending IDs
+		if msg.Role == "assistant" && len(msg.ToolCalls) > 0 {
+			pendingToolCallIDs = make(map[string]bool)
+			for _, tc := range msg.ToolCalls {
+				pendingToolCallIDs[tc.ID] = true
+			}
+			filtered = append(filtered, msg)
+			continue
+		}
+
+		// Tool response - mark as complete
+		if msg.Role == "tool" && msg.ToolCallID != "" {
+			delete(pendingToolCallIDs, msg.ToolCallID)
+			filtered = append(filtered, msg)
+
+			// If all tool calls resolved, flush buffered messages
+			if len(pendingToolCallIDs) == 0 && len(bufferedMessages) > 0 {
+				filtered = append(filtered, bufferedMessages...)
+				bufferedMessages = bufferedMessages[:0]
+			}
+			continue
+		}
+
+		// Buffer ANY user message while tool calls pending (broader filtering)
+		// This ensures strict Azure OpenAI sequencing: assistant → tool responses → user messages
+		if msg.Role == "user" && len(pendingToolCallIDs) > 0 {
+			bufferedMessages = append(bufferedMessages, msg)
+			continue
+		}
+
+		// All other messages pass through
+		filtered = append(filtered, msg)
+	}
+
+	// Flush any remaining buffered messages
+	if len(bufferedMessages) > 0 {
+		filtered = append(filtered, bufferedMessages...)
+	}
+
+	return filtered
 }
 
 // extractSystemContent extracts the system message content.
