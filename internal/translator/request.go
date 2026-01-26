@@ -123,8 +123,8 @@ func TransformRequestWithProvider(req *models.AnthropicRequest, targetModel stri
 		openAIReq.Stop = req.StopSequences
 	}
 
-	// Build messages
-	messages, err := transformMessages(req, targetModel)
+	// Build messages with provider-specific handling
+	messages, err := transformMessages(req, targetModel, provider)
 	if err != nil {
 		return nil, fmt.Errorf("transforming messages: %w", err)
 	}
@@ -389,7 +389,8 @@ func filterIdentity(content string) string {
 }
 
 // transformMessages converts Anthropic messages to OpenAI format.
-func transformMessages(req *models.AnthropicRequest, targetModel string) ([]models.OpenAIMessage, error) {
+// The provider parameter enables provider-specific message handling (e.g., Azure message ordering).
+func transformMessages(req *models.AnthropicRequest, targetModel string, provider ProviderType) ([]models.OpenAIMessage, error) {
 	var messages []models.OpenAIMessage
 
 	// Handle system message
@@ -429,7 +430,78 @@ func transformMessages(req *models.AnthropicRequest, targetModel string) ([]mode
 		messages = append(messages, openAIMsg...)
 	}
 
+	// Apply Azure-specific message reordering if needed
+	// Azure OpenAI requires strict sequencing: assistant with tool_calls MUST be
+	// immediately followed by tool responses, with NO user messages in between.
+	if provider == ProviderAzure {
+		messages = reorderMessagesForAzure(messages)
+	}
+
 	return messages, nil
+}
+
+// reorderMessagesForAzure enforces Azure OpenAI's strict message sequencing requirements.
+// Azure requires that an assistant message with tool_calls is immediately followed by all
+// corresponding tool responses before any user messages can appear.
+//
+// This function buffers user messages that appear between tool calls and their responses,
+// then flushes them after all pending tool responses have been received.
+func reorderMessagesForAzure(messages []models.OpenAIMessage) []models.OpenAIMessage {
+	var result []models.OpenAIMessage
+	var bufferedUserMessages []models.OpenAIMessage
+	pendingToolCalls := make(map[string]bool)
+
+	for _, msg := range messages {
+		switch msg.Role {
+		case "assistant":
+			// If we have buffered user messages and no pending tool calls, flush them first
+			if len(pendingToolCalls) == 0 && len(bufferedUserMessages) > 0 {
+				result = append(result, bufferedUserMessages...)
+				bufferedUserMessages = nil
+			}
+
+			result = append(result, msg)
+
+			// Track any new tool calls from this assistant message
+			for _, tc := range msg.ToolCalls {
+				if tc.ID != "" {
+					pendingToolCalls[tc.ID] = true
+				}
+			}
+
+		case "tool":
+			// Remove this tool call from pending
+			if msg.ToolCallID != "" {
+				delete(pendingToolCalls, msg.ToolCallID)
+			}
+			result = append(result, msg)
+
+			// If all tool calls are resolved, flush buffered user messages
+			if len(pendingToolCalls) == 0 && len(bufferedUserMessages) > 0 {
+				result = append(result, bufferedUserMessages...)
+				bufferedUserMessages = nil
+			}
+
+		case "user":
+			// If there are pending tool calls, buffer this user message
+			if len(pendingToolCalls) > 0 {
+				bufferedUserMessages = append(bufferedUserMessages, msg)
+			} else {
+				result = append(result, msg)
+			}
+
+		default:
+			// System and other messages pass through
+			result = append(result, msg)
+		}
+	}
+
+	// Flush any remaining buffered messages at the end
+	if len(bufferedUserMessages) > 0 {
+		result = append(result, bufferedUserMessages...)
+	}
+
+	return result
 }
 
 // extractSystemContent extracts the system message content.

@@ -1047,7 +1047,7 @@ func TestTransformMessages_GrokModel_AddsJSONInstruction(t *testing.T) {
 		},
 	}
 
-	messages, err := transformMessages(req, "x-ai/grok-3-beta")
+	messages, err := transformMessages(req, "x-ai/grok-3-beta", ProviderGrok)
 	if err != nil {
 		t.Fatalf("transformMessages failed: %v", err)
 	}
@@ -1074,7 +1074,7 @@ func TestTransformMessages_GrokModel_NoSystemMessage_AddsJSONInstruction(t *test
 		},
 	}
 
-	messages, err := transformMessages(req, "grok-3-mini")
+	messages, err := transformMessages(req, "grok-3-mini", ProviderGrok)
 	if err != nil {
 		t.Fatalf("transformMessages failed: %v", err)
 	}
@@ -1102,7 +1102,7 @@ func TestTransformMessages_NonGrokModel_NoJSONInstruction(t *testing.T) {
 		},
 	}
 
-	messages, err := transformMessages(req, "gpt-4o")
+	messages, err := transformMessages(req, "gpt-4o", ProviderOpenAI)
 	if err != nil {
 		t.Fatalf("transformMessages failed: %v", err)
 	}
@@ -1441,5 +1441,213 @@ func TestIdentifyTrulyRequiredForChat(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// Azure message ordering tests
+
+func TestReorderMessagesForAzure_NoToolCalls(t *testing.T) {
+	// When there are no tool calls, messages should pass through unchanged
+	messages := []models.OpenAIMessage{
+		{Role: "system", Content: "You are helpful"},
+		{Role: "user", Content: "Hello"},
+		{Role: "assistant", Content: "Hi there!"},
+		{Role: "user", Content: "How are you?"},
+	}
+
+	result := reorderMessagesForAzure(messages)
+
+	if len(result) != len(messages) {
+		t.Fatalf("len(result) = %d, want %d", len(result), len(messages))
+	}
+
+	for i, msg := range messages {
+		if result[i].Role != msg.Role {
+			t.Errorf("result[%d].Role = %q, want %q", i, result[i].Role, msg.Role)
+		}
+	}
+}
+
+func TestReorderMessagesForAzure_UserMessageBetweenToolCallAndResponse(t *testing.T) {
+	// This is the key case: user message appears between assistant tool_call and tool response
+	// Azure rejects this, so we need to buffer the user message until after the tool response
+	messages := []models.OpenAIMessage{
+		{Role: "system", Content: "You are helpful"},
+		{Role: "user", Content: "Read the file"},
+		{
+			Role:    "assistant",
+			Content: "I'll read that file.",
+			ToolCalls: []models.OpenAIToolCall{
+				{ID: "call_123", Type: "function", Function: models.OpenAIFunctionCall{Name: "read_file"}},
+			},
+		},
+		{Role: "user", Content: "<system-reminder>This is injected</system-reminder>"}, // This should be buffered
+		{Role: "tool", Content: "File contents here", ToolCallID: "call_123"},
+	}
+
+	result := reorderMessagesForAzure(messages)
+
+	// Expected order: system, user, assistant (with tool_calls), tool, user (buffered)
+	if len(result) != 5 {
+		t.Fatalf("len(result) = %d, want 5", len(result))
+	}
+
+	expectedOrder := []string{"system", "user", "assistant", "tool", "user"}
+	for i, expected := range expectedOrder {
+		if result[i].Role != expected {
+			t.Errorf("result[%d].Role = %q, want %q", i, result[i].Role, expected)
+		}
+	}
+
+	// Verify the tool message comes before the buffered user message
+	if result[3].Role != "tool" || result[3].ToolCallID != "call_123" {
+		t.Errorf("result[3] should be tool response, got role=%q", result[3].Role)
+	}
+	if result[4].Role != "user" || result[4].Content != "<system-reminder>This is injected</system-reminder>" {
+		t.Errorf("result[4] should be buffered user message, got role=%q content=%q", result[4].Role, result[4].Content)
+	}
+}
+
+func TestReorderMessagesForAzure_MultipleToolCalls(t *testing.T) {
+	// Multiple tool calls in one assistant message, with user message injected before all responses
+	messages := []models.OpenAIMessage{
+		{Role: "user", Content: "Do two things"},
+		{
+			Role: "assistant",
+			ToolCalls: []models.OpenAIToolCall{
+				{ID: "call_1", Type: "function", Function: models.OpenAIFunctionCall{Name: "tool_a"}},
+				{ID: "call_2", Type: "function", Function: models.OpenAIFunctionCall{Name: "tool_b"}},
+			},
+		},
+		{Role: "user", Content: "Injected message"}, // Should be buffered until BOTH tool responses
+		{Role: "tool", Content: "Result A", ToolCallID: "call_1"},
+		{Role: "tool", Content: "Result B", ToolCallID: "call_2"},
+	}
+
+	result := reorderMessagesForAzure(messages)
+
+	// Expected: user, assistant, tool, tool, user (buffered)
+	expectedOrder := []string{"user", "assistant", "tool", "tool", "user"}
+	if len(result) != 5 {
+		t.Fatalf("len(result) = %d, want 5", len(result))
+	}
+
+	for i, expected := range expectedOrder {
+		if result[i].Role != expected {
+			t.Errorf("result[%d].Role = %q, want %q", i, result[i].Role, expected)
+		}
+	}
+
+	// The buffered user message should be at the end
+	if result[4].Content != "Injected message" {
+		t.Errorf("result[4].Content = %q, want %q", result[4].Content, "Injected message")
+	}
+}
+
+func TestReorderMessagesForAzure_MultipleUserMessagesBetweenToolCalls(t *testing.T) {
+	// Multiple user messages injected - all should be buffered
+	messages := []models.OpenAIMessage{
+		{Role: "user", Content: "Start"},
+		{
+			Role: "assistant",
+			ToolCalls: []models.OpenAIToolCall{
+				{ID: "call_1", Type: "function", Function: models.OpenAIFunctionCall{Name: "tool_a"}},
+			},
+		},
+		{Role: "user", Content: "First injected"},
+		{Role: "user", Content: "Second injected"},
+		{Role: "tool", Content: "Result", ToolCallID: "call_1"},
+	}
+
+	result := reorderMessagesForAzure(messages)
+
+	// Expected: user, assistant, tool, user, user (both buffered messages)
+	if len(result) != 5 {
+		t.Fatalf("len(result) = %d, want 5", len(result))
+	}
+
+	// Verify tool comes before the buffered user messages
+	if result[2].Role != "tool" {
+		t.Errorf("result[2].Role = %q, want %q", result[2].Role, "tool")
+	}
+	if result[3].Role != "user" || result[3].Content != "First injected" {
+		t.Errorf("result[3] should be first buffered user message")
+	}
+	if result[4].Role != "user" || result[4].Content != "Second injected" {
+		t.Errorf("result[4] should be second buffered user message")
+	}
+}
+
+func TestReorderMessagesForAzure_NonAzureProviderNotAffected(t *testing.T) {
+	// Verify that non-Azure providers don't get reordering applied
+	req := &models.AnthropicRequest{
+		System: "You are helpful",
+		Messages: []models.AnthropicMessage{
+			{Role: "user", Content: "Hello"},
+		},
+	}
+
+	// OpenAI provider should not apply Azure reordering
+	messagesOpenAI, err := transformMessages(req, "gpt-4o", ProviderOpenAI)
+	if err != nil {
+		t.Fatalf("transformMessages failed: %v", err)
+	}
+
+	// Azure provider would apply reordering (but in this simple case, no difference)
+	messagesAzure, err := transformMessages(req, "gpt-4o", ProviderAzure)
+	if err != nil {
+		t.Fatalf("transformMessages failed: %v", err)
+	}
+
+	// Both should have the same result for this simple case
+	if len(messagesOpenAI) != len(messagesAzure) {
+		t.Errorf("Message counts differ: OpenAI=%d, Azure=%d", len(messagesOpenAI), len(messagesAzure))
+	}
+}
+
+func TestReorderMessagesForAzure_SequentialToolCallsWithInterleavedUsers(t *testing.T) {
+	// Complex case: multiple rounds of tool calls with user messages in between
+	messages := []models.OpenAIMessage{
+		{Role: "user", Content: "Start"},
+		{
+			Role: "assistant",
+			ToolCalls: []models.OpenAIToolCall{
+				{ID: "call_1", Type: "function", Function: models.OpenAIFunctionCall{Name: "tool_a"}},
+			},
+		},
+		{Role: "user", Content: "Injected 1"}, // Buffer this
+		{Role: "tool", Content: "Result 1", ToolCallID: "call_1"},
+		// After call_1 resolved, "Injected 1" should be flushed
+		{Role: "user", Content: "Next request"}, // This is a real user message after tool resolution
+		{
+			Role: "assistant",
+			ToolCalls: []models.OpenAIToolCall{
+				{ID: "call_2", Type: "function", Function: models.OpenAIFunctionCall{Name: "tool_b"}},
+			},
+		},
+		{Role: "tool", Content: "Result 2", ToolCallID: "call_2"},
+	}
+
+	result := reorderMessagesForAzure(messages)
+
+	// Expected order:
+	// user(Start), assistant(call_1), tool(result_1), user(Injected 1), user(Next request), assistant(call_2), tool(result_2)
+	expectedOrder := []string{"user", "assistant", "tool", "user", "user", "assistant", "tool"}
+	if len(result) != len(expectedOrder) {
+		t.Fatalf("len(result) = %d, want %d", len(result), len(expectedOrder))
+	}
+
+	for i, expected := range expectedOrder {
+		if result[i].Role != expected {
+			t.Errorf("result[%d].Role = %q, want %q", i, result[i].Role, expected)
+		}
+	}
+
+	// Verify specific content placement
+	if result[3].Content != "Injected 1" {
+		t.Errorf("result[3] should be 'Injected 1', got %q", result[3].Content)
+	}
+	if result[4].Content != "Next request" {
+		t.Errorf("result[4] should be 'Next request', got %q", result[4].Content)
 	}
 }
