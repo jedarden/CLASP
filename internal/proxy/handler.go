@@ -190,6 +190,12 @@ func createProvider(cfg *config.Config) (provider.Provider, error) {
 		return provider.NewGeminiProvider(cfg.GeminiAPIKey), nil
 	case config.ProviderDeepSeek:
 		return provider.NewDeepSeekProvider(cfg.DeepSeekAPIKey), nil
+	case config.ProviderGrok:
+		return provider.NewGrokProvider(cfg.GrokAPIKey), nil
+	case config.ProviderQwen:
+		return provider.NewQwenProvider(cfg.QwenAPIKey), nil
+	case config.ProviderMiniMax:
+		return provider.NewMiniMaxProvider(cfg.MiniMaxAPIKey), nil
 	case config.ProviderCustom:
 		return provider.NewCustomProvider(cfg.CustomBaseURL), nil
 	default:
@@ -231,6 +237,21 @@ func createTierProvider(tierCfg *config.TierConfig) (provider.Provider, error) {
 			baseURL = "https://api.deepseek.com"
 		}
 		return provider.NewDeepSeekProviderWithURL(baseURL, tierCfg.APIKey), nil
+	case config.ProviderGrok:
+		if baseURL == "" {
+			baseURL = "https://api.x.ai"
+		}
+		return provider.NewGrokProviderWithURL(baseURL, tierCfg.APIKey), nil
+	case config.ProviderQwen:
+		if baseURL == "" {
+			baseURL = "https://dashscope.aliyuncs.com/compatible-mode"
+		}
+		return provider.NewQwenProviderWithURL(baseURL, tierCfg.APIKey), nil
+	case config.ProviderMiniMax:
+		if baseURL == "" {
+			baseURL = "https://api.minimax.chat"
+		}
+		return provider.NewMiniMaxProviderWithURL(baseURL, tierCfg.APIKey, ""), nil
 	case config.ProviderCustom:
 		return provider.NewCustomProviderWithKey(baseURL, tierCfg.APIKey), nil
 	default:
