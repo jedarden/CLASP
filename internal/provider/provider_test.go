@@ -471,6 +471,9 @@ func TestProviderInterface(t *testing.T) {
 		NewOpenRouterProvider(""),
 		NewCustomProvider("http://localhost:11434/v1"),
 		NewAnthropicProvider(""),
+		NewGrokProvider(""),
+		NewQwenProvider(""),
+		NewMiniMaxProvider(""),
 	}
 
 	for _, p := range providers {
@@ -637,4 +640,238 @@ func TestOpenRouterModelInfo(t *testing.T) {
 	if info.OutputPrice != 10.0 {
 		t.Errorf("Expected OutputPrice 10.0, got %f", info.OutputPrice)
 	}
+}
+
+// TestGrokProvider tests the Grok provider implementation.
+func TestGrokProvider(t *testing.T) {
+	t.Run("NewGrokProvider with default URL", func(t *testing.T) {
+		p := NewGrokProvider("")
+		if p.BaseURL != "https://api.x.ai" {
+			t.Errorf("Expected default URL, got %s", p.BaseURL)
+		}
+	})
+
+	t.Run("NewGrokProviderWithURL", func(t *testing.T) {
+		p := NewGrokProviderWithURL("https://custom.x.ai", "test-key")
+		if p.BaseURL != "https://custom.x.ai" {
+			t.Errorf("Expected custom URL, got %s", p.BaseURL)
+		}
+		if p.apiKey != "test-key" {
+			t.Errorf("Expected apiKey to be set")
+		}
+	})
+
+	t.Run("Name returns grok", func(t *testing.T) {
+		p := NewGrokProvider("")
+		if p.Name() != "grok" {
+			t.Errorf("Expected 'grok', got %s", p.Name())
+		}
+	})
+
+	t.Run("GetHeaders with provided key", func(t *testing.T) {
+		p := NewGrokProvider("")
+		headers := p.GetHeaders("xai-test-key")
+		if got := headers.Get("Authorization"); got != "Bearer xai-test-key" {
+			t.Errorf("Expected 'Bearer xai-test-key', got %s", got)
+		}
+		if got := headers.Get("Content-Type"); got != "application/json" {
+			t.Errorf("Expected 'application/json', got %s", got)
+		}
+	})
+
+	t.Run("GetEndpointURL", func(t *testing.T) {
+		p := NewGrokProvider("")
+		expected := "https://api.x.ai/v1/chat/completions"
+		if got := p.GetEndpointURL(); got != expected {
+			t.Errorf("Expected %s, got %s", expected, got)
+		}
+	})
+
+	t.Run("TransformModelID strips prefix", func(t *testing.T) {
+		p := NewGrokProvider("")
+		if got := p.TransformModelID("x-ai/grok-3-beta"); got != "grok-3-beta" {
+			t.Errorf("Expected 'grok-3-beta', got %s", got)
+		}
+	})
+
+	t.Run("TransformModelID maps Claude tiers", func(t *testing.T) {
+		p := NewGrokProvider("")
+		if got := p.TransformModelID("claude-3-opus"); got != "grok-3-beta" {
+			t.Errorf("Expected 'grok-3-beta' for opus, got %s", got)
+		}
+		if got := p.TransformModelID("claude-3-haiku"); got != "grok-3-mini-beta" {
+			t.Errorf("Expected 'grok-3-mini-beta' for haiku, got %s", got)
+		}
+	})
+
+	t.Run("SupportsStreaming returns true", func(t *testing.T) {
+		p := NewGrokProvider("")
+		if !p.SupportsStreaming() {
+			t.Error("Expected SupportsStreaming to return true")
+		}
+	})
+
+	t.Run("RequiresTransformation returns true", func(t *testing.T) {
+		p := NewGrokProvider("")
+		if !p.RequiresTransformation() {
+			t.Error("Expected RequiresTransformation to return true")
+		}
+	})
+}
+
+// TestQwenProvider tests the Qwen provider implementation.
+func TestQwenProvider(t *testing.T) {
+	t.Run("NewQwenProvider with default URL", func(t *testing.T) {
+		p := NewQwenProvider("")
+		if p.BaseURL != "https://dashscope.aliyuncs.com/compatible-mode" {
+			t.Errorf("Expected default URL, got %s", p.BaseURL)
+		}
+	})
+
+	t.Run("NewQwenProviderWithURL", func(t *testing.T) {
+		p := NewQwenProviderWithURL("https://custom.dashscope.com", "test-key")
+		if p.BaseURL != "https://custom.dashscope.com" {
+			t.Errorf("Expected custom URL, got %s", p.BaseURL)
+		}
+		if p.apiKey != "test-key" {
+			t.Errorf("Expected apiKey to be set")
+		}
+	})
+
+	t.Run("Name returns qwen", func(t *testing.T) {
+		p := NewQwenProvider("")
+		if p.Name() != "qwen" {
+			t.Errorf("Expected 'qwen', got %s", p.Name())
+		}
+	})
+
+	t.Run("GetHeaders with provided key", func(t *testing.T) {
+		p := NewQwenProvider("")
+		headers := p.GetHeaders("qwen-test-key")
+		if got := headers.Get("Authorization"); got != "Bearer qwen-test-key" {
+			t.Errorf("Expected 'Bearer qwen-test-key', got %s", got)
+		}
+		if got := headers.Get("Content-Type"); got != "application/json" {
+			t.Errorf("Expected 'application/json', got %s", got)
+		}
+	})
+
+	t.Run("GetEndpointURL", func(t *testing.T) {
+		p := NewQwenProvider("")
+		expected := "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
+		if got := p.GetEndpointURL(); got != expected {
+			t.Errorf("Expected %s, got %s", expected, got)
+		}
+	})
+
+	t.Run("TransformModelID strips prefix", func(t *testing.T) {
+		p := NewQwenProvider("")
+		if got := p.TransformModelID("qwen/qwen-plus"); got != "qwen-plus" {
+			t.Errorf("Expected 'qwen-plus', got %s", got)
+		}
+	})
+
+	t.Run("TransformModelID maps Claude tiers", func(t *testing.T) {
+		p := NewQwenProvider("")
+		if got := p.TransformModelID("claude-3-opus"); got != "qwen-max" {
+			t.Errorf("Expected 'qwen-max' for opus, got %s", got)
+		}
+		if got := p.TransformModelID("claude-3-haiku"); got != "qwen-turbo" {
+			t.Errorf("Expected 'qwen-turbo' for haiku, got %s", got)
+		}
+	})
+
+	t.Run("SupportsStreaming returns true", func(t *testing.T) {
+		p := NewQwenProvider("")
+		if !p.SupportsStreaming() {
+			t.Error("Expected SupportsStreaming to return true")
+		}
+	})
+
+	t.Run("RequiresTransformation returns true", func(t *testing.T) {
+		p := NewQwenProvider("")
+		if !p.RequiresTransformation() {
+			t.Error("Expected RequiresTransformation to return true")
+		}
+	})
+}
+
+// TestMiniMaxProvider tests the MiniMax provider implementation.
+func TestMiniMaxProvider(t *testing.T) {
+	t.Run("NewMiniMaxProvider with default URL", func(t *testing.T) {
+		p := NewMiniMaxProvider("")
+		if p.BaseURL != "https://api.minimax.chat" {
+			t.Errorf("Expected default URL, got %s", p.BaseURL)
+		}
+	})
+
+	t.Run("NewMiniMaxProviderWithURL", func(t *testing.T) {
+		p := NewMiniMaxProviderWithURL("https://custom.minimax.chat", "test-key", "group-123")
+		if p.BaseURL != "https://custom.minimax.chat" {
+			t.Errorf("Expected custom URL, got %s", p.BaseURL)
+		}
+		if p.apiKey != "test-key" {
+			t.Errorf("Expected apiKey to be set")
+		}
+		if p.groupID != "group-123" {
+			t.Errorf("Expected groupID to be set")
+		}
+	})
+
+	t.Run("Name returns minimax", func(t *testing.T) {
+		p := NewMiniMaxProvider("")
+		if p.Name() != "minimax" {
+			t.Errorf("Expected 'minimax', got %s", p.Name())
+		}
+	})
+
+	t.Run("GetHeaders with provided key", func(t *testing.T) {
+		p := NewMiniMaxProvider("")
+		headers := p.GetHeaders("minimax-test-key")
+		if got := headers.Get("Authorization"); got != "Bearer minimax-test-key" {
+			t.Errorf("Expected 'Bearer minimax-test-key', got %s", got)
+		}
+		if got := headers.Get("Content-Type"); got != "application/json" {
+			t.Errorf("Expected 'application/json', got %s", got)
+		}
+	})
+
+	t.Run("GetEndpointURL", func(t *testing.T) {
+		p := NewMiniMaxProvider("")
+		expected := "https://api.minimax.chat/v1/chat/completions"
+		if got := p.GetEndpointURL(); got != expected {
+			t.Errorf("Expected %s, got %s", expected, got)
+		}
+	})
+
+	t.Run("TransformModelID strips prefix", func(t *testing.T) {
+		p := NewMiniMaxProvider("")
+		if got := p.TransformModelID("minimax/abab6.5s-chat"); got != "abab6.5s-chat" {
+			t.Errorf("Expected 'abab6.5s-chat', got %s", got)
+		}
+	})
+
+	t.Run("TransformModelID maps Claude tiers", func(t *testing.T) {
+		p := NewMiniMaxProvider("")
+		if got := p.TransformModelID("claude-3-opus"); got != "abab6.5s-chat" {
+			t.Errorf("Expected 'abab6.5s-chat' for opus, got %s", got)
+		}
+		if got := p.TransformModelID("claude-3-haiku"); got != "abab5.5s-chat" {
+			t.Errorf("Expected 'abab5.5s-chat' for haiku, got %s", got)
+		}
+	})
+
+	t.Run("SupportsStreaming returns true", func(t *testing.T) {
+		p := NewMiniMaxProvider("")
+		if !p.SupportsStreaming() {
+			t.Error("Expected SupportsStreaming to return true")
+		}
+	})
+
+	t.Run("RequiresTransformation returns true", func(t *testing.T) {
+		p := NewMiniMaxProvider("")
+		if !p.RequiresTransformation() {
+			t.Error("Expected RequiresTransformation to return true")
+		}
+	})
 }
