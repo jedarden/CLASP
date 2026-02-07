@@ -99,7 +99,7 @@ func GetClaudeCodeToolDefinition(tool models.AnthropicTool) (name, description s
 // transformReadTool creates an OpenAI-compatible schema for the Read tool.
 func transformReadTool(tool models.AnthropicTool) (string, string, interface{}) {
 	return "Read",
-		"Read file contents from the filesystem. Supports reading text files, images (PNG, JPG), PDFs, and Jupyter notebooks. Returns file content with line numbers.",
+		"Read file contents from the filesystem. Supports reading text files, images (PNG, JPG), PDFs, and Jupyter notebooks. Returns file content with line numbers. For PDFs larger than 10 pages, specify page ranges with the pages parameter.",
 		map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
@@ -114,6 +114,10 @@ func transformReadTool(tool models.AnthropicTool) (string, string, interface{}) 
 				"limit": map[string]interface{}{
 					"type":        "integer",
 					"description": "Maximum number of lines to read. Optional.",
+				},
+				"pages": map[string]interface{}{
+					"type":        "string",
+					"description": "Page range for PDF files (e.g., '1-5', '3', '10-20'). Maximum 20 pages per request. Optional, only applies to PDF files.",
 				},
 			},
 			"required":             []string{"file_path"},
