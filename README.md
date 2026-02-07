@@ -228,6 +228,18 @@ Where `{TIER}` is `OPUS`, `SONNET`, or `HAIKU`.
 | `GET /metrics/prometheus` | Prometheus metrics |
 | `GET /` | Server info |
 
+## Supported Tools
+
+CLASP supports all Claude Code 2.1.34+ tools with full parameter validation and OpenAI-compatible schema transformation. See [docs/api-reference/claude-code-tools.md](docs/api-reference/claude-code-tools.md) for the complete tool reference including:
+
+- **File Operations**: Read, Write, Edit, Glob, Grep
+- **Command Execution**: Bash with background support
+- **Web Operations**: WebSearch, WebFetch
+- **Agent Orchestration**: Task, TaskOutput, TaskStop (with model/resume/max_turns parameters)
+- **Interactive Features**: AskUserQuestion, ExitPlanMode
+- **Specialized Tools**: NotebookEdit (Jupyter), LSP (code intelligence), Skill invocation
+- **Task Management**: TaskCreate, TaskGet, TaskUpdate, TaskList (CLI-only)
+
 ## Example Usage
 
 ### With curl
