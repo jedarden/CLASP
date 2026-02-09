@@ -65,6 +65,9 @@ type StreamProcessor struct {
 	xmlBuffer        string
 	extractedXMLCall bool
 	xmlToolCallID    int
+
+	// Track stop reason for delayed message_delta emission
+	stopReason string
 }
 
 type toolCallState struct {
@@ -360,11 +363,11 @@ func (sp *StreamProcessor) handleFinishReason(reason string) error {
 		}
 	}
 
-	// Map finish reason to Anthropic stop reason
-	stopReason := mapFinishReason(reason)
+	// Map finish reason to Anthropic stop reason and store it
+	// Don't emit message_delta yet - wait for usage data in finalize()
+	sp.stopReason = mapFinishReason(reason)
 
-	// Emit message_delta
-	return sp.emitMessageDelta(stopReason)
+	return nil
 }
 
 // finalize completes the stream processing.
@@ -375,6 +378,16 @@ func (sp *StreamProcessor) finalize() error {
 	// Call usage callback if set and we have usage data
 	if sp.usageCallback != nil && sp.usage != nil {
 		sp.usageCallback(sp.usage.PromptTokens, sp.usage.CompletionTokens)
+	}
+
+	// Emit message_delta with final usage (delayed from handleFinishReason)
+	// This ensures we have the correct usage.output_tokens value
+	stopReason := sp.stopReason
+	if stopReason == "" {
+		stopReason = "end_turn" // Default if no finish reason was set
+	}
+	if err := sp.emitMessageDelta(stopReason); err != nil {
+		return err
 	}
 
 	// Emit message_stop
