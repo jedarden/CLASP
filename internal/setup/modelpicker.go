@@ -163,9 +163,17 @@ func (m *ModelPicker) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.KeyMsg:
 		switch msg.String() {
-		case "ctrl+c", "q":
+		case "ctrl+c":
 			m.canceled = true
 			return m, tea.Quit
+
+		case "q":
+			// Only quit on 'q' if filter is empty (not actively typing)
+			if m.filterInput.Value() == "" {
+				m.canceled = true
+				return m, tea.Quit
+			}
+			// Otherwise, 'q' is typed into the filter
 
 		case "enter":
 			if item, ok := m.list.SelectedItem().(ModelInfo); ok {
