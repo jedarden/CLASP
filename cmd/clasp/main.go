@@ -138,6 +138,7 @@ func main() {
 	}
 
 	// Profile selection logic:
+	// In proxy-only mode, skip profile selection entirely - config will come from env/flags
 	// 1. If --profile flag is set, use that profile
 	// 2. If TTY available, show profile selector TUI (with option to create new)
 	// 3. Non-TTY: use active profile or first available
@@ -180,6 +181,7 @@ func main() {
 	}
 
 	// Apply selected profile if we have one
+	// In proxy-only mode with no profile, skip this - config from env/flags is sufficient
 	if selectedProfileName != "" {
 		pm := setup.NewProfileManager()
 		profile, err := pm.GetProfile(selectedProfileName)
@@ -279,7 +281,9 @@ func main() {
 	}
 
 	// Check if setup is needed (no API keys configured)
-	if setup.NeedsSetup() {
+	// In proxy-only mode, we can proceed without setup if config is provided via env/flags
+	// This allows containerized/CI usage without interactive prompts
+	if setup.NeedsSetup() && !*proxyOnly {
 		fmt.Println("")
 		fmt.Println("No configuration found. Starting interactive setup...")
 		fmt.Println("")
@@ -323,6 +327,26 @@ func main() {
 	// Load configuration
 	cfg, err := config.LoadFromEnv()
 	if err != nil {
+		// In proxy-only mode with no config, provide helpful error message
+		if *proxyOnly {
+			fmt.Println("")
+			fmt.Println("[CLASP] Configuration error: " + err.Error())
+			fmt.Println("")
+			fmt.Println("For proxy-only mode in containers/CI, provide configuration via:")
+			fmt.Println("  Environment variables:")
+			fmt.Println("    PROVIDER=openai           # or: azure, openrouter, anthropic, custom")
+			fmt.Println("    OPENAI_API_KEY=sk-xxx     # or equivalent for your provider")
+			fmt.Println("    CLASP_MODEL=gpt-4o        # (optional) default model")
+			fmt.Println("    CLASP_PORT=8080           # (optional) proxy port")
+			fmt.Println("")
+			fmt.Println("  Or command-line flags:")
+			fmt.Println("    clasp -proxy-only -provider openai -model gpt-4o -port 8080")
+			fmt.Println("")
+			fmt.Println("For interactive setup:")
+			fmt.Println("    clasp -setup              # Create a profile interactively")
+			fmt.Println("")
+			os.Exit(1)
+		}
 		log.Fatalf("[CLASP] Configuration error: %v", err)
 	}
 
