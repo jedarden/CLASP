@@ -152,8 +152,10 @@ func main() {
 	// Apply direct API key if provided (sets appropriate env var based on provider)
 	applyDirectAPIKey(flags)
 
-	// Load configuration
-	cfg, err := config.LoadFromEnv()
+	// Load configuration from file (if exists) and environment variables
+	// Supports CLASP_CONFIG_FILE env var to specify config path
+	// Precedence: CLI flags > env vars > config file > defaults
+	cfg, err := config.LoadWithFile()
 	if err != nil {
 		// In proxy-only mode with no config, provide helpful error message
 		if flags.ProxyOnly {

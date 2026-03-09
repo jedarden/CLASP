@@ -105,6 +105,86 @@ clasp -provider custom -model llama3.1
 
 ## Configuration
 
+CLASP supports three configuration methods, with the following precedence (highest to lowest):
+1. **Command-line flags** - Override all other settings
+2. **Environment variables** - Override config file settings
+3. **Configuration file** - YAML-based configuration
+4. **Default values** - Built-in defaults
+
+### Configuration File
+
+CLASP can load configuration from a YAML file, which is cleaner for complex setups and version control friendly.
+
+**Configuration file locations** (searched in order):
+1. `./clasp.yaml` or `./clasp.yml` - Current directory
+2. `~/.clasp/config.yaml` - User config directory
+3. `~/.config/clasp/config.yaml` - XDG config directory
+4. `/etc/clasp/config.yaml` - System-wide config
+5. Custom path via `CLASP_CONFIG_FILE` environment variable
+
+**Example configuration file** (`clasp.yaml`):
+
+```yaml
+# Provider selection
+provider: openai
+
+# API Keys (supports ${VAR} syntax for environment variables)
+api_keys:
+  openai: ${OPENAI_API_KEY}
+  # azure: ${AZURE_API_KEY}
+  # openrouter: ${OPENROUTER_API_KEY}
+
+# Custom endpoints (optional)
+endpoints:
+  openai: https://api.openai.com/v1
+  ollama: http://localhost:11434
+
+# Model configuration
+models:
+  default: gpt-4o
+  opus: gpt-4o           # Maps claude-opus-* to gpt-4o
+  sonnet: gpt-4o-mini    # Maps claude-sonnet-* to gpt-4o-mini
+  haiku: gpt-4o-mini     # Maps claude-haiku-* to gpt-4o-mini
+
+# Server settings
+server:
+  port: 8080
+  log_level: info
+
+# Feature toggles
+cache:
+  enabled: true
+  max_size: 1000
+  ttl: 3600
+
+rate_limit:
+  enabled: false
+  requests: 60
+  window: 60
+
+# Multi-provider routing
+multi_provider:
+  enabled: false
+  opus:
+    provider: openai
+    model: gpt-4o
+  sonnet:
+    provider: anthropic
+    model: claude-sonnet-4-20250514
+```
+
+**Environment variable expansion:**
+
+The config file supports `${VAR}` and `${VAR:-default}` syntax:
+
+```yaml
+api_keys:
+  openai: ${OPENAI_API_KEY}
+  openrouter: ${OPENROUTER_API_KEY:-sk-or-default-key}
+```
+
+**Complete example:** See [clasp.example.yaml](clasp.example.yaml) for all available options.
+
 ### Command Line Options
 
 ```

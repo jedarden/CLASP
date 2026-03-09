@@ -1,0 +1,221 @@
+# CLASP Configuration File
+# ========================
+# This is an example configuration file for CLASP.
+# Copy this file to one of the following locations:
+#   - ./clasp.yaml (current directory)
+#   - ~/.clasp/config.yaml (home directory)
+#   - /etc/clasp/config.yaml (system-wide)
+#
+# Or specify a custom path with: CLASP_CONFIG_FILE=/path/to/config.yaml
+#
+# Configuration precedence (highest to lowest):
+#   1. Command-line flags
+#   2. Environment variables
+#   3. This configuration file
+#   4. Default values
+#
+# Environment variable expansion is supported using ${VAR} or ${VAR:-default} syntax.
+# Example: api_key: ${OPENAI_API_KEY}
+
+# Provider selection
+# Options: openai, azure, openrouter, anthropic, ollama, gemini, deepseek, grok, qwen, minimax, custom
+provider: openai
+
+# API Keys
+# --------
+# API keys can be specified directly or reference environment variables.
+# Using environment variables is recommended for security.
+api_keys:
+  openai: ${OPENAI_API_KEY}
+  # azure: ${AZURE_API_KEY}
+  # openrouter: ${OPENROUTER_API_KEY}
+  # anthropic: ${ANTHROPIC_API_KEY}
+  # ollama: ""  # Optional for local Ollama
+  # gemini: ${GEMINI_API_KEY}
+  # deepseek: ${DEEPSEEK_API_KEY}
+  # grok: ${GROK_API_KEY}
+  # qwen: ${QWEN_API_KEY}
+  # minimax: ${MINIMAX_API_KEY}
+  # custom: ${CUSTOM_API_KEY}
+
+# Endpoints
+# ---------
+# Custom endpoints for each provider (optional, uses defaults if not specified)
+endpoints:
+  openai: https://api.openai.com/v1
+  openrouter: https://openrouter.ai/api/v1
+  ollama: http://localhost:11434
+  gemini: https://generativelanguage.googleapis.com/v1beta
+  deepseek: https://api.deepseek.com
+  # Azure requires additional configuration:
+  # azure:
+  #   endpoint: https://your-resource.openai.azure.com
+  #   deployment_name: gpt-4
+  #   api_version: "2024-02-15-preview"
+  # custom: https://your-custom-endpoint.com/v1
+
+# Model Configuration
+# -------------------
+# Default model and tier-specific model mappings
+models:
+  default: gpt-4o
+  # Tier mappings for Claude models (maps claude-* models to your provider's equivalents)
+  # opus: gpt-4o           # Maps claude-opus-* to gpt-4o
+  # sonnet: gpt-4o-mini    # Maps claude-sonnet-* to gpt-4o-mini
+  # haiku: gpt-4o-mini     # Maps claude-haiku-* to gpt-4o-mini
+
+# Server Settings
+# ---------------
+server:
+  port: 8080
+  log_level: info  # Options: debug, info, warn, error
+
+# Debug Settings
+# --------------
+debug:
+  enabled: false
+  requests: false   # Log raw request bodies
+  responses: false  # Log raw response bodies
+
+# Rate Limiting
+# -------------
+# Limit requests per time window
+rate_limit:
+  enabled: false
+  requests: 60      # Requests per window
+  window: 60        # Window in seconds
+  burst: 10         # Burst allowance
+
+# Caching
+# -------
+# Cache responses to reduce API calls
+cache:
+  enabled: false
+  max_size: 1000    # Maximum cache entries
+  ttl: 3600         # Time-to-live in seconds (0 = no expiry)
+
+# Authentication
+# --------------
+# Require API key for proxy access
+auth:
+  enabled: false
+  api_key: ""       # Set to require this key for all requests
+  allow_anonymous_health: true   # Allow /health without auth
+  allow_anonymous_metrics: false # Allow /metrics without auth
+
+# Request Queue
+# -------------
+# Queue requests during high load
+queue:
+  enabled: false
+  max_size: 100          # Maximum queued requests
+  max_wait_seconds: 30   # Max time a request can wait
+  retry_delay_ms: 1000   # Delay between retries
+  max_retries: 3         # Max retry attempts
+
+# Circuit Breaker
+# ---------------
+# Protect against cascading failures
+circuit_breaker:
+  enabled: false
+  threshold: 5       # Failures before opening circuit
+  recovery: 2        # Successes to close circuit
+  timeout_sec: 30    # Seconds before trying again
+
+# HTTP Client
+# -----------
+http_client:
+  timeout_sec: 300   # 5 minutes (good for reasoning models)
+
+# Model Aliases
+# -------------
+# Create shortcuts for frequently used models
+aliases:
+  # fast: gpt-4o-mini
+  # smart: gpt-4o
+  # cheap: gpt-3.5-turbo
+
+# Multi-Provider Routing
+# ----------------------
+# Route different model tiers to different providers
+# This allows using different providers for opus/sonnet/haiku models
+multi_provider:
+  enabled: false
+
+  # Example: Use OpenAI for Opus tier, Anthropic for Sonnet/Haiku
+  # opus:
+  #   provider: openai
+  #   model: gpt-4o
+  #   api_key: ${OPENAI_API_KEY}  # Optional: override main API key
+  #   base_url: ""                # Optional: override base URL
+  #   fallback:                   # Optional: fallback provider
+  #     provider: openrouter
+  #     model: claude-opus-4-20250514
+  #     api_key: ${OPENROUTER_API_KEY}
+
+  # sonnet:
+  #   provider: anthropic
+  #   model: claude-sonnet-4-20250514
+  #   api_key: ${ANTHROPIC_API_KEY}
+
+  # haiku:
+  #   provider: anthropic
+  #   model: claude-haiku-4-5-20251001
+  #   api_key: ${ANTHROPIC_API_KEY}
+
+# Global Fallback
+# ---------------
+# Fallback provider when the primary fails
+fallback:
+  enabled: false
+  provider: ""       # e.g., openrouter
+  model: ""          # e.g., claude-3-5-sonnet-20241022
+  api_key: ""        # ${OPENROUTER_API_KEY}
+  base_url: ""       # Optional: override base URL
+
+# =============================================
+# Example Configurations
+# =============================================
+
+# --- Minimal OpenAI Setup ---
+# provider: openai
+# api_keys:
+#   openai: ${OPENAI_API_KEY}
+
+# --- Azure OpenAI Setup ---
+# provider: azure
+# api_keys:
+#   azure: ${AZURE_API_KEY}
+# endpoints:
+#   azure:
+#     endpoint: https://your-resource.openai.azure.com
+#     deployment_name: gpt-4-deployment
+#     api_version: "2024-02-15-preview"
+
+# --- Local Ollama Setup ---
+# provider: ollama
+# endpoints:
+#   ollama: http://localhost:11434
+# models:
+#   default: llama3.1
+
+# --- Multi-Provider with Fallbacks ---
+# provider: openai
+# api_keys:
+#   openai: ${OPENAI_API_KEY}
+#   openrouter: ${OPENROUTER_API_KEY}
+#   anthropic: ${ANTHROPIC_API_KEY}
+# multi_provider:
+#   enabled: true
+#   opus:
+#     provider: openai
+#     model: gpt-4o
+#     fallback:
+#       provider: openrouter
+#       model: claude-opus-4-20250514
+#   sonnet:
+#     provider: anthropic
+#     model: claude-sonnet-4-20250514
+#   haiku:
+#     provider: openai
+#     model: gpt-4o-mini
