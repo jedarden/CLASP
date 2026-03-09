@@ -10,9 +10,13 @@ import (
 	"github.com/jedarden/clasp/pkg/models"
 )
 
-// Model max_tokens limits for OpenAI models.
+// Model max_tokens limits for various AI models.
 // These limits represent the maximum output tokens each model supports.
 var modelMaxTokenLimits = map[string]int{
+	// GPT-4.5 series
+	"gpt-4.5":          32768,
+	"gpt-4.5-preview":  32768,
+	"gpt-4.5-turbo":    32768,
 	// GPT-4o series
 	"gpt-4o":                 16384,
 	"gpt-4o-2024-11-20":      16384,
@@ -40,6 +44,27 @@ var modelMaxTokenLimits = map[string]int{
 	"o1":         100000,
 	"o1-preview": 32768,
 	"o1-mini":    65536,
+	// O3 models (reasoning models)
+	"o3":         100000,
+	"o3-mini":    100000,
+	// Claude 3.5 series (via OpenRouter or direct API)
+	"claude-3-5-sonnet":      8192,
+	"claude-3-5-sonnet-20241022": 8192,
+	"claude-3-5-sonnet-20240620": 8192,
+	"claude-3-5-haiku":       8192,
+	"claude-3-5-haiku-20241022":  8192,
+	// Claude 3 series
+	"claude-3-opus":   4096,
+	"claude-3-sonnet": 4096,
+	"claude-3-haiku":  4096,
+	// Gemini 2.0 series
+	"gemini-2.0-flash":        8192,
+	"gemini-2.0-flash-lite":   8192,
+	"gemini-2.0-pro":          8192,
+	"gemini-2.0-flash-exp":    8192,
+	// Gemini 1.5 series
+	"gemini-1.5-pro":   8192,
+	"gemini-1.5-flash": 8192,
 }
 
 // defaultMaxTokenLimit is used when the model is not in the known list.
