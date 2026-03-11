@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/jedarden/clasp/pkg/models"
@@ -108,13 +109,13 @@ func (rc *RequestCache) Get(key string) (*models.AnthropicResponse, bool) {
 
 	elem, ok := rc.cache[key]
 	if !ok {
-		rc.misses++
+		atomic.AddInt64(&rc.misses, 1)
 		return nil, false
 	}
 
 	lruEnt, ok := elem.Value.(*lruEntry)
 	if !ok {
-		rc.misses++
+		atomic.AddInt64(&rc.misses, 1)
 		return nil, false
 	}
 	entry := lruEnt.entry
@@ -123,14 +124,14 @@ func (rc *RequestCache) Get(key string) (*models.AnthropicResponse, bool) {
 	if rc.ttl > 0 && time.Since(entry.CreatedAt) > rc.ttl {
 		// Entry expired, remove it
 		rc.removeElement(elem)
-		rc.misses++
+		atomic.AddInt64(&rc.misses, 1)
 		return nil, false
 	}
 
 	// Cache hit - move to front of LRU and increment hits
 	rc.lru.MoveToFront(elem)
 	entry.Hits++
-	rc.hits++
+	atomic.AddInt64(&rc.hits, 1)
 
 	return entry.Response, true
 }
@@ -190,8 +191,8 @@ func (rc *RequestCache) Stats() (size, maxSize int, hits, misses int64, hitRate 
 
 	size = rc.lru.Len()
 	maxSize = rc.maxSize
-	hits = rc.hits
-	misses = rc.misses
+	hits = atomic.LoadInt64(&rc.hits)
+	misses = atomic.LoadInt64(&rc.misses)
 
 	total := hits + misses
 	if total > 0 {
