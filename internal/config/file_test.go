@@ -408,7 +408,7 @@ multi_provider:
 	}
 }
 
-func TestModelAliases(t *testing.T) {
+func TestModelAliasesFromFile(t *testing.T) {
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "clasp.yaml")
 
