@@ -13,12 +13,14 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/jedarden/clasp/internal/cache"
 	"github.com/jedarden/clasp/internal/config"
 	"github.com/jedarden/clasp/internal/logging"
+	"github.com/jedarden/clasp/internal/metrics"
 	"github.com/jedarden/clasp/internal/provider"
 	"github.com/jedarden/clasp/internal/secrets"
 	"github.com/jedarden/clasp/internal/session"
@@ -36,6 +38,7 @@ type Handler struct {
 	rateLimiter      *RateLimiter
 	cache            *RequestCache
 	promptCache      *cache.PromptCache
+	promptCachePending sync.Map // map[string]promptCacheCtx — per-request prompt cache context
 	queue            *RequestQueue
 	circuitBreaker   *CircuitBreaker
 	costTracker      *CostTracker
@@ -317,6 +320,13 @@ func (h *Handler) HandleMessages(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Store prompt cache context for later use when storing the response
+	if h.promptCache != nil && cacheKey != "" && cacheable {
+		if pk, pt, pok := cache.GeneratePromptCacheKey(anthropicReq); pok {
+			h.promptCachePending.Store(cacheKey, promptCacheCtx{key: pk, tokens: pt})
+		}
+	}
+
 	// Select provider and resolve target model
 	selectedProvider, targetModel := h.selectProviderAndModel(anthropicReq)
 
@@ -493,6 +503,25 @@ func (h *Handler) checkCache(w http.ResponseWriter, req *models.AnthropicRequest
 
 	log.Printf("[CLASP] Cache MISS for request")
 	return cacheKey, cacheable
+}
+
+// promptCacheCtx holds prompt cache key and token estimate for a request.
+type promptCacheCtx struct {
+	key    string
+	tokens int
+}
+
+// tryStorePromptCache stores a response in the prompt cache if a pending context exists.
+// The cacheKey parameter is the regular cache key used to look up the prompt cache context.
+func (h *Handler) tryStorePromptCache(cacheKey string, resp *models.AnthropicResponse) {
+	if h.promptCache == nil {
+		return
+	}
+	if val, ok := h.promptCachePending.LoadAndDelete(cacheKey); ok {
+		ctx := val.(promptCacheCtx)
+		h.promptCache.Set(ctx.key, resp, ctx.tokens)
+		log.Printf("[CLASP] Response stored in prompt cache (prefix ~%d tokens)", ctx.tokens)
+	}
 }
 
 // selectProviderAndModel selects the appropriate provider and target model.
@@ -838,6 +867,7 @@ func (h *Handler) handlePassthroughNonStreaming(w http.ResponseWriter, resp *htt
 		if h.cache != nil && cacheable && cacheKey != "" {
 			h.cache.Set(cacheKey, &anthropicResp)
 			log.Printf("[CLASP] Passthrough response cached (key: %s...)", cacheKey[:16])
+			h.tryStorePromptCache(cacheKey, &anthropicResp)
 		}
 	}
 
@@ -1083,6 +1113,7 @@ func (h *Handler) handleNonStreamingResponse(w http.ResponseWriter, resp *http.R
 	if h.cache != nil && cacheable && cacheKey != "" {
 		h.cache.Set(cacheKey, &anthropicResp)
 		log.Printf("[CLASP] Response cached (key: %s...)", cacheKey[:16])
+		h.tryStorePromptCache(cacheKey, &anthropicResp)
 	}
 
 	// Write response
@@ -1303,6 +1334,7 @@ func (h *Handler) handleResponsesNonStreamingResponse(w http.ResponseWriter, res
 	if h.cache != nil && cacheable && cacheKey != "" {
 		h.cache.Set(cacheKey, &anthropicResp)
 		log.Printf("[CLASP] Responses API response cached (key: %s...)", cacheKey[:16])
+		h.tryStorePromptCache(cacheKey, &anthropicResp)
 	}
 
 	// Write response
@@ -1430,6 +1462,20 @@ func (h *Handler) HandleMetrics(w http.ResponseWriter, r *http.Request) {
 			"hits":     hits,
 			"misses":   misses,
 			"hit_rate": fmt.Sprintf("%.2f%%", hitRate),
+		}
+	}
+
+	// Add prompt cache stats if enabled
+	if h.promptCache != nil {
+		pcStats := h.promptCache.Stats()
+		response["prompt_cache"] = map[string]interface{}{
+			"enabled":          true,
+			"size":             pcStats.Size,
+			"max_size":         pcStats.MaxSize,
+			"hits":             pcStats.Hits,
+			"misses":           pcStats.Misses,
+			"hit_rate":         fmt.Sprintf("%.2f%%", pcStats.HitRate),
+			"savings_tokens":   pcStats.SavingsTokens,
 		}
 	}
 
@@ -1587,6 +1633,11 @@ func (h *Handler) HandleMetricsPrometheus(w http.ResponseWriter, r *http.Request
 		fmt.Fprintf(w, "# HELP clasp_cache_misses Total cache misses\n")
 		fmt.Fprintf(w, "# TYPE clasp_cache_misses counter\n")
 		fmt.Fprintf(w, "clasp_cache_misses{provider=\"%s\"} %d\n", providerName, misses)
+	}
+
+	// Prompt cache metrics
+	if h.promptCache != nil {
+		metrics.WritePromptCachePrometheus(w, providerName, h.promptCache.Stats())
 	}
 
 	// Fallback metrics
