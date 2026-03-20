@@ -27,6 +27,7 @@ type Server struct {
 	authConfig     *AuthConfig
 	queue          *RequestQueue
 	circuitBreaker *CircuitBreaker
+	healthChecker  *HealthChecker
 	statusManager  *statusline.Manager
 	version        string
 	shutdownCh     chan struct{} // Channel to signal goroutines to stop
@@ -112,6 +113,54 @@ func NewServerWithVersion(cfg *config.Config, version string) (*Server, error) {
 		s.handler.SetCircuitBreaker(s.circuitBreaker)
 	}
 
+	// Initialize health checker if enabled
+	if cfg.HealthCheckEnabled {
+		hcConfig := &HealthCheckerConfig{
+			Enabled:       true,
+			CheckInterval: time.Duration(cfg.HealthCheckIntervalSec) * time.Second,
+			Timeout:       time.Duration(cfg.HealthCheckTimeoutSec) * time.Second,
+		}
+		s.healthChecker = NewHealthChecker(hcConfig, cfg, s.handler.client)
+
+		// Register main provider
+		s.healthChecker.RegisterProvider(string(cfg.Provider), s.handler.provider, cfg.GetAPIKey(), "primary")
+
+		// Register circuit breaker if enabled
+		if s.circuitBreaker != nil {
+			s.healthChecker.RegisterCircuitBreaker(string(cfg.Provider), s.circuitBreaker)
+		}
+
+		// Register fallback provider if configured
+		if s.handler.fallbackProvider != nil {
+			s.healthChecker.RegisterProvider(string(cfg.FallbackProvider), s.handler.fallbackProvider, cfg.FallbackAPIKey, "fallback")
+		}
+
+		// Register tier-specific providers if multi-provider routing is enabled
+		if cfg.MultiProviderEnabled {
+			for tier, p := range s.handler.tierProviders {
+				// Get tier config for API key
+				var apiKey string
+				switch tier {
+				case config.TierOpus:
+					if cfg.TierOpus != nil {
+						apiKey = cfg.TierOpus.APIKey
+					}
+				case config.TierSonnet:
+					if cfg.TierSonnet != nil {
+						apiKey = cfg.TierSonnet.APIKey
+					}
+				case config.TierHaiku:
+					if cfg.TierHaiku != nil {
+						apiKey = cfg.TierHaiku.APIKey
+					}
+				}
+				s.healthChecker.RegisterProvider(string(tier), p, apiKey, string(tier))
+			}
+		}
+
+		s.handler.SetHealthChecker(s.healthChecker)
+	}
+
 	return s, nil
 }
 
@@ -123,6 +172,7 @@ func (s *Server) Start() error {
 	// Register routes
 	mux.HandleFunc("/", s.handler.HandleRoot)
 	mux.HandleFunc("/health", s.handler.HandleHealth)
+	mux.HandleFunc("/providers/health", s.handler.HandleProvidersHealth)
 	mux.HandleFunc("/metrics", s.handler.HandleMetrics)
 	mux.HandleFunc("/metrics/prometheus", s.handler.HandleMetricsPrometheus)
 	mux.HandleFunc("/costs", s.handler.HandleCosts)
@@ -156,6 +206,13 @@ func (s *Server) Start() error {
 	if s.circuitBreaker != nil {
 		log.Printf("[CLASP] Circuit breaker enabled: threshold %d failures, recovery %d successes, timeout %d seconds",
 			s.cfg.CircuitBreakerThreshold, s.cfg.CircuitBreakerRecovery, s.cfg.CircuitBreakerTimeoutSec)
+	}
+
+	// Log and start health checker
+	if s.healthChecker != nil {
+		log.Printf("[CLASP] Health checker enabled: interval %d seconds, timeout %d seconds",
+			s.cfg.HealthCheckIntervalSec, s.cfg.HealthCheckTimeoutSec)
+		s.healthChecker.Start()
 	}
 
 	// Apply authentication middleware if enabled
@@ -313,6 +370,11 @@ func (s *Server) GetPort() int {
 func (s *Server) Shutdown() error {
 	// Signal all goroutines to stop
 	close(s.shutdownCh)
+
+	// Stop health checker
+	if s.healthChecker != nil {
+		s.healthChecker.Stop()
+	}
 
 	// Mark status as stopped
 	if s.statusManager != nil {
