@@ -16,10 +16,12 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/jedarden/clasp/internal/cache"
 	"github.com/jedarden/clasp/internal/config"
 	"github.com/jedarden/clasp/internal/logging"
 	"github.com/jedarden/clasp/internal/provider"
 	"github.com/jedarden/clasp/internal/secrets"
+	"github.com/jedarden/clasp/internal/session"
 	"github.com/jedarden/clasp/internal/translator"
 	"github.com/jedarden/clasp/pkg/models"
 )
@@ -33,26 +35,30 @@ type Handler struct {
 	metrics          *Metrics
 	rateLimiter      *RateLimiter
 	cache            *RequestCache
+	promptCache      *cache.PromptCache
 	queue            *RequestQueue
 	circuitBreaker   *CircuitBreaker
 	costTracker      *CostTracker
 	healthChecker    *HealthChecker
 	tierProviders    map[config.ModelTier]provider.Provider
 	tierFallbacks    map[config.ModelTier]provider.Provider
+	sessionTracker   *session.Tracker
 	version          string
 }
 
 // Metrics tracks request statistics.
 type Metrics struct {
-	TotalRequests     int64
-	SuccessRequests   int64
-	ErrorRequests     int64
-	StreamRequests    int64
-	ToolCallRequests  int64
-	TotalLatencyMs    int64
-	FallbackAttempts  int64
-	FallbackSuccesses int64
-	StartTime         time.Time
+	TotalRequests      int64
+	SuccessRequests    int64
+	ErrorRequests      int64
+	StreamRequests     int64
+	ToolCallRequests   int64
+	TotalLatencyMs     int64
+	FallbackAttempts   int64
+	FallbackSuccesses  int64
+	CompactionHits     int64 // Responses API requests using previous_response_id
+	CompactionMisses   int64 // Responses API requests without a stored session
+	StartTime          time.Time
 }
 
 // NewHandler creates a new request handler with optimized HTTP client.
@@ -149,6 +155,11 @@ func (h *Handler) SetCache(cache *RequestCache) {
 	h.cache = cache
 }
 
+// SetPromptCache sets the prompt cache.
+func (h *Handler) SetPromptCache(pc *cache.PromptCache) {
+	h.promptCache = pc
+}
+
 // SetQueue sets the request queue.
 func (h *Handler) SetQueue(queue *RequestQueue) {
 	h.queue = queue
@@ -162,6 +173,11 @@ func (h *Handler) SetCircuitBreaker(cb *CircuitBreaker) {
 // SetHealthChecker sets the health checker.
 func (h *Handler) SetHealthChecker(hc *HealthChecker) {
 	h.healthChecker = hc
+}
+
+// SetSessionTracker sets the session tracker for Responses API compaction.
+func (h *Handler) SetSessionTracker(st *session.Tracker) {
+	h.sessionTracker = st
 }
 
 // SetVersion sets the handler version (used for status endpoint).
@@ -285,8 +301,42 @@ func (h *Handler) HandleMessages(w http.ResponseWriter, r *http.Request) {
 		return // Response already sent from cache
 	}
 
+	// Check prompt cache (prefix-based matching for cache_control-marked requests)
+	if h.promptCache != nil && !anthropicReq.Stream {
+		promptKey, promptTokens, promptOK := cache.GeneratePromptCacheKey(anthropicReq)
+		if promptOK {
+			if cachedResp, _, found := h.promptCache.Get(promptKey); found {
+				log.Printf("[CLASP] Prompt cache HIT (prefix match, ~%d tokens saved)", promptTokens)
+				atomic.AddInt64(&h.metrics.SuccessRequests, 1)
+				w.Header().Set("Content-Type", "application/json")
+				w.Header().Set("X-CLASP-Cache", "HIT")
+				w.Header().Set("X-CLASP-Prompt-Cache", "HIT")
+				_ = json.NewEncoder(w).Encode(cachedResp)
+				return
+			}
+		}
+	}
+
 	// Select provider and resolve target model
 	selectedProvider, targetModel := h.selectProviderAndModel(anthropicReq)
+
+	// Determine compaction context (previous_response_id for Responses API sessions).
+	var previousResponseID, sessionKey string
+	var newMessagesOffset int
+	if h.sessionTracker != nil && selectedProvider.RequiresTransformation() {
+		if translator.GetEndpointType(targetModel) == translator.EndpointResponses {
+			sessionKey = translator.SessionKey(anthropicReq)
+			if entry, ok := h.sessionTracker.Get(sessionKey); ok && entry.MessageCount < len(anthropicReq.Messages) {
+				previousResponseID = entry.ResponseID
+				newMessagesOffset = entry.MessageCount
+				atomic.AddInt64(&h.metrics.CompactionHits, 1)
+				log.Printf("[CLASP] Compaction: continuing session %s..., previous_response_id=%s (offset=%d)",
+					sessionKey[:8], previousResponseID, newMessagesOffset)
+			} else {
+				atomic.AddInt64(&h.metrics.CompactionMisses, 1)
+			}
+		}
+	}
 
 	// Check circuit breaker
 	if h.circuitBreaker != nil && !h.circuitBreaker.Allow() {
@@ -304,7 +354,7 @@ func (h *Handler) HandleMessages(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Transform and execute request
-	resp, targetModel, useResponsesAPI, usedFallback, execErr := h.transformAndExecute(r.Context(), anthropicReq, selectedProvider, targetModel)
+	resp, targetModel, useResponsesAPI, usedFallback, execErr := h.transformAndExecute(r.Context(), anthropicReq, selectedProvider, targetModel, previousResponseID, newMessagesOffset)
 	if execErr != nil {
 		atomic.AddInt64(&h.metrics.ErrorRequests, 1)
 		if h.circuitBreaker != nil {
@@ -338,7 +388,7 @@ func (h *Handler) HandleMessages(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Handle streaming vs non-streaming response
-	h.handleResponse(w, resp, anthropicReq.Stream, useResponsesAPI, targetModel, cacheKey, cacheable)
+	h.handleResponse(w, resp, anthropicReq.Stream, useResponsesAPI, targetModel, cacheKey, cacheable, sessionKey, len(anthropicReq.Messages))
 }
 
 // requestError represents a request validation error with HTTP status info.
@@ -476,7 +526,7 @@ func (h *Handler) selectProviderAndModel(req *models.AnthropicRequest) (provider
 }
 
 // transformAndExecute transforms the request and executes it against the provider.
-func (h *Handler) transformAndExecute(ctx interface{ Done() <-chan struct{} }, req *models.AnthropicRequest, selectedProvider provider.Provider, targetModel string) (*http.Response, string, bool, bool, error) {
+func (h *Handler) transformAndExecute(ctx interface{ Done() <-chan struct{} }, req *models.AnthropicRequest, selectedProvider provider.Provider, targetModel, previousResponseID string, newMessagesOffset int) (*http.Response, string, bool, bool, error) {
 	endpointType := translator.GetEndpointType(targetModel)
 	useResponsesAPI := endpointType == translator.EndpointResponses
 
@@ -486,7 +536,7 @@ func (h *Handler) transformAndExecute(ctx interface{ Done() <-chan struct{} }, r
 	}
 
 	// Transform request
-	reqBody, err := h.transformRequest(req, targetModel, useResponsesAPI)
+	reqBody, err := h.transformRequest(req, targetModel, useResponsesAPI, previousResponseID, newMessagesOffset)
 	if err != nil {
 		return nil, targetModel, useResponsesAPI, false, err
 	}
@@ -504,9 +554,21 @@ func (h *Handler) transformAndExecute(ctx interface{ Done() <-chan struct{} }, r
 }
 
 // transformRequest transforms an Anthropic request to the appropriate format.
-func (h *Handler) transformRequest(req *models.AnthropicRequest, targetModel string, useResponsesAPI bool) ([]byte, error) {
+// previousResponseID and newMessagesOffset are used for Responses API compaction:
+// when set, only the messages after newMessagesOffset are sent (the rest are
+// captured by the previous_response_id chain).
+func (h *Handler) transformRequest(req *models.AnthropicRequest, targetModel string, useResponsesAPI bool, previousResponseID string, newMessagesOffset int) ([]byte, error) {
 	if useResponsesAPI {
-		responsesReq, err := translator.TransformRequestToResponses(req, targetModel, "")
+		// Apply compaction: trim messages to only the new ones when continuing a session.
+		reqToTransform := req
+		if previousResponseID != "" {
+			if newMessages := translator.TrimMessagesForCompaction(req.Messages, newMessagesOffset); newMessages != nil {
+				trimmed := *req
+				trimmed.Messages = newMessages
+				reqToTransform = &trimmed
+			}
+		}
+		responsesReq, err := translator.TransformRequestToResponses(reqToTransform, targetModel, previousResponseID)
 		if err != nil {
 			log.Printf("[CLASP] Error transforming request to Responses API: %v", err)
 			return nil, err
@@ -580,7 +642,8 @@ func (h *Handler) tryFallback(ctx interface{ Done() <-chan struct{} }, req *mode
 	}
 
 	var err error
-	reqBody, err = h.transformRequest(req, targetModel, useResponsesAPI)
+	// Fallback always uses full context (no compaction) for safety.
+	reqBody, err = h.transformRequest(req, targetModel, useResponsesAPI, "", 0)
 	if err != nil {
 		return nil, targetModel, useResponsesAPI, false, err
 	}
@@ -611,25 +674,34 @@ func (h *Handler) handleUpstreamError(w http.ResponseWriter, resp *http.Response
 }
 
 // handleResponse routes the response to the appropriate handler.
-func (h *Handler) handleResponse(w http.ResponseWriter, resp *http.Response, isStreaming, useResponsesAPI bool, targetModel, cacheKey string, cacheable bool) {
+// sessionKey and messageCount are used for compaction session tracking on Responses API paths.
+func (h *Handler) handleResponse(w http.ResponseWriter, resp *http.Response, isStreaming, useResponsesAPI bool, targetModel, cacheKey string, cacheable bool, sessionKey string, messageCount int) {
 	if isStreaming {
 		if useResponsesAPI {
-			h.handleResponsesStreamingResponse(w, resp, targetModel)
+			h.handleResponsesStreamingResponse(w, resp, targetModel, sessionKey, messageCount)
 		} else {
 			h.handleStreamingResponse(w, resp, targetModel)
 		}
 	} else {
 		if useResponsesAPI {
-			h.handleResponsesNonStreamingResponse(w, resp, targetModel, cacheKey, cacheable)
+			h.handleResponsesNonStreamingResponse(w, resp, targetModel, cacheKey, cacheable, sessionKey, messageCount)
 		} else {
 			h.handleNonStreamingResponse(w, resp, targetModel, cacheKey, cacheable)
 		}
 	}
 }
 
+// checkPromptCache checks if the request can be served from the prompt cache.
+// Returns ("HIT", false, 0) if the response was served from cache, otherwise ("", false, 0).
+// This is a stub; full implementation is provided by the prompt-cache bead.
+func (h *Handler) checkPromptCache(_ http.ResponseWriter, _ *models.AnthropicRequest) (string, bool, int) {
+	return "", false, 0
+}
+
 // handlePassthroughRequest handles requests that don't require transformation.
 // This is used for direct Anthropic API passthrough where the request is already
-// in the correct format.
+// in the correct format. The _ string and _ int params are reserved for
+// future prompt-cache integration (promptCacheKey, promptCacheTokens).
 func (h *Handler) handlePassthroughRequest(w http.ResponseWriter, r *http.Request, anthropicReq *models.AnthropicRequest, p provider.Provider, start time.Time, cacheKey string, cacheable bool) {
 	// Marshal the original Anthropic request
 	reqBody, err := json.Marshal(anthropicReq)
@@ -1020,7 +1092,9 @@ func (h *Handler) handleNonStreamingResponse(w http.ResponseWriter, resp *http.R
 }
 
 // handleResponsesStreamingResponse handles SSE streaming responses from Responses API.
-func (h *Handler) handleResponsesStreamingResponse(w http.ResponseWriter, resp *http.Response, targetModel string) {
+// sessionKey and messageCount enable compaction session tracking: after a successful
+// stream, the response ID is stored so the next request can use previous_response_id.
+func (h *Handler) handleResponsesStreamingResponse(w http.ResponseWriter, resp *http.Response, targetModel, sessionKey string, messageCount int) {
 	// Set SSE headers
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
@@ -1061,14 +1135,19 @@ func (h *Handler) handleResponsesStreamingResponse(w http.ResponseWriter, resp *
 		log.Printf("[CLASP] Error processing Responses API stream: %v", err)
 	}
 
-	// Log response ID for conversation continuation
+	// Store response ID in session tracker for compaction.
 	if responseID := processor.GetResponseID(); responseID != "" {
 		log.Printf("[CLASP] Responses API response ID: %s", responseID)
+		if h.sessionTracker != nil && sessionKey != "" {
+			h.sessionTracker.Set(sessionKey, responseID, messageCount)
+			log.Printf("[CLASP] Compaction: stored session %s... (messages=%d)", sessionKey[:8], messageCount)
+		}
 	}
 }
 
 // handleResponsesNonStreamingResponse handles non-streaming responses from Responses API.
-func (h *Handler) handleResponsesNonStreamingResponse(w http.ResponseWriter, resp *http.Response, targetModel, cacheKey string, cacheable bool) {
+// sessionKey and messageCount enable compaction session tracking.
+func (h *Handler) handleResponsesNonStreamingResponse(w http.ResponseWriter, resp *http.Response, targetModel, cacheKey string, cacheable bool, sessionKey string, messageCount int) {
 	// Read response body
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -1091,6 +1170,13 @@ func (h *Handler) handleResponsesNonStreamingResponse(w http.ResponseWriter, res
 		log.Printf("[CLASP] Error parsing Responses API response: %v", err)
 		http.Error(w, "Error parsing upstream response", http.StatusBadGateway)
 		return
+	}
+
+	// Store response ID in session tracker for compaction.
+	if h.sessionTracker != nil && sessionKey != "" && responsesResp.ID != "" {
+		h.sessionTracker.Set(sessionKey, responsesResp.ID, messageCount)
+		log.Printf("[CLASP] Compaction: stored session %s... response_id=%s (messages=%d)",
+			sessionKey[:8], responsesResp.ID, messageCount)
 	}
 
 	// Build Anthropic response from Responses API format
@@ -1301,6 +1387,24 @@ func (h *Handler) HandleMetrics(w http.ResponseWriter, r *http.Request) {
 		},
 		"uptime":   uptime.String(),
 		"provider": h.provider.Name(),
+	}
+
+	// Add compaction stats if enabled
+	if h.sessionTracker != nil {
+		compHits := atomic.LoadInt64(&h.metrics.CompactionHits)
+		compMisses := atomic.LoadInt64(&h.metrics.CompactionMisses)
+		var compRate float64
+		if total := compHits + compMisses; total > 0 {
+			compRate = float64(compHits) / float64(total) * 100
+		}
+		response["compaction"] = map[string]interface{}{
+			"enabled":          true,
+			"hits":             compHits,
+			"misses":           compMisses,
+			"hit_rate":         fmt.Sprintf("%.2f%%", compRate),
+			"active_sessions":  h.sessionTracker.Len(),
+			"session_timeout_s": h.cfg.SessionTimeoutSec,
+		}
 	}
 
 	// Add rate limit stats if enabled
