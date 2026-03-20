@@ -5,6 +5,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -356,5 +357,5 @@ func TestHandleProvidersHealth(t *testing.T) {
 
 // Helper function to check if a string contains a substring
 func containsStr(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(s) > len(substr) && (s[:len(substr)] == substr || s[len(s)-len(substr):] == substr || containsMiddle(s, substr)))
+	return strings.Contains(s, substr)
 }
