@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jedarden/clasp/internal/cache"
 	"github.com/jedarden/clasp/internal/config"
 	"github.com/jedarden/clasp/internal/logging"
 	"github.com/jedarden/clasp/internal/session"
@@ -80,6 +81,14 @@ func NewServerWithVersion(cfg *config.Config, version string) (*Server, error) {
 	if cfg.CacheEnabled {
 		s.cache = NewRequestCache(cfg.CacheMaxSize, time.Duration(cfg.CacheTTL)*time.Second)
 		s.handler.SetCache(s.cache)
+	}
+
+	// Initialize prompt cache if enabled
+	if cfg.PromptCacheEnabled {
+		promptCache := cache.NewPromptCache(cfg.PromptCacheMaxSize, time.Duration(cfg.CacheTTL)*time.Second)
+		s.handler.SetPromptCache(promptCache)
+		log.Printf("[CLASP] Prompt caching enabled: max %d prefixes, TTL %d seconds",
+			cfg.PromptCacheMaxSize, cfg.CacheTTL)
 	}
 
 	// Initialize authentication if enabled
