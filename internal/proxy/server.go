@@ -14,6 +14,7 @@ import (
 
 	"github.com/jedarden/clasp/internal/config"
 	"github.com/jedarden/clasp/internal/logging"
+	"github.com/jedarden/clasp/internal/session"
 	"github.com/jedarden/clasp/internal/statusline"
 )
 
@@ -28,6 +29,7 @@ type Server struct {
 	queue          *RequestQueue
 	circuitBreaker *CircuitBreaker
 	healthChecker  *HealthChecker
+	sessionTracker *session.Tracker
 	statusManager  *statusline.Manager
 	version        string
 	shutdownCh     chan struct{} // Channel to signal goroutines to stop
@@ -159,6 +161,16 @@ func NewServerWithVersion(cfg *config.Config, version string) (*Server, error) {
 		}
 
 		s.handler.SetHealthChecker(s.healthChecker)
+	}
+
+	// Initialize session tracker for Responses API compaction if enabled.
+	// Note: NewHandler already creates the tracker when CompactionEnabled is set;
+	// we store a reference here so Shutdown can stop the background goroutine.
+	if cfg.CompactionEnabled {
+		ttl := time.Duration(cfg.SessionTimeoutSec) * time.Second
+		s.sessionTracker = session.NewTracker(ttl)
+		s.handler.SetSessionTracker(s.sessionTracker)
+		log.Printf("[CLASP] Compaction enabled (session TTL: %v)", ttl)
 	}
 
 	return s, nil
@@ -374,6 +386,11 @@ func (s *Server) Shutdown() error {
 	// Stop health checker
 	if s.healthChecker != nil {
 		s.healthChecker.Stop()
+	}
+
+	// Stop session tracker cleanup goroutine
+	if s.sessionTracker != nil {
+		s.sessionTracker.Stop()
 	}
 
 	// Mark status as stopped

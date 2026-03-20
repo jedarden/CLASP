@@ -22,6 +22,7 @@ const (
 	ProviderGrok       ProviderType = "grok"
 	ProviderQwen       ProviderType = "qwen"
 	ProviderMiniMax    ProviderType = "minimax"
+	ProviderLiteLLM    ProviderType = "litellm"
 	ProviderCustom     ProviderType = "custom"
 )
 
@@ -54,6 +55,7 @@ type Config struct {
 	GrokAPIKey       string // xAI Grok API key
 	QwenAPIKey       string // Alibaba Qwen API key (DashScope)
 	MiniMaxAPIKey    string // MiniMax API key
+	LiteLLMAPIKey    string // LiteLLM API key (optional)
 	CustomAPIKey     string
 
 	// Endpoints
@@ -68,6 +70,7 @@ type Config struct {
 	GrokBaseURL         string // Default: https://api.x.ai
 	QwenBaseURL         string // Default: https://dashscope.aliyuncs.com/compatible-mode
 	MiniMaxBaseURL      string // Default: https://api.minimax.chat
+	LiteLLMBaseURL      string // Default: http://localhost:4000
 	CustomBaseURL       string
 
 	// Model mapping
@@ -109,6 +112,10 @@ type Config struct {
 	CacheMaxSize int // Maximum number of entries
 	CacheTTL     int // Time-to-live in seconds (0 = no expiry)
 
+	// Prompt cache settings (simulates Anthropic cache_control for non-Anthropic backends)
+	PromptCacheEnabled bool
+	PromptCacheMaxSize int // Maximum cached prefixes
+
 	// Authentication settings
 	AuthEnabled               bool
 	AuthAPIKey                string
@@ -138,6 +145,10 @@ type Config struct {
 
 	// Model aliasing - map custom model names to provider models
 	ModelAliases map[string]string
+
+	// Compaction settings (Responses API previous_response_id chaining)
+	CompactionEnabled bool
+	SessionTimeoutSec int // Session TTL in seconds (default: 3600)
 }
 
 // DefaultConfig returns the default configuration.
@@ -149,6 +160,7 @@ func DefaultConfig() *Config {
 		OllamaBaseURL:             "http://localhost:11434",
 		GeminiBaseURL:             "https://generativelanguage.googleapis.com/v1beta",
 		DeepSeekBaseURL:           "https://api.deepseek.com",
+		LiteLLMBaseURL:            "http://localhost:4000",
 		AzureAPIVersion:           "2024-02-15-preview",
 		Port:                      8080,
 		LogLevel:                  "info",
@@ -160,6 +172,8 @@ func DefaultConfig() *Config {
 		CacheEnabled:              false,
 		CacheMaxSize:              1000, // Default 1000 entries
 		CacheTTL:                  3600, // Default 1 hour TTL
+		PromptCacheEnabled:        false,
+		PromptCacheMaxSize:        100, // Default 100 cached prefixes
 		AuthEnabled:               false,
 		AuthAllowAnonymousHealth:  true, // Allow health checks without auth by default
 		AuthAllowAnonymousMetrics: false,
@@ -182,6 +196,9 @@ func DefaultConfig() *Config {
 		HTTPClientTimeoutSec: 300, // 5 minutes for reasoning models
 		// Model aliases (empty by default)
 		ModelAliases: make(map[string]string),
+		// Compaction defaults
+		CompactionEnabled: false,
+		SessionTimeoutSec: 3600, // 1 hour
 	}
 }
 
@@ -205,6 +222,7 @@ func LoadFromEnv() (*Config, error) {
 	cfg.GrokAPIKey = os.Getenv("GROK_API_KEY")         // xAI Grok API key
 	cfg.QwenAPIKey = os.Getenv("QWEN_API_KEY")         // Alibaba Qwen API key
 	cfg.MiniMaxAPIKey = os.Getenv("MINIMAX_API_KEY")   // MiniMax API key
+	cfg.LiteLLMAPIKey = os.Getenv("LITELLM_API_KEY")   // LiteLLM API key (optional)
 	cfg.CustomAPIKey = os.Getenv("CUSTOM_API_KEY")
 
 	// Endpoints
@@ -236,6 +254,9 @@ func LoadFromEnv() (*Config, error) {
 	}
 	if baseURL := os.Getenv("MINIMAX_BASE_URL"); baseURL != "" {
 		cfg.MiniMaxBaseURL = baseURL
+	}
+	if baseURL := os.Getenv("LITELLM_BASE_URL"); baseURL != "" {
+		cfg.LiteLLMBaseURL = baseURL
 	}
 	cfg.CustomBaseURL = os.Getenv("CUSTOM_BASE_URL")
 
@@ -303,6 +324,16 @@ func LoadFromEnv() (*Config, error) {
 			return nil, fmt.Errorf("invalid CLASP_CACHE_TTL: %w", err)
 		}
 		cfg.CacheTTL = t
+	}
+
+	// Prompt cache settings
+	cfg.PromptCacheEnabled = os.Getenv("CLASP_PROMPT_CACHE") == "true" || os.Getenv("CLASP_PROMPT_CACHE") == "1"
+	if maxSize := os.Getenv("CLASP_PROMPT_CACHE_MAX_SIZE"); maxSize != "" {
+		m, err := strconv.Atoi(maxSize)
+		if err != nil {
+			return nil, fmt.Errorf("invalid CLASP_PROMPT_CACHE_MAX_SIZE: %w", err)
+		}
+		cfg.PromptCacheMaxSize = m
 	}
 
 	// Authentication settings
@@ -403,6 +434,16 @@ func LoadFromEnv() (*Config, error) {
 		cfg.HTTPClientTimeoutSec = t
 	}
 
+	// Compaction settings
+	cfg.CompactionEnabled = os.Getenv("CLASP_COMPACTION") == "true" || os.Getenv("CLASP_COMPACTION") == "1"
+	if sessionTimeout := os.Getenv("CLASP_SESSION_TIMEOUT"); sessionTimeout != "" {
+		t, err := strconv.Atoi(sessionTimeout)
+		if err != nil {
+			return nil, fmt.Errorf("invalid CLASP_SESSION_TIMEOUT: %w", err)
+		}
+		cfg.SessionTimeoutSec = t
+	}
+
 	// Multi-provider routing settings
 	cfg.MultiProviderEnabled = os.Getenv("CLASP_MULTI_PROVIDER") == "true" || os.Getenv("CLASP_MULTI_PROVIDER") == "1"
 	cfg.TierOpus = loadTierConfig("OPUS", cfg)
@@ -476,6 +517,10 @@ func detectProvider(cfg *Config) ProviderType {
 	if cfg.MiniMaxAPIKey != "" {
 		return ProviderMiniMax
 	}
+	// LiteLLM can work with or without API key, check base URL
+	if cfg.LiteLLMBaseURL != "" && cfg.LiteLLMBaseURL != "http://localhost:4000" {
+		return ProviderLiteLLM
+	}
 	// Ollama doesn't require API key, check if base URL is set or use detection
 	if cfg.OllamaBaseURL != "" && cfg.OllamaBaseURL != "http://localhost:11434" {
 		return ProviderOllama
@@ -530,6 +575,8 @@ func loadTierConfig(tier string, cfg *Config) *TierConfig {
 			tierCfg.APIKey = cfg.QwenAPIKey
 		case ProviderMiniMax:
 			tierCfg.APIKey = cfg.MiniMaxAPIKey
+		case ProviderLiteLLM:
+			tierCfg.APIKey = cfg.LiteLLMAPIKey
 		case ProviderCustom:
 			tierCfg.APIKey = cfg.CustomAPIKey
 		}
@@ -554,6 +601,8 @@ func loadTierConfig(tier string, cfg *Config) *TierConfig {
 			tierCfg.BaseURL = cfg.QwenBaseURL + "/v1"
 		case ProviderMiniMax:
 			tierCfg.BaseURL = cfg.MiniMaxBaseURL + "/v1"
+		case ProviderLiteLLM:
+			tierCfg.BaseURL = cfg.LiteLLMBaseURL + "/v1"
 		case ProviderCustom:
 			tierCfg.BaseURL = cfg.CustomBaseURL
 		}
@@ -647,6 +696,11 @@ func (c *Config) Validate() error {
 		if c.MiniMaxAPIKey == "" {
 			return fmt.Errorf("MINIMAX_API_KEY is required for provider 'minimax'")
 		}
+	case ProviderLiteLLM:
+		// LiteLLM base URL is required, but API key is optional (depends on LiteLLM server config)
+		if c.LiteLLMBaseURL == "" {
+			return fmt.Errorf("LITELLM_BASE_URL is required for provider 'litellm'")
+		}
 	case ProviderCustom:
 		if c.CustomBaseURL == "" {
 			return fmt.Errorf("CUSTOM_BASE_URL is required for provider 'custom'")
@@ -681,6 +735,8 @@ func (c *Config) GetAPIKey() string {
 		return c.QwenAPIKey
 	case ProviderMiniMax:
 		return c.MiniMaxAPIKey
+	case ProviderLiteLLM:
+		return c.LiteLLMAPIKey
 	case ProviderCustom:
 		return c.CustomAPIKey
 	default:
@@ -717,6 +773,9 @@ func (c *Config) GetBaseURL() string {
 	case ProviderMiniMax:
 		// MiniMax uses standard OpenAI-compatible /v1 endpoint
 		return c.MiniMaxBaseURL + "/v1"
+	case ProviderLiteLLM:
+		// LiteLLM exposes OpenAI-compatible API at /v1
+		return c.LiteLLMBaseURL + "/v1"
 	case ProviderCustom:
 		return c.CustomBaseURL
 	default:

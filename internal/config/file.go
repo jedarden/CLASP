@@ -43,6 +43,9 @@ type FileConfig struct {
 	// Cache settings
 	Cache CacheConfig `yaml:"cache,omitempty"`
 
+	// Prompt cache settings
+	PromptCache PromptCacheConfig `yaml:"prompt_cache,omitempty"`
+
 	// Authentication settings
 	Auth AuthConfig `yaml:"auth,omitempty"`
 
@@ -164,6 +167,12 @@ type CacheConfig struct {
 	Enabled bool `yaml:"enabled,omitempty"`
 	MaxSize int  `yaml:"max_size,omitempty"`
 	TTL     int  `yaml:"ttl,omitempty"`
+}
+
+// PromptCacheConfig holds prompt cache settings.
+type PromptCacheConfig struct {
+	Enabled bool `yaml:"enabled,omitempty"`
+	MaxSize int  `yaml:"max_size,omitempty"`
 }
 
 // AuthConfig holds authentication settings.
@@ -532,6 +541,12 @@ func MergeWithEnv(fileCfg *FileConfig, envCfg *Config) *Config {
 		cfg.CacheTTL = fileCfg.Cache.TTL
 	}
 
+	// Prompt cache
+	cfg.PromptCacheEnabled = fileCfg.PromptCache.Enabled
+	if fileCfg.PromptCache.MaxSize > 0 {
+		cfg.PromptCacheMaxSize = fileCfg.PromptCache.MaxSize
+	}
+
 	// Auth
 	cfg.AuthEnabled = fileCfg.Auth.Enabled
 	cfg.AuthAPIKey = fileCfg.Auth.APIKey
@@ -843,6 +858,16 @@ func overlayEnvVars(cfg *Config) {
 	if val := os.Getenv("CLASP_CACHE_TTL"); val != "" {
 		if v, err := parseInt(val); err == nil {
 			cfg.CacheTTL = v
+		}
+	}
+
+	// Prompt cache
+	if os.Getenv("CLASP_PROMPT_CACHE") == "true" || os.Getenv("CLASP_PROMPT_CACHE") == "1" {
+		cfg.PromptCacheEnabled = true
+	}
+	if val := os.Getenv("CLASP_PROMPT_CACHE_MAX_SIZE"); val != "" {
+		if v, err := parseInt(val); err == nil {
+			cfg.PromptCacheMaxSize = v
 		}
 	}
 
