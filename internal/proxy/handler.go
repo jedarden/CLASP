@@ -36,6 +36,7 @@ type Handler struct {
 	queue            *RequestQueue
 	circuitBreaker   *CircuitBreaker
 	costTracker      *CostTracker
+	healthChecker    *HealthChecker
 	tierProviders    map[config.ModelTier]provider.Provider
 	tierFallbacks    map[config.ModelTier]provider.Provider
 	version          string
@@ -156,6 +157,11 @@ func (h *Handler) SetQueue(queue *RequestQueue) {
 // SetCircuitBreaker sets the circuit breaker.
 func (h *Handler) SetCircuitBreaker(cb *CircuitBreaker) {
 	h.circuitBreaker = cb
+}
+
+// SetHealthChecker sets the health checker.
+func (h *Handler) SetHealthChecker(hc *HealthChecker) {
+	h.healthChecker = hc
 }
 
 // SetVersion sets the handler version (used for status endpoint).
@@ -1222,11 +1228,37 @@ func (h *Handler) handleResponsesNonStreamingResponse(w http.ResponseWriter, res
 // HandleHealth handles health check requests.
 func (h *Handler) HandleHealth(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+
+	response := map[string]interface{}{
 		"status":   "healthy",
 		"provider": h.provider.Name(),
 		"uptime":   time.Since(h.metrics.StartTime).String(),
-	})
+	}
+
+	// Add circuit breaker status if enabled
+	if h.circuitBreaker != nil {
+		response["circuit_breaker"] = map[string]interface{}{
+			"state": h.circuitBreaker.State(),
+			"open":  h.circuitBreaker.IsOpen(),
+		}
+	}
+
+	// Add provider health details if health checker is enabled
+	if h.healthChecker != nil {
+		providerHealth := h.healthChecker.GetHealth()
+		response["providers"] = providerHealth
+
+		// Determine overall status based on provider health
+		if !h.healthChecker.IsHealthy() {
+			response["status"] = "degraded"
+		}
+
+		// Add summary
+		stats := h.healthChecker.GetStats()
+		response["health_summary"] = stats
+	}
+
+	_ = json.NewEncoder(w).Encode(response)
 }
 
 // HandleMetrics handles metrics endpoint requests.
@@ -1334,6 +1366,12 @@ func (h *Handler) HandleMetrics(w http.ResponseWriter, r *http.Request) {
 			"enabled": true,
 			"state":   h.circuitBreaker.State(),
 		}
+	}
+
+	// Add health check stats if enabled
+	if h.healthChecker != nil {
+		response["health_checker"] = h.healthChecker.GetStats()
+		response["provider_health"] = h.healthChecker.GetHealth()
 	}
 
 	// Add cost tracking stats
@@ -1516,6 +1554,40 @@ func (h *Handler) HandleMetricsPrometheus(w http.ResponseWriter, r *http.Request
 		fmt.Fprintf(w, "clasp_circuit_breaker_open{provider=\"%s\"} %d\n", providerName, isOpen)
 	}
 
+	// Health check metrics
+	if h.healthChecker != nil {
+		providerHealth := h.healthChecker.GetHealth()
+		for name, health := range providerHealth {
+			healthyValue := 0
+			if health.Healthy {
+				healthyValue = 1
+			}
+			fmt.Fprintf(w, "# HELP clasp_provider_healthy Whether provider is healthy (1) or not (0)\n")
+			fmt.Fprintf(w, "# TYPE clasp_provider_healthy gauge\n")
+			fmt.Fprintf(w, "clasp_provider_healthy{provider=\"%s\"} %d\n", name, healthyValue)
+
+			fmt.Fprintf(w, "# HELP clasp_provider_health_checks_total Total health checks for provider\n")
+			fmt.Fprintf(w, "# TYPE clasp_provider_health_checks_total counter\n")
+			fmt.Fprintf(w, "clasp_provider_health_checks_total{provider=\"%s\"} %d\n", name, health.TotalChecks)
+
+			fmt.Fprintf(w, "# HELP clasp_provider_health_checks_successful Total successful health checks for provider\n")
+			fmt.Fprintf(w, "# TYPE clasp_provider_health_checks_successful counter\n")
+			fmt.Fprintf(w, "clasp_provider_health_checks_successful{provider=\"%s\"} %d\n", name, health.SuccessfulChecks)
+
+			fmt.Fprintf(w, "# HELP clasp_provider_health_checks_failed Total failed health checks for provider\n")
+			fmt.Fprintf(w, "# TYPE clasp_provider_health_checks_failed counter\n")
+			fmt.Fprintf(w, "clasp_provider_health_checks_failed{provider=\"%s\"} %d\n", name, health.FailedChecks)
+
+			fmt.Fprintf(w, "# HELP clasp_provider_latency_ms Average health check latency in milliseconds\n")
+			fmt.Fprintf(w, "# TYPE clasp_provider_latency_ms gauge\n")
+			fmt.Fprintf(w, "clasp_provider_latency_ms{provider=\"%s\"} %d\n", name, health.AvgLatencyMs)
+
+			fmt.Fprintf(w, "# HELP clasp_provider_consecutive_failures Consecutive health check failures\n")
+			fmt.Fprintf(w, "# TYPE clasp_provider_consecutive_failures gauge\n")
+			fmt.Fprintf(w, "clasp_provider_consecutive_failures{provider=\"%s\"} %d\n", name, health.ConsecutiveFailures)
+		}
+	}
+
 	// Cost tracking metrics
 	if h.costTracker != nil {
 		summary := h.costTracker.GetSummary()
@@ -1600,11 +1672,12 @@ func (h *Handler) HandleRoot(w http.ResponseWriter, r *http.Request) {
 		"provider": h.provider.Name(),
 		"status":   "running",
 		"endpoints": map[string]string{
-			"messages":   "/v1/messages",
-			"health":     "/health",
-			"metrics":    "/metrics",
-			"prometheus": "/metrics/prometheus",
-			"costs":      "/costs",
+			"messages":        "/v1/messages",
+			"health":          "/health",
+			"providers_health": "/providers/health",
+			"metrics":         "/metrics",
+			"prometheus":      "/metrics/prometheus",
+			"costs":           "/costs",
 		},
 	}
 

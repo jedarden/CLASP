@@ -128,6 +128,11 @@ type Config struct {
 	CircuitBreakerRecovery   int // Successes to close
 	CircuitBreakerTimeoutSec int // Timeout before half-open
 
+	// Health checker settings
+	HealthCheckEnabled       bool
+	HealthCheckIntervalSec   int // Interval between health checks (default: 30)
+	HealthCheckTimeoutSec    int // Timeout for each health check (default: 10)
+
 	// HTTP client settings
 	HTTPClientTimeoutSec int // Timeout for upstream requests (default: 300 = 5 minutes)
 
@@ -169,6 +174,10 @@ func DefaultConfig() *Config {
 		CircuitBreakerThreshold:  5,  // Open after 5 failures
 		CircuitBreakerRecovery:   2,  // Close after 2 successes
 		CircuitBreakerTimeoutSec: 30, // Try again after 30 seconds
+		// Health checker defaults
+		HealthCheckEnabled:       true,
+		HealthCheckIntervalSec:   30, // Check every 30 seconds
+		HealthCheckTimeoutSec:    10, // 10 second timeout for checks
 		// HTTP client defaults
 		HTTPClientTimeoutSec: 300, // 5 minutes for reasoning models
 		// Model aliases (empty by default)
@@ -364,6 +373,25 @@ func LoadFromEnv() (*Config, error) {
 			return nil, fmt.Errorf("invalid CLASP_CIRCUIT_BREAKER_TIMEOUT: %w", err)
 		}
 		cfg.CircuitBreakerTimeoutSec = t
+	}
+
+	// Health checker settings
+	if healthCheck := os.Getenv("CLASP_HEALTH_CHECK"); healthCheck != "" {
+		cfg.HealthCheckEnabled = healthCheck == "true" || healthCheck == "1"
+	}
+	if interval := os.Getenv("CLASP_HEALTH_CHECK_INTERVAL"); interval != "" {
+		i, err := strconv.Atoi(interval)
+		if err != nil {
+			return nil, fmt.Errorf("invalid CLASP_HEALTH_CHECK_INTERVAL: %w", err)
+		}
+		cfg.HealthCheckIntervalSec = i
+	}
+	if timeout := os.Getenv("CLASP_HEALTH_CHECK_TIMEOUT"); timeout != "" {
+		t, err := strconv.Atoi(timeout)
+		if err != nil {
+			return nil, fmt.Errorf("invalid CLASP_HEALTH_CHECK_TIMEOUT: %w", err)
+		}
+		cfg.HealthCheckTimeoutSec = t
 	}
 
 	// HTTP client settings
