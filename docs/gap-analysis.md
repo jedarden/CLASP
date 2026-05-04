@@ -60,13 +60,15 @@ var responsesModels = []string{
 
 ### xAI Grok Models
 - **Status**: ✅ Fully Supported
-- **Models**: `x-ai/grok-2`, `x-ai/grok-beta`
+- **Models**: `grok-3-beta`, `grok-3-mini-beta`, `grok-2`, `x-ai/grok-3-beta`, `x-ai/grok-3-mini-beta`, `x-ai/grok-2`
 - **Implementation**: `internal/provider/grok.go`, `internal/translator/request.go` - `isGrokModel()`
 - **Features**:
   - Direct xAI API integration
   - OpenAI-compatible translation
+  - `reasoning_effort` parameter support (low/high for Grok 3 Mini)
   - 131K context window
   - Native Grok provider support
+  - XML tool call format handling
 
 ## Known Functional Gaps
 
@@ -149,15 +151,15 @@ var responsesModels = []string{
 
 #### Gap: Prompt Caching (Simulation Implemented)
 - **What**: Anthropic's `cache_control` for token savings
-- **Status**: ⚠️ Partially implemented via simulation
+- **Status**: ✅ Implemented via simulation
 - **Native cache_control**: ❌ Stripped in translation (OpenAI doesn't support)
-- **Simulation**: ✅ Implemented via `cache.PromptCache` (v0.47.0+)
+- **Simulation**: ✅ Fully implemented via `cache.PromptCache` (v0.47.0+)
 - **How it works**:
   - Full-response caching keyed by request hash
   - Prefix-based LRU with TTL
-  - Requires `CLASP_PROMPT_CACHE_ENABLED=true`
-  - Metrics tracked in `/metrics` endpoint
-- **Impact**: Cannot leverage native Anthropic prompt caching, but simulation provides token savings for repeated requests
+  - Enable with: `CLASP_PROMPT_CACHE=true` (env var) or `prompt_cache.enabled: true` (config file)
+  - Metrics tracked in `/metrics` endpoint under `prompt_cache` section
+- **Impact**: Cannot leverage native Anthropic prompt caching, but simulation provides token savings for repeated requests with identical prefixes
 
 #### Gap: Computer Use Tools
 - **What**: Anthropic's computer use API
