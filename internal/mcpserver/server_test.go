@@ -117,6 +117,7 @@ func TestListTools(t *testing.T) {
 		"clasp_health",
 		"clasp_doctor",
 		"clasp_translate",
+		"clasp_translate_response",
 	}
 
 	for _, expected := range expectedTools {
@@ -369,6 +370,209 @@ func TestInvalidJSONRPCVersion(t *testing.T) {
 	}
 	if resp.Error.Code != InvalidRequest {
 		t.Errorf("Expected error code %d, got %d", InvalidRequest, resp.Error.Code)
+	}
+}
+
+func TestCallToolTranslate(t *testing.T) {
+	cfg := &config.Config{
+		Provider: config.ProviderOpenAI,
+	}
+	server := NewServer("test-server", cfg)
+
+	// Create a sample Anthropic request
+	anthropicReq := map[string]interface{}{
+		"model": "claude-3-5-sonnet-20241022",
+		"max_tokens": 1024,
+		"messages": []map[string]interface{}{
+			{
+				"role": "user",
+				"content": "Hello, world!",
+			},
+		},
+	}
+	anthropicReqJSON, _ := json.Marshal(anthropicReq)
+
+	params := CallToolParams{
+		Name: "clasp_translate",
+		Arguments: json.RawMessage(`{"request":` + string(anthropicReqJSON) + `,"model":"gpt-4o"}`),
+	}
+	paramsJSON, _ := json.Marshal(params)
+
+	req := &JSONRPCRequest{
+		JSONRPC: "2.0",
+		ID:      11,
+		Method:  "tools/call",
+		Params:  paramsJSON,
+	}
+
+	resp := server.handleRequest(req)
+
+	if resp == nil {
+		t.Fatal("Expected response")
+	}
+	if resp.Error != nil {
+		t.Fatalf("Unexpected error: %v", resp.Error)
+	}
+
+	result, ok := resp.Result.(*CallToolResult)
+	if !ok {
+		t.Fatal("Expected CallToolResult")
+	}
+	if len(result.Content) == 0 {
+		t.Fatal("Expected content in result")
+	}
+
+	// Parse the result to verify translation occurred
+	var translated map[string]interface{}
+	if err := json.Unmarshal([]byte(result.Content[0].Text), &translated); err != nil {
+		t.Fatalf("Failed to parse translation result: %v", err)
+	}
+
+	if format, ok := translated["format"].(string); !ok || format != "chat_completions" {
+		t.Errorf("Expected format 'chat_completions', got %v", translated["format"])
+	}
+
+	if translated["translated"] == nil {
+		t.Error("Expected translated request in result")
+	}
+}
+
+func TestCallToolTranslateWithResponsesAPI(t *testing.T) {
+	cfg := &config.Config{
+		Provider: config.ProviderOpenAI,
+	}
+	server := NewServer("test-server", cfg)
+
+	// Create a sample Anthropic request with tools
+	anthropicReq := map[string]interface{}{
+		"model": "claude-3-5-sonnet-20241022",
+		"max_tokens": 1024,
+		"messages": []map[string]interface{}{
+			{
+				"role": "user",
+				"content": "What's the weather?",
+			},
+		},
+		"tools": []map[string]interface{}{
+			{
+				"name":        "get_weather",
+				"description": "Get current weather",
+				"input_schema": map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"location": map[string]interface{}{
+							"type":        "string",
+							"description": "City name",
+						},
+					},
+					"required": []string{"location"},
+				},
+			},
+		},
+	}
+	anthropicReqJSON, _ := json.Marshal(anthropicReq)
+
+	params := CallToolParams{
+		Name: "clasp_translate",
+		Arguments: json.RawMessage(`{"request":` + string(anthropicReqJSON) + `,"model":"gpt-4o","use_responses_api":true}`),
+	}
+	paramsJSON, _ := json.Marshal(params)
+
+	req := &JSONRPCRequest{
+		JSONRPC: "2.0",
+		ID:      12,
+		Method:  "tools/call",
+		Params:  paramsJSON,
+	}
+
+	resp := server.handleRequest(req)
+
+	if resp == nil {
+		t.Fatal("Expected response")
+	}
+	if resp.Error != nil {
+		t.Fatalf("Unexpected error: %v", resp.Error)
+	}
+
+	result, ok := resp.Result.(*CallToolResult)
+	if !ok {
+		t.Fatal("Expected CallToolResult")
+	}
+
+	// Parse the result to verify translation occurred
+	var translated map[string]interface{}
+	if err := json.Unmarshal([]byte(result.Content[0].Text), &translated); err != nil {
+		t.Fatalf("Failed to parse translation result: %v", err)
+	}
+
+	if format, ok := translated["format"].(string); !ok || format != "responses_api" {
+		t.Errorf("Expected format 'responses_api', got %v", translated["format"])
+	}
+}
+
+func TestCallToolTranslateResponse(t *testing.T) {
+	cfg := &config.Config{
+		Provider: config.ProviderOpenAI,
+	}
+	server := NewServer("test-server", cfg)
+
+	// Create a sample OpenAI response
+	openaiResp := map[string]interface{}{
+		"id":      "chatcmpl-123",
+		"object":  "chat.completion",
+		"created": 1234567890,
+		"model":   "gpt-4o",
+		"choices": []map[string]interface{}{
+			{
+				"index": 0,
+				"message": map[string]interface{}{
+					"role":    "assistant",
+					"content": "Hello! How can I help you today?",
+				},
+				"finish_reason": "stop",
+			},
+		},
+	}
+	openaiRespJSON, _ := json.Marshal(openaiResp)
+
+	params := CallToolParams{
+		Name:      "clasp_translate_response",
+		Arguments: json.RawMessage(`{"response":` + string(openaiRespJSON) + `,"is_stream":false}`),
+	}
+	paramsJSON, _ := json.Marshal(params)
+
+	req := &JSONRPCRequest{
+		JSONRPC: "2.0",
+		ID:      13,
+		Method:  "tools/call",
+		Params:  paramsJSON,
+	}
+
+	resp := server.handleRequest(req)
+
+	if resp == nil {
+		t.Fatal("Expected response")
+	}
+	if resp.Error != nil {
+		t.Fatalf("Unexpected error: %v", resp.Error)
+	}
+
+	result, ok := resp.Result.(*CallToolResult)
+	if !ok {
+		t.Fatal("Expected CallToolResult")
+	}
+	if len(result.Content) == 0 {
+		t.Fatal("Expected content in result")
+	}
+
+	// Verify the response contains guidance
+	var responseInfo map[string]interface{}
+	if err := json.Unmarshal([]byte(result.Content[0].Text), &responseInfo); err != nil {
+		t.Fatalf("Failed to parse response info: %v", err)
+	}
+
+	if _, ok := responseInfo["note"]; !ok {
+		t.Error("Expected note in response info")
 	}
 }
 
