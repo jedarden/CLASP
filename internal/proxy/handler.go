@@ -221,6 +221,8 @@ func createProvider(cfg *config.Config) (provider.Provider, error) {
 		return provider.NewQwenProvider(cfg.QwenAPIKey), nil
 	case config.ProviderMiniMax:
 		return provider.NewMiniMaxProvider(cfg.MiniMaxAPIKey), nil
+	case config.ProviderLiteLLM:
+		return provider.NewLiteLLMProvider(cfg.LiteLLMBaseURL), nil
 	case config.ProviderCustom:
 		return provider.NewCustomProvider(cfg.CustomBaseURL), nil
 	default:
@@ -277,6 +279,11 @@ func createTierProvider(tierCfg *config.TierConfig) (provider.Provider, error) {
 			baseURL = "https://api.minimax.chat"
 		}
 		return provider.NewMiniMaxProviderWithURL(baseURL, tierCfg.APIKey, ""), nil
+	case config.ProviderLiteLLM:
+		if baseURL == "" {
+			baseURL = "http://localhost:4000"
+		}
+		return provider.NewLiteLLMProviderWithKey(baseURL, tierCfg.APIKey), nil
 	case config.ProviderCustom:
 		return provider.NewCustomProviderWithKey(baseURL, tierCfg.APIKey), nil
 	default:
