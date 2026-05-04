@@ -37,6 +37,37 @@ var responsesModels = []string{
 }
 ```
 
+## Newer Model Support
+
+### OpenAI o3 Reasoning Models
+- **Status**: ✅ Fully Supported
+- **Models**: `o3`, `o3-mini`
+- **Implementation**: `internal/translator/request.go` - `isO1OrO3Model()`, `applyThinkingParameters()`
+- **Features**:
+  - `reasoning_effort` parameter support ("minimal", "low", "medium", "high")
+  - `max_completion_tokens` preferred over `max_tokens`
+  - 200K context window
+  - Extended timeout handling (recommended: 600s+)
+
+### Google Gemini 2.5
+- **Status**: ✅ Fully Supported
+- **Models**: `gemini-2.5-pro`, `gemini-2.5-flash`, `google/gemini-2.5-pro`, `google/gemini-2.5-flash`
+- **Implementation**: `internal/translator/request.go` - `isGemini25Model()`, `applyThinkingParameters()`
+- **Features**:
+  - `thinking_config` with budget tokens (cap at 24K)
+  - 2M token context window (Pro), 1M (Flash)
+  - Native Gemini provider support
+
+### xAI Grok Models
+- **Status**: ✅ Fully Supported
+- **Models**: `x-ai/grok-2`, `x-ai/grok-beta`
+- **Implementation**: `internal/provider/grok.go`, `internal/translator/request.go` - `isGrokModel()`
+- **Features**:
+  - Direct xAI API integration
+  - OpenAI-compatible translation
+  - 131K context window
+  - Native Grok provider support
+
 ## Known Functional Gaps
 
 ### 1. Responses API Limitations
@@ -66,13 +97,17 @@ var responsesModels = []string{
 
 | Feature | CLASP | CCProxy | claude-code-proxy | anthropic-proxy |
 |---------|-------|---------|-------------------|-----------------|
-| LiteLLM Backend | ❌ | ✅ | ✅ | ❌ |
+| LiteLLM Backend | ✅ | ✅ | ✅ | ❌ |
 | Google Gemini | ✅ | ✅ | ✅ | ❌ |
 | DeepSeek | ✅ | ✅ | ❌ | ❌ |
+| xAI Grok | ✅ | ✅ | ❌ | ❌ |
+| Alibaba Qwen | ✅ | ✅ | ❌ | ❌ |
+| MiniMax | ✅ | ✅ | ❌ | ❌ |
 | Ollama Local | ✅ | ✅ | ✅ | ❌ |
 | Provider Prefix | ✅ | ✅ | ✅ | ❌ |
 | Multi-Model Routing | ✅ | ✅ | ✅ | ❌ |
 | Response Caching | ✅ | ❌ | ❌ | ❌ |
+| Prompt Caching Simulation | ✅ | ❌ | ❌ | ❌ |
 | Prometheus Metrics | ✅ | ❌ | ❌ | ❌ |
 | Cost Tracking | ✅ | ❌ | ❌ | ❌ |
 | Docker Support | ✅ | ✅ | ✅ | ❌ |
@@ -85,19 +120,24 @@ var responsesModels = []string{
 - **Fix**: Now sets `strict: false` and filters `required` array
 - **Status**: ✅ Fixed
 
-### 4. Stream Timeout Issues
+### 4. Stream Timeout Issues (FIXED in v0.49.0)
 
 #### Gap: Long-Running Requests
 - **What**: Extended thinking/reasoning can take 5+ minutes
 - **Current**: Default 5-minute HTTP timeout
-- **Status**: ⚠️ Configurable via `CLASP_HTTP_TIMEOUT_SEC`
-- **Recommendation**: Set to 600+ seconds for codex models
+- **Status**: ✅ Fixed with auto-warnings and setup wizard prompts
+- **Implementation**:
+  - Startup warnings for codex/reasoning models with short timeouts
+  - Setup wizard recommends extended timeouts when selecting reasoning models
+  - `CLASP_HTTP_TIMEOUT_SEC` exposed in `/metrics` and statusline
+- **Recommendation**: Set to 600+ seconds for codex models (auto-suggested in wizard)
 
 ### 5. Model Picker Limitations
 
 #### Dynamic Model Discovery
 - **What**: Real-time model listing from providers
 - **Status**: ✅ Implemented in v0.44.11
+- **Current Version**: v0.49.0
 - **Implementation**:
   - `OpenAIProvider.ListModels()` - Fetches from `/v1/models`, filters to chat models
   - `OpenRouterProvider.ListModels()` - Fetches all models
@@ -107,10 +147,17 @@ var responsesModels = []string{
 
 ### 6. Anthropic Beta Features
 
-#### Gap: Prompt Caching
+#### Gap: Prompt Caching (Simulation Implemented)
 - **What**: Anthropic's `cache_control` for token savings
-- **Status**: ❌ Not translated (stripped in translation)
-- **Impact**: Cannot leverage prompt caching with OpenAI backend
+- **Status**: ⚠️ Partially implemented via simulation
+- **Native cache_control**: ❌ Stripped in translation (OpenAI doesn't support)
+- **Simulation**: ✅ Implemented via `cache.PromptCache` (v0.47.0+)
+- **How it works**:
+  - Full-response caching keyed by request hash
+  - Prefix-based LRU with TTL
+  - Requires `CLASP_PROMPT_CACHE_ENABLED=true`
+  - Metrics tracked in `/metrics` endpoint
+- **Impact**: Cannot leverage native Anthropic prompt caching, but simulation provides token savings for repeated requests
 
 #### Gap: Computer Use Tools
 - **What**: Anthropic's computer use API
@@ -183,20 +230,24 @@ CLASP_DEBUG=true clasp -model gpt-5.1-codex
 
 ### CLASP
 - **Backend**: Native Go implementation
-- **Advantage**: Full Responses API, metrics, caching, cost tracking
-- **Disadvantage**: No LiteLLM, limited providers
+- **Advantage**: Full Responses API, metrics, caching, cost tracking, LiteLLM support, 10+ providers
+- **Version**: v0.49.0
 - **gpt-5.1-codex**: ✅ Native Responses API support
 
 ## Future Improvements
 
-1. **Add LiteLLM integration** - Would enable 100+ providers
-2. **Implement prompt caching simulation** - Cache full responses by request hash
+1. ~~**Add LiteLLM integration** - Would enable 100+ providers~~ ✅ Added in v0.49.0
+2. ~~**Implement prompt caching simulation** - Cache full responses by request hash~~ ✅ Added in v0.47.0
 3. ~~**Dynamic model discovery** - Query providers for available models~~ ✅ Added in v0.44.11
 4. ~~**DeepSeek provider** - Direct DeepSeek support~~ ✅ Added in v0.38.0
 5. ~~**Local model support** - Ollama/LM Studio integration~~ ✅ Added in v0.36.0
 6. ~~**Gemini provider** - Direct Google Gemini support~~ ✅ Added in v0.37.0
 7. ~~**Compaction support** - Multi-window context management~~ ✅ Added in v0.48.0
 8. ~~**MCP Server Mode** - Add MCP server for tool integration~~ ✅ Added in v0.47.0
+9. ~~**Stream timeout UX** - Auto-warn and recommend settings for codex/reasoning models~~ ✅ Added in v0.49.0 (bf-5puj)
+10. ~~**xAI Grok provider** - Direct Grok support~~ ✅ Added in v0.47.0
+11. ~~**Alibaba Qwen provider** - Direct Qwen support~~ ✅ Added in v0.47.0
+12. ~~**MiniMax provider** - Direct MiniMax support~~ ✅ Added in v0.47.0
 
 ## Sources
 
