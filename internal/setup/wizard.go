@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/jedarden/clasp/internal/config"
+	"github.com/jedarden/clasp/internal/translator"
 )
 
 // ConfigFile represents the saved configuration format.
@@ -226,6 +227,40 @@ func (w *Wizard) Run() (*config.Config, error) {
 	model, err := w.selectModel(provider, models)
 	if err != nil {
 		return nil, err
+	}
+
+	// Warn if Azure + Responses API model combination
+	if provider == "azure" && translator.RequiresResponsesAPI(model) {
+		w.println("")
+		w.println("⚠️  WARNING: Azure OpenAI does not support the Responses API")
+		w.println("")
+		w.printf("The model '%s' requires the Responses API (/v1/responses),\n", model)
+		w.println("which is not available on Azure OpenAI. This combination will fail.")
+		w.println("")
+		w.println("Options:")
+		w.println("  • Use provider 'openai' or 'openrouter' for gpt-5 and codex models")
+		w.println("  • Choose a different model (gpt-4o, gpt-4o-mini, etc.) for Azure")
+		w.println("")
+
+		// Ask if user wants to continue anyway
+		w.printf("Continue anyway? This will not work. [y/N]: ")
+		choice, _ := w.reader.ReadString('\n')
+		choice = strings.TrimSpace(strings.ToLower(choice))
+		if choice != "y" && choice != "yes" {
+			// Let them select a different model
+			w.println("")
+			w.println("Please select a different model.")
+			model, err = w.selectModel(provider, models)
+			if err != nil {
+				return nil, err
+			}
+			// Check again
+			if provider == "azure" && translator.RequiresResponsesAPI(model) {
+				w.println("")
+				w.println("Model still requires Responses API. Setup cannot continue with this combination.")
+				return nil, fmt.Errorf("azure provider does not support responses API models")
+			}
+		}
 	}
 
 	// Step 6: Configure Claude Code settings
@@ -1069,6 +1104,40 @@ func (w *Wizard) RunProfileCreate(profileName string) (*Profile, error) {
 		return nil, err
 	}
 
+	// Warn if Azure + Responses API model combination
+	if provider == "azure" && translator.RequiresResponsesAPI(model) {
+		w.println("")
+		w.println("⚠️  WARNING: Azure OpenAI does not support the Responses API")
+		w.println("")
+		w.printf("The model '%s' requires the Responses API (/v1/responses),\n", model)
+		w.println("which is not available on Azure OpenAI. This combination will fail.")
+		w.println("")
+		w.println("Options:")
+		w.println("  • Use provider 'openai' or 'openrouter' for gpt-5 and codex models")
+		w.println("  • Choose a different model (gpt-4o, gpt-4o-mini, etc.) for Azure")
+		w.println("")
+
+		// Ask if user wants to continue anyway
+		w.printf("Continue anyway? This will not work. [y/N]: ")
+		choice, _ := w.reader.ReadString('\n')
+		choice = strings.TrimSpace(strings.ToLower(choice))
+		if choice != "y" && choice != "yes" {
+			// Let them select a different model
+			w.println("")
+			w.println("Please select a different model.")
+			model, err = w.selectModel(provider, models)
+			if err != nil {
+				return nil, err
+			}
+			// Check again
+			if provider == "azure" && translator.RequiresResponsesAPI(model) {
+				w.println("")
+				w.println("Model still requires Responses API. Setup cannot continue with this combination.")
+				return nil, fmt.Errorf("azure provider does not support responses API models")
+			}
+		}
+	}
+
 	// Ask about tier mappings
 	var tierMappings map[string]TierMapping
 	w.println("")
@@ -1198,6 +1267,36 @@ func (w *Wizard) configureTierMappings(provider, apiKey, baseURL, azureEndpoint 
 		tierModel, err := w.selectModel(tierProvider, tierModels)
 		if err != nil {
 			return nil, err
+		}
+
+		// Warn if Azure + Responses API model combination
+		if tierProvider == "azure" && translator.RequiresResponsesAPI(tierModel) {
+			w.println("")
+			w.println("⚠️  WARNING: Azure OpenAI does not support the Responses API")
+			w.println("")
+			w.printf("The model '%s' requires the Responses API (/v1/responses),\n", tierModel)
+			w.println("which is not available on Azure OpenAI. This combination will fail.")
+			w.println("")
+			w.printf("Continue anyway? This will not work. [y/N]: ")
+			choice, _ := w.reader.ReadString('\n')
+			choice = strings.TrimSpace(strings.ToLower(choice))
+			if choice == "y" || choice == "yes" {
+				w.println("")
+				w.println("Note: Requests with this combination will fail at runtime.")
+			} else {
+				// Let them select a different model
+				w.println("")
+				w.println("Please select a different model.")
+				tierModel, err = w.selectModel(tierProvider, tierModels)
+				if err != nil {
+					return nil, err
+				}
+				if tierProvider == "azure" && translator.RequiresResponsesAPI(tierModel) {
+					w.println("")
+					w.println("Model still requires Responses API. Tier configuration cannot continue.")
+					return nil, fmt.Errorf("azure provider does not support responses API models")
+				}
+			}
 		}
 
 		mappings[tier] = TierMapping{

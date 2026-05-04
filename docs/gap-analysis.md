@@ -135,8 +135,8 @@ var responsesModels = []string{
 |---------|--------|-------|
 | Deployment Names | ✅ | Custom deployment support |
 | API Version | ✅ | Configurable |
-| Responses API | ❌ | Azure uses Chat Completions only |
-| gpt-5 models | ❌ | Not available on Azure (yet) |
+| Responses API | ⚠️ | Graceful error: Azure + gpt-5/codex returns clear 400 error |
+| gpt-5 models | ⚠️ | Graceful error: Not available on Azure (yet) |
 
 ## Recommendations for gpt-5.1-codex Users
 

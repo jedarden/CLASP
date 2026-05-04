@@ -244,6 +244,15 @@ func createTierProvider(tierCfg *config.TierConfig) (provider.Provider, error) {
 			baseURL = "https://openrouter.ai/api/v1"
 		}
 		return provider.NewOpenRouterProviderWithKey(baseURL, tierCfg.APIKey), nil
+	case config.ProviderAzure:
+		// For Azure, BaseURL is used as the Azure endpoint
+		// Extract deployment name from model if not specified
+		deploymentName := tierCfg.Model
+		if deploymentName == "" {
+			deploymentName = "gpt-4" // default
+		}
+		apiVersion := "" // will use default in provider
+		return provider.NewAzureProvider(baseURL, deploymentName, apiVersion), nil
 	case config.ProviderAnthropic:
 		if baseURL == "" {
 			baseURL = "https://api.anthropic.com"
@@ -326,6 +335,16 @@ func (h *Handler) HandleMessages(w http.ResponseWriter, r *http.Request) {
 
 	// Select provider and resolve target model
 	selectedProvider, targetModel := h.selectProviderAndModel(anthropicReq)
+
+	// Validate that Azure provider is not being used with Responses API models
+	// Azure OpenAI does not support the Responses API (gpt-5, gpt-5.1, codex)
+	if selectedProvider.Name() == "azure" && translator.RequiresResponsesAPI(targetModel) {
+		atomic.AddInt64(&h.metrics.ErrorRequests, 1)
+		log.Printf("[CLASP] Invalid combination: Azure provider + Responses API model '%s'", targetModel)
+		h.writeErrorResponse(w, http.StatusBadRequest, "invalid_request_error",
+			"Azure OpenAI does not support the Responses API. The model '"+targetModel+"' requires the Responses API (/v1/responses), which is only available via OpenAI or OpenRouter providers. Use provider 'openai' or 'openrouter' for gpt-5 and codex models.")
+		return
+	}
 
 	// Determine compaction context (previous_response_id for Responses API sessions).
 	var previousResponseID, sessionKey string
@@ -474,6 +493,17 @@ func (h *Handler) validateRequest(req *models.AnthropicRequest) *requestError {
 			message:    "Missing required field: 'messages'",
 		}
 	}
+
+	// Check for Azure + Responses API models (gpt-5, gpt-5.1, codex)
+	// Azure OpenAI does not support the Responses API
+	if h.provider.Name() == "azure" && translator.RequiresResponsesAPI(req.Model) {
+		return &requestError{
+			statusCode: http.StatusBadRequest,
+			errType:    "invalid_request_error",
+			message:    "Azure OpenAI does not support the Responses API. The model '" + req.Model + "' requires the Responses API (/v1/responses), which is only available via OpenAI or OpenRouter providers. Use provider 'openai' or 'openrouter' for gpt-5 and codex models.",
+		}
+	}
+
 	return nil
 }
 
