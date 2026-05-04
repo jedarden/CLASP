@@ -8,6 +8,9 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+
+	"github.com/jedarden/clasp/internal/translator"
+	"github.com/jedarden/clasp/pkg/models"
 )
 
 // getTools returns the list of available MCP tools
@@ -122,8 +125,34 @@ func (s *Server) getTools() []Tool {
 						"type":        "object",
 						"description": "Anthropic-format request to translate",
 					},
+					"model": map[string]interface{}{
+						"type":        "string",
+						"description": "Target model for translation (e.g. gpt-4o, claude-3-5-sonnet)",
+					},
+					"use_responses_api": map[string]interface{}{
+						"type":        "boolean",
+						"description": "Use Responses API format instead of Chat Completions",
+					},
 				},
 				"required": []string{"request"},
+			},
+		},
+		{
+			Name:        "clasp_translate_response",
+			Description: "Translate a response from OpenAI to Anthropic format (for debugging)",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"response": map[string]interface{}{
+						"type":        "object",
+						"description": "OpenAI-format response to translate",
+					},
+					"is_stream": map[string]interface{}{
+						"type":        "boolean",
+						"description": "Whether this is a streaming response chunk",
+					},
+				},
+				"required": []string{"response"},
 			},
 		},
 	}
@@ -148,6 +177,8 @@ func (s *Server) executeTool(name string, args json.RawMessage) (*CallToolResult
 		return s.executeDoctor()
 	case "clasp_translate":
 		return s.executeTranslate(args)
+	case "clasp_translate_response":
+		return s.executeTranslateResponse(args)
 	default:
 		return nil, fmt.Errorf("unknown tool: %s", name)
 	}
@@ -371,16 +402,97 @@ func (s *Server) executeDoctor() (*CallToolResult, error) {
 
 func (s *Server) executeTranslate(args json.RawMessage) (*CallToolResult, error) {
 	var params struct {
-		Request map[string]interface{} `json:"request"`
+		Request          json.RawMessage `json:"request"`
+		Model            string          `json:"model"`
+		UseResponsesAPI  bool            `json:"use_responses_api"`
 	}
 	if err := json.Unmarshal(args, &params); err != nil {
 		return nil, err
 	}
 
-	// This would use the translator package in production
+	// Parse Anthropic request
+	var anthropicReq models.AnthropicRequest
+	if err := json.Unmarshal(params.Request, &anthropicReq); err != nil {
+		return nil, fmt.Errorf("parsing Anthropic request: %w", err)
+	}
+
+	// Default model if not specified
+	targetModel := params.Model
+	if targetModel == "" {
+		targetModel = getEnvOrDefault("CLASP_MODEL", "gpt-4o")
+	}
+
+	var result interface{}
+	var err error
+
+	if params.UseResponsesAPI {
+		// Use Responses API format
+		responsesReq, translateErr := translator.TransformRequestToResponses(&anthropicReq, targetModel, "")
+		if translateErr != nil {
+			return nil, fmt.Errorf("translating to Responses API format: %w", translateErr)
+		}
+		result = map[string]interface{}{
+			"format":     "responses_api",
+			"translated": responsesReq,
+		}
+	} else {
+		// Use Chat Completions format
+		openAIReq, translateErr := translator.TransformRequest(&anthropicReq, targetModel)
+		if translateErr != nil {
+			return nil, fmt.Errorf("translating to Chat Completions format: %w", translateErr)
+		}
+		result = map[string]interface{}{
+			"format":     "chat_completions",
+			"translated": openAIReq,
+		}
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	text, _ := json.MarshalIndent(result, "", "  ")
+	return &CallToolResult{
+		Content: []Content{{Type: "text", Text: string(text)}},
+	}, nil
+}
+
+func (s *Server) executeTranslateResponse(args json.RawMessage) (*CallToolResult, error) {
+	var params struct {
+		Response json.RawMessage `json:"response"`
+		IsStream bool            `json:"is_stream"`
+	}
+	if err := json.Unmarshal(args, &params); err != nil {
+		return nil, err
+	}
+
+	if params.IsStream {
+		// Parse OpenAI stream chunk
+		var streamChunk models.OpenAIStreamChunk
+		if err := json.Unmarshal(params.Response, &streamChunk); err != nil {
+			return nil, fmt.Errorf("parsing OpenAI stream chunk: %w", err)
+		}
+
+		// Note: Full stream translation requires stateful processing
+		// For debugging, we return a summary of the chunk
+		result := map[string]interface{}{
+			"note":            "Full stream translation requires stateful processor - returning summary for debugging",
+			"openai_chunk":    streamChunk,
+			"anthropic_event": "message_delta", // Simplified mapping
+		}
+
+		text, _ := json.MarshalIndent(result, "", "  ")
+		return &CallToolResult{
+			Content: []Content{{Type: "text", Text: string(text)}},
+		}, nil
+	}
+
+	// For non-streaming responses, provide a summary
+	// Note: Full response translation is done by the proxy handler
 	result := map[string]interface{}{
-		"original":   params.Request,
-		"translated": "Translation not implemented in MCP mode",
+		"note":        "Response translation is handled by the main proxy handler - this tool is for debugging only",
+		"openai_response": string(params.Response),
+		"guidance":    "Use the proxy endpoint to translate full responses",
 	}
 
 	text, _ := json.MarshalIndent(result, "", "  ")
