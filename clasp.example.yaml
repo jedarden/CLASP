@@ -125,6 +125,21 @@ circuit_breaker:
 # HTTP Client
 # -----------
 http_client:
+  # Request timeout in seconds (default: 300 = 5 minutes)
+  #
+  # Most models work fine with the default 5-minute timeout. However, some models
+  # require extended time for complex reasoning tasks:
+  #
+  # - Reasoning models (o1, o3 series): May take 5-10 minutes for complex tasks
+  # - Codex models (gpt-5.1-codex, codex*): Extended thinking can take 10+ minutes
+  # - GPT-5 series models: Can have long processing times for complex queries
+  #
+  # Recommended timeouts:
+  # - Standard models (gpt-4o, claude-3, etc.): 300s (default)
+  # - Reasoning models (o1, o3): 600s (10 minutes)
+  # - Codex/GPT-5 models: 900s (15 minutes)
+  #
+  # You can also set via environment variable: CLASP_HTTP_TIMEOUT=900
   timeout_sec: 300   # 5 minutes (good for reasoning models)
 
 # Model Aliases

@@ -64,6 +64,28 @@ type Metrics struct {
 	StartTime          time.Time
 }
 
+// isReasoningModel checks if the model is a reasoning/codex model that may require extended timeouts.
+func isReasoningModel(model string) bool {
+	model = strings.ToLower(model)
+	// GPT-5 series models
+	if strings.Contains(model, "gpt-5") || strings.Contains(model, "gpt5") {
+		return true
+	}
+	// Codex models
+	if strings.HasPrefix(model, "codex") {
+		return true
+	}
+	// o1 reasoning models
+	if strings.HasPrefix(model, "o1") {
+		return true
+	}
+	// o3 reasoning models
+	if strings.HasPrefix(model, "o3") {
+		return true
+	}
+	return false
+}
+
 // NewHandler creates a new request handler with optimized HTTP client.
 func NewHandler(cfg *config.Config) (*Handler, error) {
 	p, err := createProvider(cfg)
@@ -120,6 +142,13 @@ func NewHandler(cfg *config.Config) (*Handler, error) {
 		handler.initializeTier(config.TierOpus, cfg.TierOpus)
 		handler.initializeTier(config.TierSonnet, cfg.TierSonnet)
 		handler.initializeTier(config.TierHaiku, cfg.TierHaiku)
+	}
+
+	// Check if default model is a reasoning/codex model with insufficient timeout
+	if cfg.DefaultModel != "" && isReasoningModel(cfg.DefaultModel) && cfg.HTTPClientTimeoutSec < 600 {
+		log.Printf("[CLASP WARNING] Model %s is a reasoning/codex model that may require extended timeouts.", cfg.DefaultModel)
+		log.Printf("[CLASP WARNING] Current HTTP timeout: %d seconds. Recommended: 900 seconds (15 minutes).", cfg.HTTPClientTimeoutSec)
+		log.Printf("[CLASP WARNING] Set CLASP_HTTP_TIMEOUT=900 to avoid timeout errors on long-running requests.")
 	}
 
 	return handler, nil
@@ -1471,6 +1500,9 @@ func (h *Handler) HandleMetrics(w http.ResponseWriter, r *http.Request) {
 		},
 		"uptime":   uptime.String(),
 		"provider": h.provider.Name(),
+		"config": map[string]interface{}{
+			"http_timeout_sec": h.cfg.HTTPClientTimeoutSec,
+		},
 	}
 
 	// Add compaction stats if enabled

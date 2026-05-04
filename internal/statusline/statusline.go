@@ -17,22 +17,23 @@ import (
 
 // Status represents the current CLASP proxy status.
 type Status struct {
-	Running      bool      `json:"running"`
-	Port         int       `json:"port"`
-	PID          int       `json:"pid"`
-	SessionID    string    `json:"session_id,omitempty"` // Unique session identifier for multi-instance support
-	Provider     string    `json:"provider"`
-	Model        string    `json:"model"`
-	Requests     int64     `json:"requests"`
-	Errors       int64     `json:"errors"`
-	CostUSD      float64   `json:"cost_usd"`
-	AvgLatencyMs float64   `json:"avg_latency_ms"`
-	StartTime    time.Time `json:"start_time"`
-	LastUpdated  time.Time `json:"last_updated"`
-	Version      string    `json:"version"`
-	CacheEnabled bool      `json:"cache_enabled"`
-	CacheHitRate float64   `json:"cache_hit_rate"`
-	Fallback     string    `json:"fallback,omitempty"`
+	Running         bool      `json:"running"`
+	Port            int       `json:"port"`
+	PID             int       `json:"pid"`
+	SessionID       string    `json:"session_id,omitempty"` // Unique session identifier for multi-instance support
+	Provider        string    `json:"provider"`
+	Model           string    `json:"model"`
+	Requests        int64     `json:"requests"`
+	Errors          int64     `json:"errors"`
+	CostUSD         float64   `json:"cost_usd"`
+	AvgLatencyMs    float64   `json:"avg_latency_ms"`
+	StartTime       time.Time `json:"start_time"`
+	LastUpdated     time.Time `json:"last_updated"`
+	Version         string    `json:"version"`
+	CacheEnabled    bool      `json:"cache_enabled"`
+	CacheHitRate    float64   `json:"cache_hit_rate"`
+	Fallback        string    `json:"fallback,omitempty"`
+	HTTPTimeoutSec  int       `json:"http_timeout_sec,omitempty"`
 }
 
 // Manager handles status file updates and script installation.
