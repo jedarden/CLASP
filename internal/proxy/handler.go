@@ -305,30 +305,20 @@ func (h *Handler) HandleMessages(w http.ResponseWriter, r *http.Request) {
 	}
 	defer r.Body.Close()
 
+	// Check prompt cache first (prefix-based matching for cache_control-marked requests)
+	promptKey, promptCacheable, _ := h.checkPromptCache(w, anthropicReq)
+	if promptKey == "HIT" {
+		return // Response already sent from prompt cache
+	}
+
 	// Check cache for non-streaming requests
 	cacheKey, cacheable := h.checkCache(w, anthropicReq)
 	if cacheKey == "HIT" {
 		return // Response already sent from cache
 	}
 
-	// Check prompt cache (prefix-based matching for cache_control-marked requests)
-	if h.promptCache != nil && !anthropicReq.Stream {
-		promptKey, promptTokens, promptOK := cache.GeneratePromptCacheKey(anthropicReq)
-		if promptOK {
-			if cachedResp, _, found := h.promptCache.Get(promptKey); found {
-				log.Printf("[CLASP] Prompt cache HIT (prefix match, ~%d tokens saved)", promptTokens)
-				atomic.AddInt64(&h.metrics.SuccessRequests, 1)
-				w.Header().Set("Content-Type", "application/json")
-				w.Header().Set("X-CLASP-Cache", "HIT")
-				w.Header().Set("X-CLASP-Prompt-Cache", "HIT")
-				_ = json.NewEncoder(w).Encode(cachedResp)
-				return
-			}
-		}
-	}
-
 	// Store prompt cache context for later use when storing the response
-	if h.promptCache != nil && cacheKey != "" && cacheable {
+	if h.promptCache != nil && cacheKey != "" && cacheable && promptCacheable {
 		if pk, pt, pok := cache.GeneratePromptCacheKey(anthropicReq); pok {
 			h.promptCachePending.Store(cacheKey, promptCacheCtx{key: pk, tokens: pt})
 		}
@@ -728,10 +718,35 @@ func (h *Handler) handleResponse(w http.ResponseWriter, resp *http.Response, isS
 }
 
 // checkPromptCache checks if the request can be served from the prompt cache.
-// Returns ("HIT", false, 0) if the response was served from cache, otherwise ("", false, 0).
-// This is a stub; full implementation is provided by the prompt-cache bead.
-func (h *Handler) checkPromptCache(_ http.ResponseWriter, _ *models.AnthropicRequest) (string, bool, int) {
-	return "", false, 0
+// Returns ("HIT", false, 0) if the response was served from cache, otherwise ("", cacheable, tokenEstimate).
+// The prompt cache implements prefix-based LRU caching that simulates Anthropic's
+// cache_control behavior for non-Anthropic backends.
+func (h *Handler) checkPromptCache(w http.ResponseWriter, req *models.AnthropicRequest) (string, bool, int) {
+	if h.promptCache == nil || req.Stream {
+		return "", false, 0
+	}
+
+	// Check if request has cache_control markers and generate cache key
+	cacheKey, tokenEstimate, cacheable := cache.GeneratePromptCacheKey(req)
+	if !cacheable {
+		return "", false, 0
+	}
+
+	// Look up in cache
+	cachedResp, _, found := h.promptCache.Get(cacheKey)
+	if !found {
+		// Cache miss - return key and token estimate for later storage
+		return "", true, tokenEstimate
+	}
+
+	// Cache hit - write response
+	log.Printf("[CLASP] Prompt cache HIT (prefix match, ~%d tokens saved)", tokenEstimate)
+	atomic.AddInt64(&h.metrics.SuccessRequests, 1)
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-CLASP-Cache", "HIT")
+	w.Header().Set("X-CLASP-Prompt-Cache", "HIT")
+	_ = json.NewEncoder(w).Encode(cachedResp)
+	return "HIT", false, 0
 }
 
 // handlePassthroughRequest handles requests that don't require transformation.
