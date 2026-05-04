@@ -41,11 +41,20 @@ var responsesModels = []string{
 
 ### 1. Responses API Limitations
 
-#### Gap: Compaction/Multi-Window Context
+#### Feature: Compaction/Multi-Window Context
 - **What**: GPT-5.1-Codex-Max supports "compaction" for multi-million token sessions
-- **Status**: ❌ Not supported
-- **Impact**: Cannot maintain state across very long sessions
-- **Workaround**: Use `previous_response_id` for conversation continuity
+- **Status**: ✅ Supported
+- **Implementation**: CLASP implements Responses API `previous_response_id` chaining for multi-turn conversations
+- **Configuration**:
+  - Enable: `CLASP_COMPACTION=true`
+  - Session TTL: `CLASP_SESSION_TIMEOUT=3600` (seconds, default: 3600)
+- **How it works**:
+  1. Session tracker stores `response_id` from each completed Responses API request
+  2. Session key is derived from SHA-256 hash of (model + first user message content)
+  3. On subsequent requests with the same session key, only new messages are sent
+  4. `previous_response_id` is injected into the Responses API request
+  5. The provider maintains context across turns, enabling multi-million token sessions
+- **Metrics**: Compaction hits/misses tracked in `/metrics` endpoint under `compaction` section
 
 #### Gap: Codex Workspace Integration
 - **What**: Native Codex IDE/CLI integration features
@@ -186,7 +195,7 @@ CLASP_DEBUG=true clasp -model gpt-5.1-codex
 4. ~~**DeepSeek provider** - Direct DeepSeek support~~ ✅ Added in v0.38.0
 5. ~~**Local model support** - Ollama/LM Studio integration~~ ✅ Added in v0.36.0
 6. ~~**Gemini provider** - Direct Google Gemini support~~ ✅ Added in v0.37.0
-7. **Compaction support** - Multi-window context management
+7. ~~**Compaction support** - Multi-window context management~~ ✅ Added in v0.48.0
 8. ~~**MCP Server Mode** - Add MCP server for tool integration~~ ✅ Added in v0.47.0
 
 ## Sources
