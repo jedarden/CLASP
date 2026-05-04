@@ -477,7 +477,7 @@ func TestIntegration_PromptCacheHit(t *testing.T) {
 				Type: "text",
 				Text: "You are a helpful assistant.",
 				CacheControl: &models.CacheControl{
-					Type: &cacheControlType,
+					Type: cacheControlType,
 				},
 			},
 		},
@@ -620,7 +620,7 @@ func TestIntegration_PromptCacheHit(t *testing.T) {
 				Type: "text",
 				Text: "You are a helpful assistant.",
 				CacheControl: &models.CacheControl{
-					Type: &cacheControlType,
+					Type: cacheControlType,
 				},
 			},
 		},
