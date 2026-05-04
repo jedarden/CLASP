@@ -310,7 +310,8 @@ func (w *Wizard) selectProvider() (string, error) {
 	w.println("  5) Ollama        - Local models (free, private)")
 	w.println("  6) Gemini        - Google AI Studio (Gemini 2.0, 1.5 Pro)")
 	w.println("  7) DeepSeek      - DeepSeek Chat, Coder, Reasoner")
-	w.println("  8) Custom        - vLLM, LM Studio, other OpenAI-compatible")
+	w.println("  8) LiteLLM       - OpenAI-compatible proxy (100+ providers)")
+	w.println("  9) Custom        - vLLM, LM Studio, other OpenAI-compatible")
 	w.println("")
 
 	// Check if Ollama is running locally
@@ -320,7 +321,7 @@ func (w *Wizard) selectProvider() (string, error) {
 	}
 
 	for {
-		choice, err := w.promptInput("Enter choice [1-8]", "1")
+		choice, err := w.promptInput("Enter choice [1-9]", "1")
 		if err != nil {
 			return "", err
 		}
@@ -340,10 +341,12 @@ func (w *Wizard) selectProvider() (string, error) {
 			return "gemini", nil
 		case "7", "deepseek":
 			return "deepseek", nil
-		case "8", "custom":
+		case "8", "litellm":
+			return "litellm", nil
+		case "9", "custom":
 			return "custom", nil
 		default:
-			w.println("Invalid choice. Please enter 1-8.")
+			w.println("Invalid choice. Please enter 1-9.")
 		}
 	}
 }
@@ -436,6 +439,11 @@ func (w *Wizard) promptAPIKey(provider string) (string, error) {
 		w.println("")
 		w.println("Ollama runs locally and doesn't require an API key.")
 		return "not-required", nil
+	case "litellm":
+		// LiteLLM API key is optional (depends on server configuration)
+		w.println("")
+		w.println("LiteLLM API key is optional (depends on your server config).")
+		prompt = "LiteLLM API Key (optional, press Enter to skip)"
 	case "custom":
 		prompt = "API Key (optional, press Enter to skip)"
 	default:
@@ -563,6 +571,15 @@ func (w *Wizard) fetchModels(provider, apiKey, baseURL, azureEndpoint string) ([
 			"gpt-4-turbo",
 			"gpt-35-turbo",
 		}, nil
+	case "litellm":
+		// LiteLLM has an OpenAI-compatible /models endpoint
+		if baseURL == "" {
+			baseURL = "http://localhost:4000"
+		}
+		url = strings.TrimSuffix(baseURL, "/") + "/v1/models"
+		if apiKey != "" && apiKey != "not-required" {
+			headers = map[string]string{"Authorization": "Bearer " + apiKey}
+		}
 	default:
 		return nil, fmt.Errorf("unsupported provider: %s", provider)
 	}
@@ -591,7 +608,7 @@ func (w *Wizard) fetchModels(provider, apiKey, baseURL, azureEndpoint string) ([
 	var models []string
 
 	switch provider {
-	case "openai", "custom":
+	case "openai", "custom", "litellm":
 		var openAIResp openAIModelsResponse
 		if err := json.NewDecoder(resp.Body).Decode(&openAIResp); err != nil {
 			return nil, err
@@ -833,6 +850,14 @@ func (w *Wizard) setEnvVars(cfg *ConfigFile) {
 		if cfg.BaseURL != "" {
 			os.Setenv("OLLAMA_BASE_URL", cfg.BaseURL)
 		}
+	case "litellm":
+		// LiteLLM API key is optional
+		if cfg.APIKey != "" && cfg.APIKey != "not-required" {
+			os.Setenv("LITELLM_API_KEY", cfg.APIKey)
+		}
+		if cfg.BaseURL != "" {
+			os.Setenv("LITELLM_BASE_URL", cfg.BaseURL)
+		}
 	case "custom":
 		os.Setenv("CUSTOM_API_KEY", cfg.APIKey)
 		os.Setenv("CUSTOM_BASE_URL", cfg.BaseURL)
@@ -888,6 +913,14 @@ func ApplyConfigToEnv() error {
 		// Ollama doesn't require API key, just base URL
 		if cfg.BaseURL != "" {
 			os.Setenv("OLLAMA_BASE_URL", cfg.BaseURL)
+		}
+	case "litellm":
+		// LiteLLM API key is optional
+		if cfg.APIKey != "" && cfg.APIKey != "not-required" {
+			os.Setenv("LITELLM_API_KEY", cfg.APIKey)
+		}
+		if cfg.BaseURL != "" {
+			os.Setenv("LITELLM_BASE_URL", cfg.BaseURL)
 		}
 	case "custom":
 		if cfg.APIKey != "" {

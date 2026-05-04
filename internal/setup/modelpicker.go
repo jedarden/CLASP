@@ -358,6 +358,8 @@ func GetKnownModels(provider string) []ModelInfo {
 		return getDeepSeekModels()
 	case "ollama":
 		return getOllamaModels()
+	case "litellm":
+		return getLiteLLMModels()
 	default:
 		return nil
 	}
@@ -381,6 +383,30 @@ func getOllamaModels() []ModelInfo {
 		{ID: "mixtral:8x7b", Name: "Mixtral 8x7B", Desc: "MoE model - 26GB", ContextSize: 32768},
 		{ID: "gemma2:9b", Name: "Gemma 2 9B", Desc: "Google's model - 5.4GB", ContextSize: 8192},
 		{ID: "phi3:mini", Name: "Phi-3 Mini", Desc: "Microsoft's small model - 2.4GB", ContextSize: 128000},
+	}
+}
+
+func getLiteLLMModels() []ModelInfo {
+	return []ModelInfo{
+		// LiteLLM supports 100+ providers - common model formats
+		// OpenAI models via LiteLLM
+		{ID: "openai/gpt-4o", Name: "GPT-4o", Desc: "OpenAI via LiteLLM", InputPrice: 2.50, OutputPrice: 10.0, ContextSize: 128000, IsRecommended: true},
+		{ID: "openai/gpt-4o-mini", Name: "GPT-4o-mini", Desc: "Affordable via LiteLLM", InputPrice: 0.15, OutputPrice: 0.60, ContextSize: 128000},
+		{ID: "openai/o1-mini", Name: "o1-mini", Desc: "Reasoning via LiteLLM", InputPrice: 3.0, OutputPrice: 12.0, ContextSize: 128000},
+		// Anthropic via LiteLLM
+		{ID: "anthropic/claude-3-5-sonnet-20241022", Name: "Claude 3.5 Sonnet", Desc: "Via LiteLLM", InputPrice: 3.0, OutputPrice: 15.0, ContextSize: 200000},
+		{ID: "anthropic/claude-3-5-haiku-20241022", Name: "Claude 3.5 Haiku", Desc: "Via LiteLLM", InputPrice: 0.25, OutputPrice: 1.25, ContextSize: 200000},
+		// Google via LiteLLM
+		{ID: "gemini/gemini-2.0-flash-exp", Name: "Gemini 2.0 Flash", Desc: "Via LiteLLM", ContextSize: 1048576},
+		{ID: "gemini/gemini-1.5-pro", Name: "Gemini 1.5 Pro", Desc: "Via LiteLLM", ContextSize: 2097152},
+		// Meta via LiteLLM
+		{ID: "meta-llama/llama-3.1-70b-instruct", Name: "Llama 3.1 70B", Desc: "Via LiteLLM", ContextSize: 131072},
+		{ID: "meta-llama/llama-3.1-8b-instruct", Name: "Llama 3.1 8B", Desc: "Via LiteLLM", ContextSize: 131072},
+		// DeepSeek via LiteLLM
+		{ID: "deepseek/deepseek-chat", Name: "DeepSeek Chat", Desc: "Via LiteLLM", InputPrice: 0.14, OutputPrice: 0.28, ContextSize: 64000},
+		{ID: "deepseek/deepseek-coder", Name: "DeepSeek Coder", Desc: "Via LiteLLM", InputPrice: 0.14, OutputPrice: 0.28, ContextSize: 64000},
+		// Mistral via LiteLLM
+		{ID: "mistralai/mistral-large", Name: "Mistral Large", Desc: "Via LiteLLM", InputPrice: 2.0, OutputPrice: 6.0, ContextSize: 128000},
 	}
 }
 

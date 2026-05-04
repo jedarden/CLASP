@@ -474,6 +474,7 @@ func TestProviderInterface(t *testing.T) {
 		NewGrokProvider(""),
 		NewQwenProvider(""),
 		NewMiniMaxProvider(""),
+		NewLiteLLMProvider(""),
 	}
 
 	for _, p := range providers {
@@ -870,6 +871,125 @@ func TestMiniMaxProvider(t *testing.T) {
 
 	t.Run("RequiresTransformation returns true", func(t *testing.T) {
 		p := NewMiniMaxProvider("")
+		if !p.RequiresTransformation() {
+			t.Error("Expected RequiresTransformation to return true")
+		}
+	})
+}
+
+// TestLiteLLMProvider tests the LiteLLM provider implementation.
+func TestLiteLLMProvider(t *testing.T) {
+	t.Run("NewLiteLLMProvider with default URL", func(t *testing.T) {
+		p := NewLiteLLMProvider("")
+		if p.BaseURL != DefaultLiteLLMURL {
+			t.Errorf("Expected default URL %s, got %s", DefaultLiteLLMURL, p.BaseURL)
+		}
+	})
+
+	t.Run("NewLiteLLMProvider with custom URL", func(t *testing.T) {
+		p := NewLiteLLMProvider("https://custom.litellm.com")
+		if p.BaseURL != "https://custom.litellm.com" {
+			t.Errorf("Expected custom URL, got %s", p.BaseURL)
+		}
+	})
+
+	t.Run("NewLiteLLMProviderWithKey", func(t *testing.T) {
+		p := NewLiteLLMProviderWithKey("", "litellm-test-key")
+		if p.apiKey != "litellm-test-key" {
+			t.Errorf("Expected apiKey to be set")
+		}
+		if p.BaseURL != DefaultLiteLLMURL {
+			t.Errorf("Expected default URL %s, got %s", DefaultLiteLLMURL, p.BaseURL)
+		}
+	})
+
+	t.Run("Name returns litellm", func(t *testing.T) {
+		p := NewLiteLLMProvider("")
+		if p.Name() != "litellm" {
+			t.Errorf("Expected 'litellm', got %s", p.Name())
+		}
+	})
+
+	t.Run("GetHeaders with provided key", func(t *testing.T) {
+		p := NewLiteLLMProvider("")
+		headers := p.GetHeaders("litellm-key")
+		if got := headers.Get("Authorization"); got != "Bearer litellm-key" {
+			t.Errorf("Expected 'Bearer litellm-key', got %s", got)
+		}
+		if got := headers.Get("Content-Type"); got != "application/json" {
+			t.Errorf("Expected 'application/json', got %s", got)
+		}
+		if got := headers.Get("X-LiteLLM-Tag"); got != "clasp-proxy" {
+			t.Errorf("Expected 'clasp-proxy' attribution tag, got %s", got)
+		}
+	})
+
+	t.Run("GetHeaders with empty key", func(t *testing.T) {
+		p := NewLiteLLMProvider("")
+		headers := p.GetHeaders("")
+		// LiteLLM doesn't require auth, so empty key should not set Authorization header
+		if got := headers.Get("Authorization"); got != "" {
+			t.Errorf("Expected empty Authorization, got %s", got)
+		}
+		if got := headers.Get("Content-Type"); got != "application/json" {
+			t.Errorf("Expected 'application/json', got %s", got)
+		}
+		// Attribution header should still be set
+		if got := headers.Get("X-LiteLLM-Tag"); got != "clasp-proxy" {
+			t.Errorf("Expected 'clasp-proxy' attribution tag, got %s", got)
+		}
+	})
+
+	t.Run("GetHeaders with not-required key", func(t *testing.T) {
+		p := NewLiteLLMProvider("")
+		headers := p.GetHeaders("not-required")
+		if got := headers.Get("Authorization"); got != "" {
+			t.Errorf("Expected empty Authorization for not-required key, got %s", got)
+		}
+	})
+
+	t.Run("GetHeaders uses embedded key", func(t *testing.T) {
+		p := NewLiteLLMProviderWithKey("", "embedded-key")
+		headers := p.GetHeaders("provided-key")
+		if got := headers.Get("Authorization"); got != "Bearer embedded-key" {
+			t.Errorf("Expected 'Bearer embedded-key', got %s", got)
+		}
+	})
+
+	t.Run("GetEndpointURL", func(t *testing.T) {
+		p := NewLiteLLMProvider("http://localhost:4000")
+		expected := "http://localhost:4000/v1/chat/completions"
+		if got := p.GetEndpointURL(); got != expected {
+			t.Errorf("Expected %s, got %s", expected, got)
+		}
+	})
+
+	t.Run("TransformModelID strips litellm prefix", func(t *testing.T) {
+		p := NewLiteLLMProvider("")
+		if got := p.TransformModelID("litellm/openai/gpt-4o"); got != "openai/gpt-4o" {
+			t.Errorf("Expected 'openai/gpt-4o', got %s", got)
+		}
+	})
+
+	t.Run("TransformModelID preserves other models", func(t *testing.T) {
+		p := NewLiteLLMProvider("")
+		if got := p.TransformModelID("openai/gpt-4o"); got != "openai/gpt-4o" {
+			t.Errorf("Expected 'openai/gpt-4o', got %s", got)
+		}
+		if got := p.TransformModelID("anthropic/claude-3-opus"); got != "anthropic/claude-3-opus" {
+			t.Errorf("Expected 'anthropic/claude-3-opus', got %s", got)
+		}
+	})
+
+	t.Run("SupportsStreaming returns true", func(t *testing.T) {
+		p := NewLiteLLMProvider("")
+		if !p.SupportsStreaming() {
+			t.Error("Expected SupportsStreaming to return true")
+		}
+	})
+
+	t.Run("RequiresTransformation returns true", func(t *testing.T) {
+		p := NewLiteLLMProvider("")
 		if !p.RequiresTransformation() {
 			t.Error("Expected RequiresTransformation to return true")
 		}
