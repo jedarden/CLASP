@@ -269,6 +269,44 @@ func (w *Wizard) Run() (*config.Config, error) {
 		return nil, err
 	}
 
+	// Step 6.5: Check for reasoning/codex model timeout recommendation
+	if isReasoningModel(model) {
+		w.println("")
+		w.println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+		w.println("  Extended Timeout Recommendation")
+		w.println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+		w.println("")
+		w.printf("The model '%s' is a reasoning/codex model that may take\n", model)
+		w.println("several minutes to complete requests due to extended thinking time.")
+		w.println("")
+		w.println("The default HTTP timeout (300 seconds = 5 minutes) may not be")
+		w.println("sufficient for complex reasoning tasks.")
+		w.println("")
+		w.println("Recommendation: Set timeout to 900 seconds (15 minutes)")
+		w.println("")
+		w.printf("Apply extended timeout now? [Y/n]: ")
+		choice, _ := w.reader.ReadString('\n')
+		choice = strings.TrimSpace(strings.ToLower(choice))
+		if choice != "n" && choice != "no" {
+			// Set environment variable for current session
+			os.Setenv("CLASP_HTTP_TIMEOUT", "900")
+			w.println("")
+			w.println("✓ Extended timeout (900s) configured for this session.")
+			w.println("")
+			w.println("To make this permanent, add to your environment:")
+			w.println("  export CLASP_HTTP_TIMEOUT=900")
+			w.println("")
+			w.println("Or in your clasp.yaml config file:")
+			w.println("  http_client:")
+			w.println("    timeout_sec: 900")
+		} else {
+			w.println("")
+			w.println("Using default timeout (300s). You may experience timeout errors")
+			w.println("on long-running requests. Set CLASP_HTTP_TIMEOUT=900 if needed.")
+		}
+		w.println("")
+	}
+
 	// Step 7: Save configuration
 	w.println("")
 	w.println("Saving configuration...")
@@ -690,6 +728,28 @@ func isChatModel(id string) bool {
 	}
 	// Include codex models (require Responses API)
 	if strings.HasPrefix(id, "codex") {
+		return true
+	}
+	return false
+}
+
+// isReasoningModel checks if the model is a reasoning/codex model that may require extended timeouts.
+func isReasoningModel(model string) bool {
+	model = strings.ToLower(model)
+	// GPT-5 series models
+	if strings.Contains(model, "gpt-5") || strings.Contains(model, "gpt5") {
+		return true
+	}
+	// Codex models
+	if strings.HasPrefix(model, "codex") {
+		return true
+	}
+	// o1 reasoning models
+	if strings.HasPrefix(model, "o1") {
+		return true
+	}
+	// o3 reasoning models
+	if strings.HasPrefix(model, "o3") {
 		return true
 	}
 	return false
@@ -1136,6 +1196,44 @@ func (w *Wizard) RunProfileCreate(profileName string) (*Profile, error) {
 				return nil, fmt.Errorf("azure provider does not support responses API models")
 			}
 		}
+	}
+
+	// Check if this is a reasoning/codex model and recommend extended timeout
+	if isReasoningModel(model) {
+		w.println("")
+		w.println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+		w.println("  Extended Timeout Recommendation")
+		w.println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+		w.println("")
+		w.printf("The model '%s' is a reasoning/codex model that may take\n", model)
+		w.println("several minutes to complete requests due to extended thinking time.")
+		w.println("")
+		w.println("The default HTTP timeout (300 seconds = 5 minutes) may not be")
+		w.println("sufficient for complex reasoning tasks.")
+		w.println("")
+		w.println("Recommendation: Set timeout to 900 seconds (15 minutes)")
+		w.println("")
+		w.printf("Apply extended timeout now? [Y/n]: ")
+		choice, _ := w.reader.ReadString('\n')
+		choice = strings.TrimSpace(strings.ToLower(choice))
+		if choice != "n" && choice != "no" {
+			// Set environment variable for current session
+			os.Setenv("CLASP_HTTP_TIMEOUT", "900")
+			w.println("")
+			w.println("✓ Extended timeout (900s) configured for this session.")
+			w.println("")
+			w.println("To make this permanent, add to your environment:")
+			w.println("  export CLASP_HTTP_TIMEOUT=900")
+			w.println("")
+			w.println("Or in your clasp.yaml config file:")
+			w.println("  http_client:")
+			w.println("    timeout_sec: 900")
+		} else {
+			w.println("")
+			w.println("Using default timeout (300s). You may experience timeout errors")
+			w.println("on long-running requests. Set CLASP_HTTP_TIMEOUT=900 if needed.")
+		}
+		w.println("")
 	}
 
 	// Ask about tier mappings

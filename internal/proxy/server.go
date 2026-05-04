@@ -298,17 +298,18 @@ func (s *Server) Start() error {
 			model = "auto"
 		}
 		status := statusline.Status{
-			Running:      true,
-			Port:         port,
-			SessionID:    logging.GetSessionID(),
-			Provider:     string(s.cfg.Provider),
-			Model:        model,
-			Requests:     0,
-			Errors:       0,
-			CostUSD:      0,
-			StartTime:    time.Now(),
-			Version:      s.version,
-			CacheEnabled: s.cache != nil,
+			Running:        true,
+			Port:           port,
+			SessionID:      logging.GetSessionID(),
+			Provider:       string(s.cfg.Provider),
+			Model:          model,
+			Requests:       0,
+			Errors:         0,
+			CostUSD:        0,
+			StartTime:      time.Now(),
+			Version:        s.version,
+			CacheEnabled:   s.cache != nil,
+			HTTPTimeoutSec: s.cfg.HTTPClientTimeoutSec,
 		}
 		if s.cfg.FallbackProvider != "" {
 			status.Fallback = string(s.cfg.FallbackProvider)
