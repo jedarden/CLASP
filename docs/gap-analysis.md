@@ -99,7 +99,7 @@ var responsesModels = []string{
 
 | Feature | CLASP | CCProxy | claude-code-proxy | anthropic-proxy |
 |---------|-------|---------|-------------------|-----------------|
-| LiteLLM Backend | ✅ | ✅ | ✅ | ❌ |
+| LiteLLM Backend | ✅¹ | ✅ | ✅ | ❌ |
 | Google Gemini | ✅ | ✅ | ✅ | ❌ |
 | DeepSeek | ✅ | ✅ | ❌ | ❌ |
 | xAI Grok | ✅ | ✅ | ❌ | ❌ |
@@ -114,6 +114,8 @@ var responsesModels = []string{
 | Cost Tracking | ✅ | ❌ | ❌ | ❌ |
 | Docker Support | ✅ | ✅ | ✅ | ❌ |
 | NPM Package | ✅ | ❌ | ✅ | ❌ |
+
+> ¹ CLASP routes to an external LiteLLM server (`LITELLM_BASE_URL`). claude-code-proxy uses LiteLLM as its internal abstraction layer.
 
 ### 3. Tool Schema Handling (FIXED in recent update)
 
@@ -131,7 +133,7 @@ var responsesModels = []string{
 - **Implementation**:
   - Startup warnings for codex/reasoning models with short timeouts
   - Setup wizard recommends extended timeouts when selecting reasoning models
-  - `CLASP_HTTP_TIMEOUT_SEC` exposed in `/metrics` and statusline
+  - `CLASP_HTTP_TIMEOUT` exposed in `/metrics` and statusline
 - **Recommendation**: Set to 600+ seconds for codex models (auto-suggested in wizard)
 
 ### 5. Model Picker Limitations
@@ -201,7 +203,7 @@ OPENAI_API_KEY=sk-... clasp -provider openai -model gpt-5.1-codex
 ### 2. Timeout Settings
 ```bash
 # Extended timeout for codex's long reasoning
-CLASP_HTTP_TIMEOUT_SEC=900 clasp -model gpt-5.1-codex
+CLASP_HTTP_TIMEOUT=900 clasp -model gpt-5.1-codex
 ```
 
 ### 3. Debug Mode
