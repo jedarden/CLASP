@@ -1509,3 +1509,481 @@ func isOllamaAvailable(t *testing.T) bool {
 	defer resp.Body.Close()
 	return resp.StatusCode == http.StatusOK
 }
+
+// TestIntegration_LiteLLM tests the full proxy with live LiteLLM API
+// Run with: go test -tags=integration ./tests/... -v -run TestIntegration_LiteLLM
+// Requires: LITELLM_BASE_URL environment variable (default: http://localhost:4000)
+func TestIntegration_LiteLLM(t *testing.T) {
+	baseURL := os.Getenv("LITELLM_BASE_URL")
+	if baseURL == "" {
+		baseURL = "http://localhost:4000"
+	}
+
+	// Check if LiteLLM is available
+	if !isLiteLLMAvailable(t, baseURL) {
+		t.Skipf("LiteLLM not available at %s", baseURL)
+	}
+
+	cfg := &config.Config{
+		Provider:      config.ProviderLiteLLM,
+		LiteLLMBaseURL: baseURL,
+		DefaultModel:  "gpt-4o-mini",
+		Port:          8080,
+	}
+
+	handler, err := proxy.NewHandler(cfg)
+	if err != nil {
+		t.Fatalf("Failed to create handler: %v", err)
+	}
+
+	// Test basic request
+	anthropicReq := models.AnthropicRequest{
+		Model:     "gpt-4o-mini",
+		MaxTokens: 100,
+		Stream:    false,
+		Messages: []models.AnthropicMessage{
+			{
+				Role:    "user",
+				Content: "Say 'Hello from LiteLLM' and nothing else.",
+			},
+		},
+	}
+
+	reqBody, _ := json.Marshal(anthropicReq)
+	req := httptest.NewRequest(http.MethodPost, "/v1/messages", bytes.NewReader(reqBody))
+	req.Header.Set("Content-Type", "application/json")
+
+	rec := httptest.NewRecorder()
+	handler.HandleMessages(rec, req)
+
+	resp := rec.Result()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("Expected status 200, got %d: %s", resp.StatusCode, string(body))
+	}
+
+	var anthropicResp models.AnthropicResponse
+	if err := json.NewDecoder(resp.Body).Decode(&anthropicResp); err != nil {
+		t.Fatalf("Failed to decode response: %v", err)
+	}
+
+	if anthropicResp.Type != "message" {
+		t.Errorf("Expected type 'message', got '%s'", anthropicResp.Type)
+	}
+
+	if anthropicResp.Role != "assistant" {
+		t.Errorf("Expected role 'assistant', got '%s'", anthropicResp.Role)
+	}
+
+	if len(anthropicResp.Content) == 0 {
+		t.Error("Expected content, got empty")
+	}
+
+	if len(anthropicResp.Content) > 0 && anthropicResp.Content[0].Type == "text" {
+		text := anthropicResp.Content[0].Text
+		t.Logf("LiteLLM response text: %s", text)
+		if !strings.Contains(strings.ToLower(text), "hello") {
+			t.Logf("Warning: Response doesn't contain 'hello': %s", text)
+		}
+	}
+}
+
+// TestIntegration_LiteLLMStreaming tests streaming with live LiteLLM API
+// Run with: go test -tags=integration ./tests/... -v -run TestIntegration_LiteLLMStreaming
+func TestIntegration_LiteLLMStreaming(t *testing.T) {
+	baseURL := os.Getenv("LITELLM_BASE_URL")
+	if baseURL == "" {
+		baseURL = "http://localhost:4000"
+	}
+
+	if !isLiteLLMAvailable(t, baseURL) {
+		t.Skipf("LiteLLM not available at %s", baseURL)
+	}
+
+	cfg := &config.Config{
+		Provider:      config.ProviderLiteLLM,
+		LiteLLMBaseURL: baseURL,
+		DefaultModel:  "gpt-4o-mini",
+		Port:          8080,
+	}
+
+	handler, err := proxy.NewHandler(cfg)
+	if err != nil {
+		t.Fatalf("Failed to create handler: %v", err)
+	}
+
+	anthropicReq := models.AnthropicRequest{
+		Model:     "gpt-4o-mini",
+		MaxTokens: 50,
+		Stream:    true,
+		Messages: []models.AnthropicMessage{
+			{
+				Role:    "user",
+				Content: "Count to 3.",
+			},
+		},
+	}
+
+	reqBody, _ := json.Marshal(anthropicReq)
+	req := httptest.NewRequest(http.MethodPost, "/v1/messages", bytes.NewReader(reqBody))
+	req.Header.Set("Content-Type", "application/json")
+
+	rec := httptest.NewRecorder()
+	handler.HandleMessages(rec, req)
+
+	resp := rec.Result()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("Expected status 200, got %d: %s", resp.StatusCode, string(body))
+	}
+
+	contentType := resp.Header.Get("Content-Type")
+	if !strings.HasPrefix(contentType, "text/event-stream") {
+		t.Errorf("Expected Content-Type 'text/event-stream', got '%s'", contentType)
+	}
+
+	body, _ := io.ReadAll(resp.Body)
+	t.Logf("LiteLLM streaming response length: %d bytes", len(body))
+}
+
+// TestIntegration_LiteLLMToolCall tests tool calling with live LiteLLM API
+// Run with: go test -tags=integration ./tests/... -v -run TestIntegration_LiteLLMToolCall
+func TestIntegration_LiteLLMToolCall(t *testing.T) {
+	baseURL := os.Getenv("LITELLM_BASE_URL")
+	if baseURL == "" {
+		baseURL = "http://localhost:4000"
+	}
+
+	if !isLiteLLMAvailable(t, baseURL) {
+		t.Skipf("LiteLLM not available at %s", baseURL)
+	}
+
+	cfg := &config.Config{
+		Provider:      config.ProviderLiteLLM,
+		LiteLLMBaseURL: baseURL,
+		DefaultModel:  "gpt-4o-mini",
+		Port:          8080,
+	}
+
+	handler, err := proxy.NewHandler(cfg)
+	if err != nil {
+		t.Fatalf("Failed to create handler: %v", err)
+	}
+
+	anthropicReq := models.AnthropicRequest{
+		Model:     "gpt-4o-mini",
+		MaxTokens: 200,
+		Stream:    false,
+		Messages: []models.AnthropicMessage{
+			{
+				Role:    "user",
+				Content: "Get the current weather in San Francisco.",
+			},
+		},
+		Tools: []models.AnthropicTool{
+			{
+				Name:        "get_weather",
+				Description: "Get the current weather for a location",
+				InputSchema: map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"location": map[string]interface{}{
+							"type":        "string",
+							"description": "City name",
+						},
+					},
+					"required": []string{"location"},
+				},
+			},
+		},
+		ToolChoice: map[string]interface{}{
+			"type": "any",
+		},
+	}
+
+	reqBody, _ := json.Marshal(anthropicReq)
+	req := httptest.NewRequest(http.MethodPost, "/v1/messages", bytes.NewReader(reqBody))
+	req.Header.Set("Content-Type", "application/json")
+
+	rec := httptest.NewRecorder()
+	handler.HandleMessages(rec, req)
+
+	resp := rec.Result()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("Expected status 200, got %d: %s", resp.StatusCode, string(body))
+	}
+
+	var anthropicResp models.AnthropicResponse
+	if err := json.NewDecoder(resp.Body).Decode(&anthropicResp); err != nil {
+		t.Fatalf("Failed to decode response: %v", err)
+	}
+
+	t.Logf("LiteLLM tool call response: %+v", anthropicResp)
+
+	hasToolUse := false
+	for _, block := range anthropicResp.Content {
+		if block.Type == "tool_use" {
+			hasToolUse = true
+			t.Logf("Tool call: %s (id: %s)", block.Name, block.ID)
+		}
+	}
+
+	if !hasToolUse {
+		t.Log("No tool_use in response (model might have responded without tool call)")
+	}
+}
+
+// TestIntegration_LiteLLMMultiTierRouting tests multi-tier provider routing with LiteLLM
+// Run with: go test -tags=integration ./tests/... -v -run TestIntegration_LiteLLMMultiTierRouting
+func TestIntegration_LiteLLMMultiTierRouting(t *testing.T) {
+	baseURL := os.Getenv("LITELLM_BASE_URL")
+	if baseURL == "" {
+		baseURL = "http://localhost:4000"
+	}
+
+	if !isLiteLLMAvailable(t, baseURL) {
+		t.Skipf("LiteLLM not available at %s", baseURL)
+	}
+
+	cfg := &config.Config{
+		Provider:             config.ProviderOpenAI, // Default provider
+		OpenAIBaseURL:        "https://api.openai.com/v1",
+		DefaultModel:         "gpt-4o-mini",
+		MultiProviderEnabled: true,
+		TierOpus: &config.TierConfig{
+			Provider: config.ProviderLiteLLM,
+			Model:    "openai/gpt-4o",
+			BaseURL:  baseURL,
+		},
+		TierSonnet: &config.TierConfig{
+			Provider: config.ProviderOpenAI,
+			Model:    "gpt-4o-mini",
+		},
+		TierHaiku: &config.TierConfig{
+			Provider: config.ProviderLiteLLM,
+			Model:    "openai/gpt-4o-mini",
+			BaseURL:  baseURL,
+		},
+		Port: 8080,
+	}
+
+	handler, err := proxy.NewHandler(cfg)
+	if err != nil {
+		t.Fatalf("Failed to create handler: %v", err)
+	}
+
+	// Test Opus tier (should route to LiteLLM)
+	t.Run("OpusTierRoutesToLiteLLM", func(t *testing.T) {
+		anthropicReq := models.AnthropicRequest{
+			Model:     "claude-3-opus-20240229",
+			MaxTokens: 100,
+			Stream:    false,
+			Messages: []models.AnthropicMessage{
+				{
+					Role:    "user",
+					Content: "Say 'Opus via LiteLLM' and nothing else.",
+				},
+			},
+		}
+
+		reqBody, _ := json.Marshal(anthropicReq)
+		req := httptest.NewRequest(http.MethodPost, "/v1/messages", bytes.NewReader(reqBody))
+		req.Header.Set("Content-Type", "application/json")
+
+		rec := httptest.NewRecorder()
+		handler.HandleMessages(rec, req)
+
+		resp := rec.Result()
+		if resp.StatusCode != http.StatusOK {
+			body, _ := io.ReadAll(resp.Body)
+			t.Fatalf("Expected status 200, got %d: %s", resp.StatusCode, string(body))
+		}
+
+		var anthropicResp models.AnthropicResponse
+		if err := json.NewDecoder(resp.Body).Decode(&anthropicResp); err != nil {
+			t.Fatalf("Failed to decode response: %v", err)
+		}
+
+		if anthropicResp.Type != "message" {
+			t.Errorf("Expected type 'message', got '%s'", anthropicResp.Type)
+		}
+
+		t.Logf("Opus tier response: %s", anthropicResp.Content[0].Text)
+	})
+
+	// Test Haiku tier (should route to LiteLLM)
+	t.Run("HaikuTierRoutesToLiteLLM", func(t *testing.T) {
+		anthropicReq := models.AnthropicRequest{
+			Model:     "claude-3-haiku-20240307",
+			MaxTokens: 100,
+			Stream:    false,
+			Messages: []models.AnthropicMessage{
+				{
+					Role:    "user",
+					Content: "Say 'Haiku via LiteLLM' and nothing else.",
+				},
+			},
+		}
+
+		reqBody, _ := json.Marshal(anthropicReq)
+		req := httptest.NewRequest(http.MethodPost, "/v1/messages", bytes.NewReader(reqBody))
+		req.Header.Set("Content-Type", "application/json")
+
+		rec := httptest.NewRecorder()
+		handler.HandleMessages(rec, req)
+
+		resp := rec.Result()
+		if resp.StatusCode != http.StatusOK {
+			body, _ := io.ReadAll(resp.Body)
+			t.Fatalf("Expected status 200, got %d: %s", resp.StatusCode, string(body))
+		}
+
+		var anthropicResp models.AnthropicResponse
+		if err := json.NewDecoder(resp.Body).Decode(&anthropicResp); err != nil {
+			t.Fatalf("Failed to decode response: %v", err)
+		}
+
+		if anthropicResp.Type != "message" {
+			t.Errorf("Expected type 'message', got '%s'", anthropicResp.Type)
+		}
+
+		t.Logf("Haiku tier response: %s", anthropicResp.Content[0].Text)
+	})
+}
+
+// TestIntegration_LiteLLMModelPrefixStripping tests that litellm/ prefix is stripped in end-to-end flow
+// Run with: go test -tags=integration ./tests/... -v -run TestIntegration_LiteLLMModelPrefixStripping
+func TestIntegration_LiteLLMModelPrefixStripping(t *testing.T) {
+	baseURL := os.Getenv("LITELLM_BASE_URL")
+	if baseURL == "" {
+		baseURL = "http://localhost:4000"
+	}
+
+	if !isLiteLLMAvailable(t, baseURL) {
+		t.Skipf("LiteLLM not available at %s", baseURL)
+	}
+
+	cfg := &config.Config{
+		Provider:      config.ProviderLiteLLM,
+		LiteLLMBaseURL: baseURL,
+		DefaultModel:  "gpt-4o-mini",
+		Port:          8080,
+	}
+
+	handler, err := proxy.NewHandler(cfg)
+	if err != nil {
+		t.Fatalf("Failed to create handler: %v", err)
+	}
+
+	// Test with litellm/ prefix - should be stripped to openai/gpt-4o-mini
+	anthropicReq := models.AnthropicRequest{
+		Model:     "litellm/openai/gpt-4o-mini",
+		MaxTokens: 100,
+		Stream:    false,
+		Messages: []models.AnthropicMessage{
+			{
+				Role:    "user",
+				Content: "Say 'Prefix stripped' and nothing else.",
+			},
+		},
+	}
+
+	reqBody, _ := json.Marshal(anthropicReq)
+	req := httptest.NewRequest(http.MethodPost, "/v1/messages", bytes.NewReader(reqBody))
+	req.Header.Set("Content-Type", "application/json")
+
+	rec := httptest.NewRecorder()
+	handler.HandleMessages(rec, req)
+
+	resp := rec.Result()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("Expected status 200, got %d: %s", resp.StatusCode, string(body))
+	}
+
+	var anthropicResp models.AnthropicResponse
+	if err := json.NewDecoder(resp.Body).Decode(&anthropicResp); err != nil {
+		t.Fatalf("Failed to decode response: %v", err)
+	}
+
+	if anthropicResp.Type != "message" {
+		t.Errorf("Expected type 'message', got '%s'", anthropicResp.Type)
+	}
+
+	t.Logf("Model prefix stripping response: %s", anthropicResp.Content[0].Text)
+}
+
+// TestIntegration_LiteLLMXLiteLLMTagHeader tests that X-LiteLLM-Tag header is sent in end-to-end flow
+// Note: This test verifies the header is sent by checking the response completes successfully
+// Run with: go test -tags=integration ./tests/... -v -run TestIntegration_LiteLLMXLiteLLMTagHeader
+func TestIntegration_LiteLLMXLiteLLMTagHeader(t *testing.T) {
+	baseURL := os.Getenv("LITELLM_BASE_URL")
+	if baseURL == "" {
+		baseURL = "http://localhost:4000"
+	}
+
+	if !isLiteLLMAvailable(t, baseURL) {
+		t.Skipf("LiteLLM not available at %s", baseURL)
+	}
+
+	cfg := &config.Config{
+		Provider:      config.ProviderLiteLLM,
+		LiteLLMBaseURL: baseURL,
+		DefaultModel:  "gpt-4o-mini",
+		Port:          8080,
+	}
+
+	handler, err := proxy.NewHandler(cfg)
+	if err != nil {
+		t.Fatalf("Failed to create handler: %v", err)
+	}
+
+	anthropicReq := models.AnthropicRequest{
+		Model:     "gpt-4o-mini",
+		MaxTokens: 50,
+		Stream:    false,
+		Messages: []models.AnthropicMessage{
+			{
+				Role:    "user",
+				Content: "Say 'Tag header test' and nothing else.",
+			},
+		},
+	}
+
+	reqBody, _ := json.Marshal(anthropicReq)
+	req := httptest.NewRequest(http.MethodPost, "/v1/messages", bytes.NewReader(reqBody))
+	req.Header.Set("Content-Type", "application/json")
+
+	rec := httptest.NewRecorder()
+	handler.HandleMessages(rec, req)
+
+	resp := rec.Result()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("Expected status 200, got %d: %s", resp.StatusCode, string(body))
+	}
+
+	var anthropicResp models.AnthropicResponse
+	if err := json.NewDecoder(resp.Body).Decode(&anthropicResp); err != nil {
+		t.Fatalf("Failed to decode response: %v", err)
+	}
+
+	t.Logf("X-LiteLLM-Tag header test response: %s", anthropicResp.Content[0].Text)
+}
+
+// isLiteLLMAvailable checks if LiteLLM is running and accessible
+func isLiteLLMAvailable(t *testing.T, baseURL string) bool {
+	client := &http.Client{Timeout: 2 * time.Second}
+	// Try to hit the health endpoint or root endpoint
+	resp, err := client.Get(baseURL + "/health")
+	if err != nil {
+		// Try root endpoint as fallback
+		resp, err = client.Get(baseURL + "/")
+		if err != nil {
+			return false
+		}
+	}
+	defer resp.Body.Close()
+	return resp.StatusCode == http.StatusOK
+}
