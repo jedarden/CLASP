@@ -1,6 +1,12 @@
 # CLASP - Claude Language Agent Super Proxy
 
-A high-performance Go proxy that translates Claude/Anthropic API calls to OpenAI-compatible endpoints, enabling Claude Code to work with any LLM provider.
+Run Claude Code against any LLM provider — OpenAI, Azure, Gemini, Ollama, vLLM, or any OpenAI-compatible endpoint. CLASP is a lightweight Go proxy that sits between Claude Code and your chosen provider, translating the Anthropic Messages API to OpenAI Chat Completions in real time.
+
+```
+Claude Code  →  CLASP (:8080)  →  OpenAI / Azure / OpenRouter / Ollama / custom
+```
+
+No patches to Claude Code. No forks. Just point `ANTHROPIC_BASE_URL` at the proxy and go.
 
 ## Features
 
