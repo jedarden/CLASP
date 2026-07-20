@@ -1,4 +1,22 @@
-# Beads Project Configuration
-# issue_prefix: clasp
-# default_priority: 2
-# default_type: task
+# bead-forge configuration
+# br ignores bf-specific keys (claim_ttl_minutes, rotate_*)
+issue_prefixes:
+- bf
+default_priority: 2
+default_type: task
+scoring:
+  priority_weight: 0.4
+  blockers_weight: 0.3
+  age_weight: 0.2
+  labels_weight: 0.1
+  max_age_hours: 20
+  max_blockers: 3
+claim_ttl_minutes: 30
+rotate:
+  rotate_age_days: 30
+  rotate_max_size_mb: 100
+  rotate_max_archives: 10
+secret_protection:
+  enabled: true
+  custom_patterns: []
+  allowlist: []
