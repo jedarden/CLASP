@@ -191,7 +191,7 @@ jobs:
           cd release && ls -la
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: v${{ needs.version.outputs.new_version }}
           files: release/clasp-*
