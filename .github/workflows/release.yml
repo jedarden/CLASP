@@ -166,7 +166,7 @@ jobs:
         shell: bash
         run: go build -ldflags="-s -w -X main.version=v${{ needs.version.outputs.new_version }}" -o clasp-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }} ./cmd/clasp
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: clasp-${{ matrix.goos }}-${{ matrix.goarch }}
           path: clasp-*
