@@ -1,6 +1,6 @@
 # CLASP Makefile
 
-.PHONY: build run test clean install build-all release-binaries npm-publish docker docker-run docker-push
+.PHONY: build run test clean install build-all release-binaries npm-publish docker docker-run docker-push release
 
 # Build variables
 BINARY_NAME=clasp
@@ -132,6 +132,22 @@ docker-push: docker
 	docker push ghcr.io/jedarden/$(DOCKER_IMAGE):latest
 	@echo "Docker image pushed to ghcr.io/jedarden/$(DOCKER_IMAGE)"
 
+# Full release: npm publish + Docker image + GitHub binaries
+release:
+	@echo "Submitting CLASP release workflow to iad-ci..."
+	kubectl --kubeconfig=/home/coding/.kube/iad-ci.kubeconfig create -f - <<EOF
+	apiVersion: argoproj.io/v1alpha1
+	kind: Workflow
+	metadata:
+	  generateName: clasp-release-
+	  namespace: argo-workflows
+	spec:
+	  workflowTemplateRef:
+	    name: clasp-build
+	EOF
+	@echo "Release workflow submitted!"
+	@echo "Monitor at: https://argo-ci.ardenone.com"
+
 # Build and run with docker-compose
 compose-up:
 	docker-compose up -d --build
@@ -164,5 +180,6 @@ help:
 	@echo "  docker-run       Run Docker container"
 	@echo "  docker-stop      Stop Docker container"
 	@echo "  docker-push      Push Docker image to GHCR"
+	@echo "  release          Full release: npm + Docker + GitHub binaries (via Argo)"
 	@echo "  compose-up       Start with docker-compose"
 	@echo "  compose-down     Stop docker-compose"
