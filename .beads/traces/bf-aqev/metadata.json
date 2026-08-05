@@ -1,0 +1,16 @@
+{
+  "bead_id": "bf-aqev",
+  "agent": "echo-test",
+  "provider": null,
+  "model": null,
+  "exit_code": 0,
+  "outcome": "success",
+  "duration_ms": 0,
+  "input_tokens": null,
+  "output_tokens": null,
+  "cost_usd": null,
+  "captured_at": "2026-07-29T02:30:36.776441026Z",
+  "trace_format": "raw_text",
+  "pruned": false,
+  "template_version": null
+}
