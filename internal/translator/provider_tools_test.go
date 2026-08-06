@@ -999,3 +999,332 @@ func TestTransformToolsForProvider_Custom(t *testing.T) {
 		t.Error("Custom should have strict=false")
 	}
 }
+
+// TestTransformToolsForProvider_MiniMax tests MiniMax provider transformation.
+
+func TestTransformToolsForProvider_MiniMax(t *testing.T) {
+	tools := []models.AnthropicTool{
+		{
+			Name:        "minimax_tool",
+			Description: "Tool for MiniMax",
+			InputSchema: map[string]interface{}{
+				"type":       "object",
+				"properties": map[string]interface{}{
+					"param": map[string]interface{}{
+						"type":        "string",
+						"description": "A parameter",
+					},
+				},
+			},
+		},
+	}
+
+	result := TransformToolsForProvider(tools, ProviderMiniMax, "minimax-01")
+
+	// MiniMax should use standard OpenAI format (same as default case)
+	if result[0].Type != "function" {
+		t.Errorf("MiniMax should use function type, got %q", result[0].Type)
+	}
+
+	if result[0].Function.Name != "minimax_tool" {
+		t.Errorf("Name = %q, want %q", result[0].Function.Name, "minimax_tool")
+	}
+
+	if result[0].Function.Strict != false {
+		t.Error("MiniMax should have strict=false")
+	}
+}
+
+// TestTransformToolsForProvider_ComputerUseTool tests computer use tool transformation.
+
+func TestTransformToolsForProvider_ComputerUseTool(t *testing.T) {
+	tools := []models.AnthropicTool{
+		{
+			Type:        models.ToolTypeComputer,
+			Name:        "computer",
+			Description: "Computer control tool",
+			InputSchema: map[string]interface{}{
+				"type":       "object",
+				"properties": map[string]interface{}{},
+			},
+		},
+	}
+
+	result := TransformToolsForProvider(tools, ProviderOpenAI, "gpt-4o")
+
+	if len(result) != 1 {
+		t.Fatalf("len(result) = %d, want 1", len(result))
+	}
+
+	// Computer use tool should be transformed to generic format
+	if result[0].Function.Name != "computer" {
+		t.Errorf("Computer tool name = %q, want 'computer'", result[0].Function.Name)
+	}
+
+	// Check that the description was replaced
+	expectedDesc := "Control the computer - take screenshots, move mouse, click, type text, and execute keyboard shortcuts"
+	if result[0].Function.Description != expectedDesc {
+		t.Errorf("Description = %q, want %q", result[0].Function.Description, expectedDesc)
+	}
+
+	// Check that parameters were replaced with computer use schema
+	params, ok := result[0].Function.Parameters.(map[string]interface{})
+	if !ok {
+		t.Fatal("Parameters should be a map")
+	}
+
+	props, ok := params["properties"].(map[string]interface{})
+	if !ok {
+		t.Fatal("Parameters should have properties")
+	}
+
+	// Should have action, coordinate, and text properties
+	if _, hasAction := props["action"]; !hasAction {
+		t.Error("Computer tool should have 'action' property")
+	}
+	if _, hasCoord := props["coordinate"]; !hasCoord {
+		t.Error("Computer tool should have 'coordinate' property")
+	}
+	if _, hasText := props["text"]; !hasText {
+		t.Error("Computer tool should have 'text' property")
+	}
+}
+
+// TestTransformToolsForProvider_TextEditorTool tests text editor tool transformation.
+
+func TestTransformToolsForProvider_TextEditorTool(t *testing.T) {
+	tools := []models.AnthropicTool{
+		{
+			Type:        models.ToolTypeTextEditor,
+			Name:        "text_editor",
+			Description: "Original text editor tool",
+			InputSchema: map[string]interface{}{
+				"type":       "object",
+				"properties": map[string]interface{}{},
+			},
+		},
+	}
+
+	result := TransformToolsForProvider(tools, ProviderGemini, "gemini-2.5-pro")
+
+	if len(result) != 1 {
+		t.Fatalf("len(result) = %d, want 1", len(result))
+	}
+
+	// Text editor tool should be transformed to generic format
+	if result[0].Function.Name != "str_replace_editor" {
+		t.Errorf("Text editor tool name = %q, want 'str_replace_editor'", result[0].Function.Name)
+	}
+}
+
+// TestTransformToolsForProvider_BashTool tests bash tool transformation.
+
+func TestTransformToolsForProvider_BashTool(t *testing.T) {
+	tools := []models.AnthropicTool{
+		{
+			Type:        models.ToolTypeBash,
+			Name:        "bash",
+			Description: "Original bash tool",
+			InputSchema: map[string]interface{}{
+				"type":       "object",
+				"properties": map[string]interface{}{},
+			},
+		},
+	}
+
+	result := TransformToolsForProvider(tools, ProviderDeepSeek, "deepseek-chat")
+
+	if len(result) != 1 {
+		t.Fatalf("len(result) = %d, want 1", len(result))
+	}
+
+	// Bash tool should be transformed to generic format
+	if result[0].Function.Name != "bash" {
+		t.Errorf("Bash tool name = %q, want 'bash'", result[0].Function.Name)
+	}
+
+	// Check that parameters include command property
+	params, ok := result[0].Function.Parameters.(map[string]interface{})
+	if !ok {
+		t.Fatal("Parameters should be a map")
+	}
+
+	props, ok := params["properties"].(map[string]interface{})
+	if !ok {
+		t.Fatal("Parameters should have properties")
+	}
+
+	if _, hasCommand := props["command"]; !hasCommand {
+		t.Error("Bash tool should have 'command' property")
+	}
+}
+
+// TestTransformToolsForProvider_ClaudeCodeTool tests Claude Code tool transformation.
+
+func TestTransformToolsForProvider_ClaudeCodeTool(t *testing.T) {
+	tools := []models.AnthropicTool{
+		{
+			Name:        "Read",
+			Description: "Read a file",
+			InputSchema: map[string]interface{}{
+				"type":       "object",
+				"properties": map[string]interface{}{
+					"file_path": map[string]interface{}{
+						"type":        "string",
+						"description": "Path to file",
+					},
+				},
+				"required": []interface{}{"file_path"},
+			},
+		},
+	}
+
+	result := TransformToolsForProvider(tools, ProviderOpenAI, "gpt-4o")
+
+	if len(result) != 1 {
+		t.Fatalf("len(result) = %d, want 1", len(result))
+	}
+
+	// Claude Code Read tool should be transformed
+	if result[0].Function.Name != "Read" {
+		t.Errorf("Read tool name = %q, want 'Read'", result[0].Function.Name)
+	}
+
+	// Check that the description was enhanced/transformed
+	if result[0].Function.Description == "" {
+		t.Error("Read tool should have a description")
+	}
+}
+
+// TestTransformToolsForProvider_BashClaudeCodeTool tests Claude Code Bash tool transformation.
+
+func TestTransformToolsForProvider_BashClaudeCodeTool(t *testing.T) {
+	tools := []models.AnthropicTool{
+		{
+			Name:        "Bash",
+			Description: "Execute bash command",
+			InputSchema: map[string]interface{}{
+				"type":       "object",
+				"properties": map[string]interface{}{
+					"command": map[string]interface{}{
+						"type":        "string",
+						"description": "Command to execute",
+					},
+				},
+				"required": []interface{}{"command"},
+			},
+		},
+	}
+
+	result := TransformToolsForProvider(tools, ProviderQwen, "qwen-2.5")
+
+	if len(result) != 1 {
+		t.Fatalf("len(result) = %d, want 1", len(result))
+	}
+
+	// Claude Code Bash tool should be transformed (not confused with bash tool type)
+	if result[0].Function.Name != "Bash" {
+		t.Errorf("Bash tool name = %q, want 'Bash'", result[0].Function.Name)
+	}
+}
+
+// TestTransformToolsForProvider_ComputerUseWithProvider tests computer use tools with various providers.
+
+func TestTransformToolsForProvider_ComputerUseWithProvider(t *testing.T) {
+	tools := []models.AnthropicTool{
+		{
+			Type:        models.ToolTypeComputer,
+			Name:        "computer",
+			Description: "Computer tool",
+			InputSchema: nil,
+		},
+	}
+
+	providers := []struct {
+		name     string
+		provider ProviderType
+		model    string
+	}{
+		{"OpenAI", ProviderOpenAI, "gpt-4o"},
+		{"Gemini", ProviderGemini, "gemini-2.5-pro"},
+		{"DeepSeek", ProviderDeepSeek, "deepseek-chat"},
+		{"Qwen", ProviderQwen, "qwen-2.5"},
+		{"Grok", ProviderGrok, "grok-3"},
+		{"Ollama", ProviderOllama, "llama3"},
+	}
+
+	for _, tt := range providers {
+		t.Run(tt.name, func(t *testing.T) {
+			result := TransformToolsForProvider(tools, tt.provider, tt.model)
+
+			if len(result) != 1 {
+				t.Fatalf("len(result) = %d, want 1", len(result))
+			}
+
+			// All providers should get the transformed computer tool
+			if result[0].Function.Name != "computer" {
+				t.Errorf("%s: computer tool name = %q, want 'computer'", tt.name, result[0].Function.Name)
+			}
+
+			// All providers should have the generic computer tool description
+			expectedDesc := "Control the computer - take screenshots, move mouse, click, type text, and execute keyboard shortcuts"
+			if result[0].Function.Description != expectedDesc {
+				t.Errorf("%s: description mismatch, got %q", tt.name, result[0].Function.Description)
+			}
+		})
+	}
+}
+
+// TestCleanupSchemaForGemini_ErrorHandling tests error handling in Gemini schema cleanup.
+
+func TestCleanupSchemaForGemini_ErrorHandling(t *testing.T) {
+	// Test with nil schema
+	result := cleanupSchemaForGemini(nil)
+	if result != nil {
+		t.Error("nil schema should return nil")
+	}
+
+	// Test with unmarshalable schema (channel cannot be marshaled to JSON)
+	badSchema := make(chan int)
+	result = cleanupSchemaForGemini(badSchema)
+	// Should return the original schema on error
+	if result == nil {
+		t.Error("unmarshalable schema should return original value")
+	}
+}
+
+// TestCleanupSchemaForDeepSeek_ErrorHandling tests error handling in DeepSeek schema cleanup.
+
+func TestCleanupSchemaForDeepSeek_ErrorHandling(t *testing.T) {
+	// Test with nil schema
+	result := cleanupSchemaForDeepSeek(nil, "deepseek-chat")
+	if result != nil {
+		t.Error("nil schema should return nil")
+	}
+
+	// Test with unmarshalable schema
+	badSchema := make(chan int)
+	result = cleanupSchemaForDeepSeek(badSchema, "deepseek-chat")
+	// Should return the original schema on error
+	if result == nil {
+		t.Error("unmarshalable schema should return original value")
+	}
+}
+
+// TestCleanupSchemaForOllama_ErrorHandling tests error handling in Ollama schema cleanup.
+
+func TestCleanupSchemaForOllama_ErrorHandling(t *testing.T) {
+	// Test with nil schema
+	result := cleanupSchemaForOllama(nil)
+	if result != nil {
+		t.Error("nil schema should return nil")
+	}
+
+	// Test with unmarshalable schema
+	badSchema := make(chan int)
+	result = cleanupSchemaForOllama(badSchema)
+	// Should return the original schema on error
+	if result == nil {
+		t.Error("unmarshalable schema should return original value")
+	}
+}
