@@ -461,6 +461,7 @@ func (s *Server) executeTranslateResponse(args json.RawMessage) (*CallToolResult
 	var params struct {
 		Response json.RawMessage `json:"response"`
 		IsStream bool            `json:"is_stream"`
+		Model    string          `json:"model"`
 	}
 	if err := json.Unmarshal(args, &params); err != nil {
 		return nil, err
@@ -487,12 +488,21 @@ func (s *Server) executeTranslateResponse(args json.RawMessage) (*CallToolResult
 		}, nil
 	}
 
-	// For non-streaming responses, provide a summary
-	// Note: Full response translation is done by the proxy handler
+	// Default model if not specified
+	targetModel := params.Model
+	if targetModel == "" {
+		targetModel = getEnvOrDefault("CLASP_MODEL", "gpt-4o")
+	}
+
+	// Translate non-streaming response
+	anthropicResp, err := translator.TransformResponse(params.Response, targetModel)
+	if err != nil {
+		return nil, fmt.Errorf("translating OpenAI response to Anthropic format: %w", err)
+	}
+
 	result := map[string]interface{}{
-		"note":        "Response translation is handled by the main proxy handler - this tool is for debugging only",
-		"openai_response": string(params.Response),
-		"guidance":    "Use the proxy endpoint to translate full responses",
+		"format":     "anthropic_message",
+		"translated": anthropicResp,
 	}
 
 	text, _ := json.MarshalIndent(result, "", "  ")
