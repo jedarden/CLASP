@@ -381,11 +381,11 @@ func TestCallToolTranslate(t *testing.T) {
 
 	// Create a sample Anthropic request
 	anthropicReq := map[string]interface{}{
-		"model": "claude-3-5-sonnet-20241022",
+		"model":      "claude-3-5-sonnet-20241022",
 		"max_tokens": 1024,
 		"messages": []map[string]interface{}{
 			{
-				"role": "user",
+				"role":    "user",
 				"content": "Hello, world!",
 			},
 		},
@@ -393,7 +393,7 @@ func TestCallToolTranslate(t *testing.T) {
 	anthropicReqJSON, _ := json.Marshal(anthropicReq)
 
 	params := CallToolParams{
-		Name: "clasp_translate",
+		Name:      "clasp_translate",
 		Arguments: json.RawMessage(`{"request":` + string(anthropicReqJSON) + `,"model":"gpt-4o"}`),
 	}
 	paramsJSON, _ := json.Marshal(params)
@@ -418,6 +418,9 @@ func TestCallToolTranslate(t *testing.T) {
 	if !ok {
 		t.Fatal("Expected CallToolResult")
 	}
+	if result.IsError {
+		t.Fatal("Translation should not be an error")
+	}
 	if len(result.Content) == 0 {
 		t.Fatal("Expected content in result")
 	}
@@ -435,6 +438,33 @@ func TestCallToolTranslate(t *testing.T) {
 	if translated["translated"] == nil {
 		t.Error("Expected translated request in result")
 	}
+
+	translatedRequest, ok := translated["translated"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("Expected translated request to be a map, got: %T", translated["translated"])
+	}
+
+	if model, ok := translatedRequest["model"].(string); !ok || model != "gpt-4o" {
+		t.Errorf("Expected translated.model to be 'gpt-4o', got: %v", translatedRequest["model"])
+	}
+	if maxTokens, ok := translatedRequest["max_tokens"].(float64); !ok || maxTokens != 1024 {
+		t.Errorf("Expected translated.max_tokens to be 1024, got: %v", translatedRequest["max_tokens"])
+	}
+
+	messages, ok := translatedRequest["messages"].([]interface{})
+	if !ok || len(messages) != 1 {
+		t.Fatalf("Expected one translated message, got: %v", translatedRequest["messages"])
+	}
+	message, ok := messages[0].(map[string]interface{})
+	if !ok {
+		t.Fatalf("Expected translated message to be a map, got: %T", messages[0])
+	}
+	if role, ok := message["role"].(string); !ok || role != "user" {
+		t.Errorf("Expected translated message role 'user', got: %v", message["role"])
+	}
+	if content, ok := message["content"].(string); !ok || content != "Hello, world!" {
+		t.Errorf("Expected translated message content 'Hello, world!', got: %v", message["content"])
+	}
 }
 
 func TestCallToolTranslateWithResponsesAPI(t *testing.T) {
@@ -445,11 +475,11 @@ func TestCallToolTranslateWithResponsesAPI(t *testing.T) {
 
 	// Create a sample Anthropic request with tools
 	anthropicReq := map[string]interface{}{
-		"model": "claude-3-5-sonnet-20241022",
+		"model":      "claude-3-5-sonnet-20241022",
 		"max_tokens": 1024,
 		"messages": []map[string]interface{}{
 			{
-				"role": "user",
+				"role":    "user",
 				"content": "What's the weather?",
 			},
 		},
@@ -473,7 +503,7 @@ func TestCallToolTranslateWithResponsesAPI(t *testing.T) {
 	anthropicReqJSON, _ := json.Marshal(anthropicReq)
 
 	params := CallToolParams{
-		Name: "clasp_translate",
+		Name:      "clasp_translate",
 		Arguments: json.RawMessage(`{"request":` + string(anthropicReqJSON) + `,"model":"gpt-4o","use_responses_api":true}`),
 	}
 	paramsJSON, _ := json.Marshal(params)
@@ -498,6 +528,12 @@ func TestCallToolTranslateWithResponsesAPI(t *testing.T) {
 	if !ok {
 		t.Fatal("Expected CallToolResult")
 	}
+	if result.IsError {
+		t.Fatal("Translation should not be an error")
+	}
+	if len(result.Content) == 0 {
+		t.Fatal("Expected content in result")
+	}
 
 	// Parse the result to verify translation occurred
 	var translated map[string]interface{}
@@ -507,6 +543,50 @@ func TestCallToolTranslateWithResponsesAPI(t *testing.T) {
 
 	if format, ok := translated["format"].(string); !ok || format != "responses_api" {
 		t.Errorf("Expected format 'responses_api', got %v", translated["format"])
+	}
+
+	translatedRequest, ok := translated["translated"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("Expected translated request to be a map, got: %T", translated["translated"])
+	}
+	if model, ok := translatedRequest["model"].(string); !ok || model != "gpt-4o" {
+		t.Errorf("Expected translated.model to be 'gpt-4o', got: %v", translatedRequest["model"])
+	}
+	if maxOutputTokens, ok := translatedRequest["max_output_tokens"].(float64); !ok || maxOutputTokens != 1024 {
+		t.Errorf("Expected translated.max_output_tokens to be 1024, got: %v", translatedRequest["max_output_tokens"])
+	}
+
+	input, ok := translatedRequest["input"].([]interface{})
+	if !ok || len(input) != 1 {
+		t.Fatalf("Expected one translated input item, got: %v", translatedRequest["input"])
+	}
+	inputMessage, ok := input[0].(map[string]interface{})
+	if !ok {
+		t.Fatalf("Expected translated input item to be a map, got: %T", input[0])
+	}
+	if inputType, ok := inputMessage["type"].(string); !ok || inputType != "message" {
+		t.Errorf("Expected translated input type 'message', got: %v", inputMessage["type"])
+	}
+	if role, ok := inputMessage["role"].(string); !ok || role != "user" {
+		t.Errorf("Expected translated input role 'user', got: %v", inputMessage["role"])
+	}
+	if content, ok := inputMessage["content"].(string); !ok || content != "What's the weather?" {
+		t.Errorf("Expected translated input content 'What's the weather?', got: %v", inputMessage["content"])
+	}
+
+	tools, ok := translatedRequest["tools"].([]interface{})
+	if !ok || len(tools) != 1 {
+		t.Fatalf("Expected one translated tool, got: %v", translatedRequest["tools"])
+	}
+	tool, ok := tools[0].(map[string]interface{})
+	if !ok {
+		t.Fatalf("Expected translated tool to be a map, got: %T", tools[0])
+	}
+	if toolType, ok := tool["type"].(string); !ok || toolType != "function" {
+		t.Errorf("Expected translated tool type 'function', got: %v", tool["type"])
+	}
+	if toolName, ok := tool["name"].(string); !ok || toolName != "get_weather" {
+		t.Errorf("Expected translated tool name 'get_weather', got: %v", tool["name"])
 	}
 }
 
@@ -561,18 +641,64 @@ func TestCallToolTranslateResponse(t *testing.T) {
 	if !ok {
 		t.Fatal("Expected CallToolResult")
 	}
+	if result.IsError {
+		t.Fatal("Translation should not be an error")
+	}
 	if len(result.Content) == 0 {
 		t.Fatal("Expected content in result")
 	}
 
-	// Verify the response contains guidance
+	// Verify the response contains translated Anthropic format
 	var responseInfo map[string]interface{}
 	if err := json.Unmarshal([]byte(result.Content[0].Text), &responseInfo); err != nil {
 		t.Fatalf("Failed to parse response info: %v", err)
 	}
 
-	if _, ok := responseInfo["note"]; !ok {
-		t.Error("Expected note in response info")
+	// Check for format field
+	if format, ok := responseInfo["format"].(string); !ok || format != "anthropic_message" {
+		t.Errorf("Expected format 'anthropic_message', got: %v", responseInfo["format"])
+	}
+
+	// Check for translated field
+	translated, ok := responseInfo["translated"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("Expected translated field to be a map, got: %T", responseInfo["translated"])
+	}
+
+	// Verify basic Anthropic response structure
+	if id, ok := translated["id"].(string); !ok || id != "chatcmpl-123" {
+		t.Errorf("Expected translated.id to be 'chatcmpl-123', got: %v", id)
+	}
+
+	if respType, ok := translated["type"].(string); !ok || respType != "message" {
+		t.Errorf("Expected translated.type to be 'message', got: %v", respType)
+	}
+
+	if role, ok := translated["role"].(string); !ok || role != "assistant" {
+		t.Errorf("Expected translated.role to be 'assistant', got: %v", role)
+	}
+
+	if model, ok := translated["model"].(string); !ok || model != "gpt-4o" {
+		t.Errorf("Expected translated.model to be 'gpt-4o', got: %v", model)
+	}
+
+	// Verify content block with text
+	content, ok := translated["content"].([]interface{})
+	if !ok || len(content) == 0 {
+		t.Fatal("Expected translated.content to be a non-empty array")
+	}
+
+	firstBlock, ok := content[0].(map[string]interface{})
+	if !ok {
+		t.Fatalf("Expected content block to be a map, got: %T", content[0])
+	}
+
+	if blockType, ok := firstBlock["type"].(string); !ok || blockType != "text" {
+		t.Errorf("Expected content block type 'text', got: %v", blockType)
+	}
+
+	if text, ok := firstBlock["text"].(string); !ok || text != "Hello! How can I help you today?" {
+		t.Errorf("Expected content block text 'Hello! How can I help you today?', got: %v", text)
 	}
 }
 
