@@ -623,3 +623,9 @@ MIT License - see [LICENSE](LICENSE) for details.
 ## Contributing
 
 Contributions are welcome! Please open an issue or submit a pull request on [GitHub](https://github.com/jedarden/CLASP).
+
+---
+
+Part of [jedarden.com](https://jedarden.com) · Read the write-up: [jedarden.com/projects/clasp/](https://jedarden.com/projects/clasp/)
+
+*This GitHub repo is a read-only mirror of git.ardenone.com/jedarden/CLASP — issues and PRs are welcome here either way.*
