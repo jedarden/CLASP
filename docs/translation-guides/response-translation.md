@@ -373,3 +373,156 @@ If streaming is interrupted, CLASP ensures proper event sequence termination wit
 ### Unicode and Escaping
 
 CLASP preserves Unicode characters and proper JSON escaping through translation.
+
+## Reasoning Content Translation
+
+Some OpenAI-compatible providers return reasoning/thinking content alongside regular text. CLASP translates these to Anthropic thinking blocks.
+
+### Supported Providers
+
+| Provider | Field Name | Notes |
+|----------|-----------|-------|
+| Kimi K2.5 | `reasoning_content` | Moonshot AI's reasoning model |
+| DeepSeek-R1 | `reasoning_content` | DeepSeek's reasoning model |
+| Azure OpenAI (O1/O3) | `reasoning` | Streamed as delta field |
+
+### Non-Streaming Translation
+
+**OpenAI Response (Kimi K2.5):**
+```json
+{
+  "id": "chatcmpl-123",
+  "choices": [
+    {
+      "message": {
+        "role": "assistant",
+        "content": "Based on my reasoning, the answer is 42.",
+        "reasoning_content": "Let me think about this step by step. First, I need to understand the problem..."
+      },
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 15,
+    "completion_tokens": 100
+  }
+}
+```
+
+**Anthropic Response:**
+```json
+{
+  "id": "msg_chatcmpl-123",
+  "type": "message",
+  "role": "assistant",
+  "content": [
+    {
+      "type": "thinking",
+      "thinking": "Let me think about this step by step. First, I need to understand the problem..."
+    },
+    {
+      "type": "text",
+      "text": "Based on my reasoning, the answer is 42."
+    }
+  ],
+  "model": "claude-sonnet-4-20250514",
+  "stop_reason": "end_turn",
+  "usage": {
+    "input_tokens": 15,
+    "output_tokens": 100
+  }
+}
+```
+
+### Streaming Translation
+
+**OpenAI Stream (Kimi K2.5):**
+```
+data: {"choices":[{"delta":{"reasoning_content":"Let me analyze this..."}}]}
+data: {"choices":[{"delta":{"reasoning_content":"Step by step..."}}]}
+data: {"choices":[{"delta":{"content":"Final answer:"}}]}
+data: {"choices":[{"delta":{},"finish_reason":"stop"}]}
+data: [DONE]
+```
+
+**CLASP Anthropic Stream:**
+```
+event: message_start
+data: {"type":"message_start",...}
+
+event: content_block_start
+data: {"type":"content_block_start","index":0,"content_block":{"type":"thinking"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"Let me analyze this..."}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"Step by step..."}}
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":0}
+
+event: content_block_start
+data: {"type":"content_block_start","index":1,"content_block":{"type":"text"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"Final answer:"}}
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":1}
+
+event: message_delta
+data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},...}
+
+event: message_stop
+data: {"type":"message_stop"}
+```
+
+### Content Block Ordering
+
+Thinking blocks always precede text blocks in the content array:
+
+1. Thinking block (index 0, if reasoning_content present)
+2. Text block (index 0 or 1, depending on thinking presence)
+3. Tool use blocks (following text, if any)
+
+### Empty Reasoning Content
+
+If `reasoning_content` is an empty string (`""`), CLASP does not create a thinking block. This ensures compatibility with providers that may include the field with no content.
+
+### Reasoning with Tool Calls
+
+When reasoning_content accompanies tool calls:
+
+**OpenAI Response:**
+```json
+{
+  "message": {
+    "content": null,
+    "reasoning_content": "I need to use a tool to get the weather.",
+    "tool_calls": [...]
+  }
+}
+```
+
+**Anthropic Response:**
+```json
+{
+  "content": [
+    {"type": "thinking", "thinking": "I need to use a tool to get the weather."},
+    {"type": "tool_use", ...}
+  ]
+}
+```
+
+### Stop Reasons
+
+The presence of `reasoning_content` does not affect stop reason mapping. Standard OpenAI finish reasons are mapped to Anthropic stop reasons normally:
+
+- `stop` → `end_turn`
+- `length` → `max_tokens`
+- `tool_calls` → `tool_use`
+
+### Client Behavior
+
+When the Anthropic client request includes thinking configuration (`{"thinking": {"type": "enabled"}}`), thinking blocks are rendered by Claude Code. Otherwise, they are silently dropped without affecting the rest of the response.

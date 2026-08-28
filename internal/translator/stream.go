@@ -203,10 +203,16 @@ func (sp *StreamProcessor) processChunk(chunk *models.OpenAIStreamChunk) error {
 func (sp *StreamProcessor) processChoice(choice *models.StreamChoice) error {
 	delta := &choice.Delta
 
-	// Handle reasoning/thinking content first (for O1/O3 models)
+	// Handle reasoning/thinking content first (for O1/O3, Kimi K2.5, DeepSeek-R1 models)
 	// Thinking comes before regular text output
+	// Check both field names used by different providers
 	if delta.Reasoning != "" {
 		if err := sp.handleThinkingContent(delta.Reasoning); err != nil {
+			return err
+		}
+	}
+	if delta.ReasoningContent != "" {
+		if err := sp.handleThinkingContent(delta.ReasoningContent); err != nil {
 			return err
 		}
 	}

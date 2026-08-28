@@ -186,7 +186,8 @@ type StreamDelta struct {
 	Content   string           `json:"content,omitempty"`
 	ToolCalls []OpenAIToolCall `json:"tool_calls,omitempty"`
 	// Reasoning fields for O1/O3 models (returned by some providers)
-	Reasoning string `json:"reasoning,omitempty"` // Azure OpenAI
+	Reasoning        string `json:"reasoning,omitempty"`        // Azure OpenAI (o1/o3 models)
+	ReasoningContent string `json:"reasoning_content,omitempty"` // Kimi K2.5, DeepSeek-R1
 }
 
 // ReasoningContent represents reasoning/thinking content in streaming.
@@ -216,11 +217,12 @@ type AnthropicResponse struct {
 
 // AnthropicContentBlock represents a content block in Anthropic response.
 type AnthropicContentBlock struct {
-	Type  string      `json:"type"`
-	Text  string      `json:"text,omitempty"`
-	ID    string      `json:"id,omitempty"`
-	Name  string      `json:"name,omitempty"`
-	Input interface{} `json:"input,omitempty"`
+	Type     string      `json:"type"`
+	Text     string      `json:"text,omitempty"`
+	Thinking string      `json:"thinking,omitempty"` // For thinking content blocks (Kimi, DeepSeek-R1)
+	ID       string      `json:"id,omitempty"`
+	Name     string      `json:"name,omitempty"`
+	Input    interface{} `json:"input,omitempty"`
 }
 
 // AnthropicUsage represents usage in Anthropic format.
