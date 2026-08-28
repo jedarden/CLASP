@@ -898,3 +898,321 @@ data: [DONE]
 		t.Error("Output missing message_stop")
 	}
 }
+
+func TestStreamProcessor_ReasoningContent_KimiK25(t *testing.T) {
+	var buf bytes.Buffer
+	sp := NewStreamProcessor(&buf, "msg_kimi", "kimi-k2.5")
+
+	// Simulate Kimi K2.5 streaming with reasoning_content field
+	input := `data: {"choices":[{"delta":{"reasoning_content":"Let me analyze this problem step by step."}}]}
+
+data: {"choices":[{"delta":{"reasoning_content":"First, I'll break it down."}}]}
+
+data: {"choices":[{"delta":{"content":"Based on my analysis, the answer is 42."}}]}
+
+data: {"choices":[{"delta":{},"finish_reason":"stop"}]}
+
+data: [DONE]
+`
+	err := sp.ProcessStream(strings.NewReader(input))
+	if err != nil {
+		t.Fatalf("ProcessStream failed: %v", err)
+	}
+
+	output := buf.String()
+
+	// Should have thinking block (from reasoning_content) and text block
+	if !strings.Contains(output, "\"type\":\"thinking\"") {
+		t.Error("Output missing thinking block from reasoning_content")
+	}
+	if !strings.Contains(output, "\"thinking\":\"Let me analyze this problem step by step.") {
+		t.Error("Output missing initial thinking content")
+	}
+	if !strings.Contains(output, "\"thinking\":\"First, I'll break it down.") {
+		t.Error("Output missing second thinking delta")
+	}
+	if !strings.Contains(output, "\"type\":\"text\"") {
+		t.Error("Output missing text block")
+	}
+	if !strings.Contains(output, "\"text\":\"Based on my analysis, the answer is 42.") {
+		t.Error("Output missing text content")
+	}
+	if !strings.Contains(output, "\"stop_reason\":\"end_turn\"") {
+		t.Error("Output missing stop reason")
+	}
+
+	// Verify block ordering: thinking (index 0) before text (index 1)
+	thinkingStartIndex := strings.Index(output, `"type":"thinking"`)
+	textStartIndex := strings.Index(output, `"type":"text"`)
+	if thinkingStartIndex < 0 || textStartIndex < 0 {
+		t.Fatal("Could not find block start markers")
+	}
+	if thinkingStartIndex > textStartIndex {
+		t.Error("Thinking block should come before text block")
+	}
+}
+
+func TestStreamProcessor_ReasoningContent_DeepSeekR1(t *testing.T) {
+	var buf bytes.Buffer
+	sp := NewStreamProcessor(&buf, "msg_deepseek", "deepseek-r1")
+
+	// Simulate DeepSeek-R1 streaming with reasoning_content
+	input := `data: {"choices":[{"delta":{"reasoning_content":"This requires careful reasoning."}}]}
+
+data: {"choices":[{"delta":{"reasoning_content":"Let me think through the logic."}}]}
+
+data: {"choices":[{"delta":{"content":"Therefore, the solution is optimal."}}]}
+
+data: {"choices":[{"delta":{},"finish_reason":"stop"}]}
+
+data: [DONE]
+`
+	err := sp.ProcessStream(strings.NewReader(input))
+	if err != nil {
+		t.Fatalf("ProcessStream failed: %v", err)
+	}
+
+	output := buf.String()
+
+	// Verify thinking content is emitted
+	if !strings.Contains(output, "\"type\":\"thinking\"") {
+		t.Error("Output missing thinking block")
+	}
+	if !strings.Contains(output, "\"thinking\":\"This requires careful reasoning.") {
+		t.Error("Output missing first thinking delta")
+	}
+	if !strings.Contains(output, "\"thinking\":\"Let me think through the logic.") {
+		t.Error("Output missing second thinking delta")
+	}
+	if !strings.Contains(output, "\"type\":\"text\"") {
+		t.Error("Output missing text block")
+	}
+
+	// Verify content_block_stop for thinking block
+	if !strings.Contains(output, "event: content_block_stop") {
+		t.Error("Output missing content_block_stop")
+	}
+}
+
+func TestStreamProcessor_ReasoningContent_WithToolCalls(t *testing.T) {
+	var buf bytes.Buffer
+	sp := NewStreamProcessor(&buf, "msg_tools", "kimi-k2.5")
+
+	// Simulate reasoning_content followed by tool call
+	input := `data: {"choices":[{"delta":{"reasoning_content":"I need to use a tool for this."}}]}
+
+data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_xyz","function":{"name":"search","arguments":""}}]}}]}
+
+data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\"query\":\"test\"}"}}]}}]}
+
+data: {"choices":[{"delta":{},"finish_reason":"tool_calls"}]}
+
+data: [DONE]
+`
+	err := sp.ProcessStream(strings.NewReader(input))
+	if err != nil {
+		t.Fatalf("ProcessStream failed: %v", err)
+	}
+
+	output := buf.String()
+
+	// Should have thinking block and tool_use block
+	if !strings.Contains(output, "\"type\":\"thinking\"") {
+		t.Error("Output missing thinking block")
+	}
+	if !strings.Contains(output, "\"thinking\":\"I need to use a tool for this.") {
+		t.Error("Output missing thinking content")
+	}
+	if !strings.Contains(output, "\"type\":\"tool_use\"") {
+		t.Error("Output missing tool_use block")
+	}
+	if !strings.Contains(output, "\"name\":\"search\"") {
+		t.Error("Output missing tool name")
+	}
+	if !strings.Contains(output, "\"stop_reason\":\"tool_use\"") {
+		t.Error("Output missing tool_use stop reason")
+	}
+}
+
+func TestStreamProcessor_ReasoningContent_OnlyNoText(t *testing.T) {
+	var buf bytes.Buffer
+	sp := NewStreamProcessor(&buf, "msg_only_thinking", "deepseek-r1")
+
+	// Simulate only reasoning_content with no text content
+	input := `data: {"choices":[{"delta":{"reasoning_content":"Thinking deeply about this..."}}]}
+
+data: {"choices":[{"delta":{"reasoning_content":"More analysis..."}}]}
+
+data: {"choices":[{"delta":{},"finish_reason":"length"}]}
+
+data: [DONE]
+`
+	err := sp.ProcessStream(strings.NewReader(input))
+	if err != nil {
+		t.Fatalf("ProcessStream failed: %v", err)
+	}
+
+	output := buf.String()
+
+	// Should have thinking block but no text block
+	if !strings.Contains(output, "\"type\":\"thinking\"") {
+		t.Error("Output missing thinking block")
+	}
+	if !strings.Contains(output, "\"thinking\":\"Thinking deeply about this...") {
+		t.Error("Output missing first thinking delta")
+	}
+	if !strings.Contains(output, "\"thinking\":\"More analysis...") {
+		t.Error("Output missing second thinking delta")
+	}
+
+	// Should not have text block
+	if strings.Contains(output, "\"type\":\"text\"") {
+		t.Error("Output should not have text block when only reasoning_content is present")
+	}
+
+	// Verify stop reason
+	if !strings.Contains(output, "\"stop_reason\":\"max_tokens\"") {
+		t.Error("Output missing max_tokens stop reason")
+	}
+}
+
+func TestStreamProcessor_BothReasoningFields(t *testing.T) {
+	var buf bytes.Buffer
+	sp := NewStreamProcessor(&buf, "msg_both", "test-model")
+
+	// Test both reasoning and reasoning_content in same stream (edge case)
+	// The processor should handle both
+	input := `data: {"choices":[{"delta":{"reasoning":"Azure style reasoning"}}]}
+
+data: {"choices":[{"delta":{"reasoning_content":"Kimi style reasoning"}}]}
+
+data: {"choices":[{"delta":{"content":"Final answer"}}]}
+
+data: {"choices":[{"delta":{},"finish_reason":"stop"}]}
+
+data: [DONE]
+`
+	err := sp.ProcessStream(strings.NewReader(input))
+	if err != nil {
+		t.Fatalf("ProcessStream failed: %v", err)
+	}
+
+	output := buf.String()
+
+	// Should emit thinking blocks for both fields
+	if !strings.Contains(output, "\"type\":\"thinking\"") {
+		t.Error("Output missing thinking blocks")
+	}
+
+	thinkingCount := strings.Count(output, "\"thinking\":")
+	if thinkingCount < 2 {
+		t.Errorf("Expected at least 2 thinking deltas, got %d", thinkingCount)
+	}
+
+	if !strings.Contains(output, "\"type\":\"text\"") {
+		t.Error("Output missing text block")
+	}
+}
+
+func TestStreamProcessor_ReasoningContent_EmptyString(t *testing.T) {
+	var buf bytes.Buffer
+	sp := NewStreamProcessor(&buf, "msg_empty", "kimi-k2.5")
+
+	// Empty reasoning_content should not start a thinking block
+	input := `data: {"choices":[{"delta":{"reasoning_content":""}}]}
+
+data: {"choices":[{"delta":{"content":"Normal text"}}]}
+
+data: {"choices":[{"delta":{},"finish_reason":"stop"}]}
+
+data: [DONE]
+`
+	err := sp.ProcessStream(strings.NewReader(input))
+	if err != nil {
+		t.Fatalf("ProcessStream failed: %v", err)
+	}
+
+	output := buf.String()
+
+	// Should not have thinking block for empty string
+	if strings.Contains(output, "\"type\":\"thinking\"") {
+		t.Error("Output should not have thinking block for empty reasoning_content")
+	}
+
+	// Should have text block
+	if !strings.Contains(output, "\"type\":\"text\"") {
+		t.Error("Output missing text block")
+	}
+}
+
+func TestStreamProcessor_ReasoningContent_AfterText(t *testing.T) {
+	var buf bytes.Buffer
+	sp := NewStreamProcessor(&buf, "msg_reverse", "test-model")
+
+	// Test reasoning_content appearing after text (unusual but should be handled)
+	input := `data: {"choices":[{"delta":{"content":"Text first"}}]}
+
+data: {"choices":[{"delta":{"reasoning_content":"Reasoning after text"}}]}
+
+data: {"choices":[{"delta":{},"finish_reason":"stop"}]}
+
+data: [DONE]
+`
+	err := sp.ProcessStream(strings.NewReader(input))
+	if err != nil {
+		t.Fatalf("ProcessStream failed: %v", err)
+	}
+
+	output := buf.String()
+
+	// Should have both blocks
+	if !strings.Contains(output, "\"type\":\"text\"") {
+		t.Error("Output missing text block")
+	}
+	if !strings.Contains(output, "\"type\":\"thinking\"") {
+		t.Error("Output missing thinking block")
+	}
+	// Both blocks should be emitted regardless of order
+}
+
+func TestStreamProcessor_ReasoningContent_MultipleChunks(t *testing.T) {
+	var buf bytes.Buffer
+	sp := NewStreamProcessor(&buf, "msg_chunks", "deepseek-r1")
+
+	// Test multiple reasoning_content chunks accumulating
+	input := `data: {"choices":[{"delta":{"reasoning_content":"Chunk 1"}}]}
+
+data: {"choices":[{"delta":{"reasoning_content":"Chunk 2"}}]}
+
+data: {"choices":[{"delta":{"reasoning_content":"Chunk 3"}}]}
+
+data: {"choices":[{"delta":{"content":"Answer"}}]}
+
+data: {"choices":[{"delta":{},"finish_reason":"stop"}]}
+
+data: [DONE]
+`
+	err := sp.ProcessStream(strings.NewReader(input))
+	if err != nil {
+		t.Fatalf("ProcessStream failed: %v", err)
+	}
+
+	output := buf.String()
+
+	// Should have all thinking deltas
+	if !strings.Contains(output, "\"thinking\":\"Chunk 1\"") {
+		t.Error("Output missing first chunk")
+	}
+	if !strings.Contains(output, "\"thinking\":\"Chunk 2\"") {
+		t.Error("Output missing second chunk")
+	}
+	if !strings.Contains(output, "\"thinking\":\"Chunk 3\"") {
+		t.Error("Output missing third chunk")
+	}
+
+	// Verify only one content_block_start for thinking
+	startCount := strings.Count(output, `"type":"thinking"`)
+	if startCount != 1 {
+		t.Errorf("Expected 1 thinking block start, got %d", startCount)
+	}
+}
