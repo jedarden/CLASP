@@ -107,6 +107,16 @@ export CUSTOM_BASE_URL=http://localhost:11434/v1
 clasp -provider custom -model llama3.1
 ```
 
+## CI
+
+Builds and releases run on **Argo Workflows** in the `iad-ci` cluster (GitHub Actions are disabled organization-wide).
+
+- **Workflow template**: `clasp-workflowtemplate.yml` in [`jedarden/declarative-config`](https://git.ardenone.com/jedarden/declarative-config)
+- **ArgoCD UI**: https://argo-ci.ardenone.com (VPN only)
+- **Results**: Docker images pushed to `ghcr.io/jedarden/clasp:<version>`, binaries published to [GitHub Releases](https://github.com/jedarden/CLASP/releases)
+
+The workflow builds multi-architecture Docker images, runs tests, and publishes releases automatically on push to `main`.
+
 ## Configuration
 
 CLASP supports three configuration methods, with the following precedence (highest to lowest):
