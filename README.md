@@ -46,27 +46,25 @@ cd CLASP
 make build
 ```
 
+![Release](https://img.shields.io/github/v/release/jedarden/CLASP)
+
 ### Via Docker
 
 ```bash
 # Run with Docker (from GitHub Container Registry)
 docker run -d -p 8080:8080 \
   -e OPENAI_API_KEY=sk-... \
-  ghcr.io/jedarden/clasp:latest
-
-# With specific version
-docker run -d -p 8080:8080 \
-  -e OPENAI_API_KEY=sk-... \
-  ghcr.io/jedarden/clasp:0.24.8
+  ghcr.io/jedarden/clasp:0.63.0
 
 # Or with docker-compose
 docker-compose up -d
 ```
 
 **Available Docker tags:**
-- `latest` - Latest stable release
-- `0.24` - Latest 0.24.x release
-- `0.24.8` - Specific version
+- `0.63.0` - Latest stable release (pinned to specific version)
+- See [GitHub Releases](https://github.com/jedarden/CLASP/releases) for all available versions
+
+**Note:** The GitHub release tag (currently `v0.63.0`) is the canonical version reference. The `package.json` version (`0.50.23`) tracks the npm package and may differ. Container tags omit the `v` prefix.
 
 ## Quick Start
 
