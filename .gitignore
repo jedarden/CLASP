@@ -9,3 +9,6 @@ coverage.html
 /clasp
 bin/clasp
 test-results/
+
+# NEEDLE execution traces are local diagnostics.
+**/.beads/traces/
