@@ -1,0 +1,79 @@
+{
+  "timestamp": "2026-09-09T23:07:33.881333877Z",
+  "total_open_beads": 10,
+  "exclusion_criteria": {
+    "has_assignee": 0,
+    "manually_blocked": 0,
+    "has_dependencies": 6,
+    "resource_conflicts": 0
+  },
+  "final_candidate_count": 4,
+  "excluded_beads": [
+    {
+      "bead_id": "clasp-48b15b52",
+      "title": "Provision the missing npm credential path for the unified CLASP release workflow",
+      "priority": 1,
+      "assignee": null,
+      "manual_blocked": false,
+      "has_blockers": true,
+      "blocker_count": 1,
+      "has_resource_conflicts": false,
+      "conflict_count": 0
+    },
+    {
+      "bead_id": "clasp-b40ab0ec",
+      "title": "Cut and prove one synchronized CLASP release across npm, GHCR, and GitHub",
+      "priority": 1,
+      "assignee": null,
+      "manual_blocked": false,
+      "has_blockers": true,
+      "blocker_count": 1,
+      "has_resource_conflicts": false,
+      "conflict_count": 0
+    },
+    {
+      "bead_id": "clasp-b4adff06",
+      "title": "Add ExternalSecret manifest for npm-token-clasp to declarative-config",
+      "priority": 1,
+      "assignee": null,
+      "manual_blocked": false,
+      "has_blockers": true,
+      "blocker_count": 1,
+      "has_resource_conflicts": false,
+      "conflict_count": 0
+    },
+    {
+      "bead_id": "clasp-39be181a",
+      "title": "Commit and push the npm-token-clasp ExternalSecret to declarative-config",
+      "priority": 1,
+      "assignee": null,
+      "manual_blocked": false,
+      "has_blockers": true,
+      "blocker_count": 1,
+      "has_resource_conflicts": false,
+      "conflict_count": 0
+    },
+    {
+      "bead_id": "clasp-af682038",
+      "title": "Verify ArgoCD reconciliation and SecretSynced status for npm-token-clasp",
+      "priority": 1,
+      "assignee": null,
+      "manual_blocked": false,
+      "has_blockers": true,
+      "blocker_count": 1,
+      "has_resource_conflicts": false,
+      "conflict_count": 0
+    },
+    {
+      "bead_id": "clasp-453553e2",
+      "title": "Confirm workflow service account access and record final closure evidence",
+      "priority": 1,
+      "assignee": null,
+      "manual_blocked": false,
+      "has_blockers": true,
+      "blocker_count": 1,
+      "has_resource_conflicts": false,
+      "conflict_count": 0
+    }
+  ]
+}
