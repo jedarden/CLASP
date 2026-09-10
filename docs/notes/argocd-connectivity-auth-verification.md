@@ -86,3 +86,41 @@ for iad-kalshi) — not through the configured context.
 Related but distinct: `iad-kalshi`, the cluster that context points at, has an
 `argocd` namespace but no ArgoCD installed, so Application reads there would fail
 for lack of the CRD regardless of auth.
+
+## 5. Re-verification — 2026-09-10 (`clasp-99015c0b`)
+
+The §2 connectivity and §3 RBAC checks re-run and consolidated verbatim so the
+umbrella `clasp-c86a7e10` closes against a durable record. Same day as the
+original recording. Same method as everywhere above: the credential-free
+`--server` tailnet endpoint, every call wrapped in `timeout 15`, configured
+context untouched (§4 still applies, including the `iad-kalshi` CRD note).
+
+```
+$ timeout 15 kubectl --server=http://traefik-ardenone-cluster:8001 get ns argocd
+NAME     STATUS   AGE
+argocd   Active   169d
+# exit 0
+
+$ timeout 15 kubectl --server=http://traefik-ardenone-cluster:8001 auth whoami
+ATTRIBUTE                                           VALUE
+Username                                            system:serviceaccount:devpod-observer:devpod-observer
+UID                                                 44c55d07-5de3-4698-a65c-e0420d2502b8
+Groups                                              [system:serviceaccounts system:serviceaccounts:devpod-observer system:authenticated]
+Extra: authentication.kubernetes.io/credential-id   [JTI=3f63e346-bdac-4cf9-91d7-dcdd2a3b7542]
+Extra: authentication.kubernetes.io/node-name       [k3s-agent-d]
+Extra: authentication.kubernetes.io/node-uid        [3f264d64-03c8-4e68-a553-d18599a4b1ab]
+Extra: authentication.kubernetes.io/pod-name        [kubectl-proxy-c65cb5dc6-j8b6j]
+Extra: authentication.kubernetes.io/pod-uid         [362b8043-3188-476b-8d9b-ac562cc0e03a]
+# exit 0 — same SA, UID and proxy pod as §3; the kubectl-proxy has not rotated
+
+$ timeout 15 kubectl --server=http://traefik-ardenone-cluster:8001 auth can-i get applications.argoproj.io -n argocd
+yes
+# exit 0
+
+$ timeout 15 kubectl --server=http://traefik-ardenone-cluster:8001 auth can-i create applications.argoproj.io -n argocd
+no
+# exit 1 — "auth can-i" exits 1 on a "no"; read-only proxy RBAC still cannot write
+```
+
+Verdicts unchanged: Connectivity PASS · Read Applications PASS · write denied by
+the read-only RBAC · headless use of `apexalgo-iad-kalshi-oidc` still FAIL (§4).
