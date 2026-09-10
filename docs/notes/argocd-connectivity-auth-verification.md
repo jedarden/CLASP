@@ -124,3 +124,60 @@ no
 
 Verdicts unchanged: Connectivity PASS · Read Applications PASS · write denied by
 the read-only RBAC · headless use of `apexalgo-iad-kalshi-oidc` still FAIL (§4).
+
+## 6. Re-verification — 2026-09-10 (`clasp-44873a3d`, `clasp-ebce3662`)
+
+A second same-day re-run, dispatched as two scoped children of umbrella
+`clasp-c86a7e10`: `clasp-44873a3d` (connectivity half) and its successor
+`clasp-ebce3662` (RBAC half). Same method as everywhere above: the
+credential-free `--server` tailnet endpoint, every call wrapped in `timeout 30`,
+configured context untouched (§4 still applies, including the `iad-kalshi` CRD
+note). Output captured verbatim with exit codes:
+
+```
+$ timeout 30 kubectl --server=http://traefik-ardenone-cluster:8001 get ns argocd
+NAME     STATUS   AGE
+argocd   Active   169d
+# exit 0
+
+$ timeout 30 kubectl --server=http://traefik-ardenone-cluster:8001 auth whoami
+ATTRIBUTE                                           VALUE
+Username                                            system:serviceaccount:devpod-observer:devpod-observer
+UID                                                 44c55d07-5de3-4698-a65c-e0420d2502b8
+Groups                                              [system:serviceaccounts system:serviceaccounts:devpod-observer system:authenticated]
+Extra: authentication.kubernetes.io/credential-id   [JTI=42e5e7c3-fb49-4647-8c09-93505fa63a16]
+Extra: authentication.kubernetes.io/node-name       [k3s-agent-d]
+Extra: authentication.kubernetes.io/node-uid        [3f264d64-03c8-4e68-a553-d18599a4b1ab]
+Extra: authentication.kubernetes.io/pod-name        [kubectl-proxy-c65cb5dc6-j8b6j]
+Extra: authentication.kubernetes.io/pod-uid         [362b8043-3188-476b-8d9b-ac562cc0e03a]
+# exit 0 — same SA, UID and proxy pod as §3/§5; only the per-session JTI rotated
+
+$ timeout 30 kubectl --server=http://traefik-ardenone-cluster:8001 auth can-i get applications.argoproj.io -n argocd
+yes
+# exit 0
+
+$ timeout 30 kubectl --server=http://traefik-ardenone-cluster:8001 auth can-i list applications.argoproj.io -n argocd
+yes
+# exit 0
+```
+
+New in this round: the **`list`** verb was checked alongside `get` — collection
+reads need `list`, not `get`, so `can-i list → yes` is what actually authorizes
+`kubectl get applications.argoproj.io -n argocd`. Ground-truthed end-to-end
+(also first-hand here, matching what `clasp-ebce3662` recorded):
+
+```
+$ timeout 30 kubectl --server=http://traefik-ardenone-cluster:8001 get applications.argoproj.io -n argocd
+NAME                                SYNC STATUS   HEALTH STATUS
+miroir                              Unknown       Healthy
+miroir-dev                          Unknown       Healthy
+twitterapi-proxy-ardenone-cluster   Unknown       Unknown
+whisper-stt                         Unknown       Healthy
+# exit 0
+```
+
+No error occurred in either half — this is a grant, not an RBAC denial, missing
+CRD, or unreachable API server (those present differently: `Error from server
+(Forbidden)`, a CRD warning, or a timeout). Verdicts unchanged: Connectivity
+PASS · read (get + list) Applications PASS · headless use of
+`apexalgo-iad-kalshi-oidc` still FAIL (§4).
