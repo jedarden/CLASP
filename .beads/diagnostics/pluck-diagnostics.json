@@ -1,10 +1,10 @@
 {
-  "timestamp": "2026-09-10T21:36:30.920704738Z",
-  "total_open_beads": 23,
+  "timestamp": "2026-09-10T22:02:35.666885796Z",
+  "total_open_beads": 22,
   "exclusion_criteria": {
     "has_assignee": 0,
     "manually_blocked": 0,
-    "has_dependencies": 19,
+    "has_dependencies": 18,
     "resource_conflicts": 0
   },
   "final_candidate_count": 4,
@@ -175,8 +175,8 @@
       "conflict_count": 0
     },
     {
-      "bead_id": "clasp-59456b91",
-      "title": "Verify API server reachability with a plain argocd namespace read",
+      "bead_id": "clasp-d8f8411b",
+      "title": "Verify API server reachability for the argocd namespace",
       "priority": 2,
       "assignee": null,
       "manual_blocked": false,
@@ -186,8 +186,8 @@
       "conflict_count": 0
     },
     {
-      "bead_id": "clasp-57517e00",
-      "title": "Capture the headless kube-context auth failure mode verbatim",
+      "bead_id": "clasp-b371077d",
+      "title": "Verify read permission on applications.argoproj.io in the argocd namespace",
       "priority": 2,
       "assignee": null,
       "manual_blocked": false,
@@ -197,19 +197,8 @@
       "conflict_count": 0
     },
     {
-      "bead_id": "clasp-04e168cf",
-      "title": "Check RBAC read permission for applications.argoproj.io in argocd",
-      "priority": 2,
-      "assignee": null,
-      "manual_blocked": false,
-      "has_blockers": true,
-      "blocker_count": 1,
-      "has_resource_conflicts": false,
-      "conflict_count": 0
-    },
-    {
-      "bead_id": "clasp-58a79558",
-      "title": "Document the connectivity and auth verdict in the argocd notes file",
+      "bead_id": "clasp-89902724",
+      "title": "Document the argocd connectivity and auth verdict in the notes file",
       "priority": 2,
       "assignee": null,
       "manual_blocked": false,
