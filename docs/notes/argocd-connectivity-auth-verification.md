@@ -181,3 +181,72 @@ CRD, or unreachable API server (those present differently: `Error from server
 (Forbidden)`, a CRD warning, or a timeout). Verdicts unchanged: Connectivity
 PASS · read (get + list) Applications PASS · headless use of
 `apexalgo-iad-kalshi-oidc` still FAIL (§4).
+
+## 7. Re-verification — 2026-09-10 (`clasp-5fbd8d34`, `clasp-1090dcb4`, `clasp-1d300508`)
+
+A third same-day round, dispatched as three scoped split children and
+consolidated here from their close records: `clasp-5fbd8d34` (configured context
+and its headless limitation — config-file reads only, no cluster call),
+`clasp-1090dcb4` (connectivity), and `clasp-1d300508` (RBAC). Same method as
+everywhere above: the credential-free `--server` tailnet endpoint, every cluster
+call wrapped in `timeout 30`, configured context untouched (§4 still applies,
+including the `iad-kalshi` CRD note).
+
+### Recorded context — `clasp-5fbd8d34`
+
+No API server was contacted in this child. Values are recorded verbatim from its
+close record (jsonpath extracted only the server field — no `--raw`, no
+`--flatten`, no credential material in the output):
+
+```
+$ kubectl config current-context
+apexalgo-iad-kalshi-oidc
+# KUBECONFIG unset -> kubectl reads /home/coding/.kube/config (mode 600, mtime 2026-09-09 22:21)
+
+$ kubectl config view --minify -o jsonpath={.clusters[0].cluster.server}
+https://hcp-e00b0a44-a342-4b61-8500-d4c90ece0c2d.spot.rackspace.com
+# Rackspace Spot hosted control plane — matches §1 verbatim
+```
+
+The headless limitation is re-confirmed as documented in §4: the context
+authenticates via a `kubectl oidc-login` exec credential plugin whose token
+cache is empty, so on this headless box it starts an authorization-code browser
+flow and blocks until killed (reproduced exit 124 under `timeout 15`;
+`--request-timeout` does not cover the exec plugin). That is why every live
+check in this round — as in every round above — runs through the tailnet
+kubectl-proxy endpoint instead.
+
+### Connectivity — PASS (`clasp-1090dcb4`)
+
+```
+$ timeout 30 kubectl --server=http://traefik-ardenone-cluster:8001 get ns argocd
+NAME     STATUS   AGE
+argocd   Active   169d
+# exit 0 — stderr empty
+```
+
+### RBAC — PASS (`clasp-1d300508`)
+
+```
+$ timeout 30 kubectl --server=http://traefik-ardenone-cluster:8001 auth can-i get applications.argoproj.io -n argocd
+yes
+# exit 0
+
+$ timeout 30 kubectl --server=http://traefik-ardenone-cluster:8001 auth can-i list applications.argoproj.io -n argocd
+yes
+# exit 0
+
+$ timeout 30 kubectl --server=http://traefik-ardenone-cluster:8001 get applications.argoproj.io -n argocd
+# exit 0 — ground-truth read succeeded; the 4 Applications as recorded by the child:
+miroir (Sync Unknown/Healthy)
+miroir-dev (Sync Unknown/Healthy)
+twitterapi-proxy-ardenone-cluster (Sync Unknown/Unknown)
+whisper-stt (Sync Unknown/Healthy)
+```
+
+Both `can-i` probes answered `yes` with exit 0 (the exit-1-on-`no` caveat from
+§3 never triggers this round), and the real read succeeded — a grant, not a
+Forbidden, missing-CRD, or timeout outcome.
+
+**Verdicts: Connectivity PASS · Application read (get + list) PASS · headless
+use of `apexalgo-iad-kalshi-oidc` FAIL (§4).**
