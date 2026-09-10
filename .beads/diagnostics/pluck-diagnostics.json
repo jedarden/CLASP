@@ -1,6 +1,6 @@
 {
-  "timestamp": "2026-09-10T20:33:05.999386297Z",
-  "total_open_beads": 20,
+  "timestamp": "2026-09-10T21:06:53.287196346Z",
+  "total_open_beads": 21,
   "exclusion_criteria": {
     "has_assignee": 0,
     "manually_blocked": 0,
@@ -175,8 +175,19 @@
       "conflict_count": 0
     },
     {
-      "bead_id": "clasp-9d6ae9f9",
-      "title": "Verify acceptance criteria for the argocd connectivity and auth verification",
+      "bead_id": "clasp-1d300508",
+      "title": "Check RBAC for applications.argoproj.io in argocd via the tailnet endpoint",
+      "priority": 2,
+      "assignee": null,
+      "manual_blocked": false,
+      "has_blockers": true,
+      "blocker_count": 1,
+      "has_resource_conflicts": false,
+      "conflict_count": 0
+    },
+    {
+      "bead_id": "clasp-651a30ef",
+      "title": "Append the re-verification round to the argocd connectivity/auth note",
       "priority": 2,
       "assignee": null,
       "manual_blocked": false,
