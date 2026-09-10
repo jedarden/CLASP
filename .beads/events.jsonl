@@ -199,3 +199,13 @@
 {"bead":"clasp-39be181a","duration_ms":22985,"event":"complete","exit_code":0,"outcome":"success","strand":"explore","ts":"2026-09-10T00:23:36.376195954+00:00","worker":"cgov-sonnet-20260909233630-0"}
 {"bead":"clasp-39be181a","event":"claim","strand":"explore","ts":"2026-09-10T00:36:30.132804711+00:00","worker":"cgov-sonnet-20260909233630-0"}
 {"adapter":"claude-print","bead":"clasp-39be181a","event":"dispatch","model":"claude-sonnet-5","strand":"explore","ts":"2026-09-10T00:36:30.474714729+00:00","worker":"cgov-sonnet-20260909233630-0"}
+{"bead":"clasp-39be181a","duration_ms":28533,"event":"complete","exit_code":0,"outcome":"success","strand":"explore","ts":"2026-09-10T00:36:59.105199442+00:00","worker":"cgov-sonnet-20260909233630-0"}
+{"bead":"clasp-af682038","event":"claim","strand":"explore","ts":"2026-09-10T00:38:20.585508643+00:00","worker":"cgov-sonnet-20260909233630-0"}
+{"adapter":"claude-print","bead":"clasp-af682038","event":"dispatch","model":"claude-sonnet-5","strand":"explore","ts":"2026-09-10T00:38:20.887152694+00:00","worker":"cgov-sonnet-20260909233630-0"}
+{"bead":"clasp-af682038","duration_ms":91366,"event":"fail","exit_code":124,"outcome":"failure","strand":"explore","ts":"2026-09-10T00:39:52.346033493+00:00","worker":"cgov-sonnet-20260909233630-0"}
+{"bead":"clasp-af682038","event":"claim","strand":"explore","ts":"2026-09-10T00:45:44.726262562+00:00","worker":"cgov-sonnet-20260909233630-0"}
+{"adapter":"claude-print","bead":"clasp-af682038","event":"dispatch","model":"claude-sonnet-5","strand":"explore","ts":"2026-09-10T00:45:45.089597001+00:00","worker":"cgov-sonnet-20260909233630-0"}
+{"bead":"clasp-af682038","duration_ms":91748,"event":"fail","exit_code":124,"outcome":"failure","strand":"explore","ts":"2026-09-10T00:47:16.955693225+00:00","worker":"cgov-sonnet-20260909233630-0"}
+{"bead":"clasp-af682038","event":"claim","strand":"explore","ts":"2026-09-10T00:57:38.755425469+00:00","worker":"cgov-sonnet-20260909233630-0"}
+{"adapter":"claude-print","bead":"clasp-af682038","event":"dispatch","model":"claude-sonnet-5","strand":"explore","ts":"2026-09-10T00:57:39.080928408+00:00","worker":"cgov-sonnet-20260909233630-0"}
+{"bead":"clasp-af682038","duration_ms":91758,"event":"fail","exit_code":124,"outcome":"failure","strand":"explore","ts":"2026-09-10T00:59:10.926242694+00:00","worker":"cgov-sonnet-20260909233630-0"}

@@ -1,10 +1,10 @@
 {
-  "timestamp": "2026-09-10T00:36:21.075330662Z",
-  "total_open_beads": 8,
+  "timestamp": "2026-09-10T01:06:23.576260655Z",
+  "total_open_beads": 7,
   "exclusion_criteria": {
     "has_assignee": 0,
     "manually_blocked": 0,
-    "has_dependencies": 5,
+    "has_dependencies": 4,
     "resource_conflicts": 0
   },
   "final_candidate_count": 4,
@@ -23,17 +23,6 @@
     {
       "bead_id": "clasp-b40ab0ec",
       "title": "Cut and prove one synchronized CLASP release across npm, GHCR, and GitHub",
-      "priority": 1,
-      "assignee": null,
-      "manual_blocked": false,
-      "has_blockers": true,
-      "blocker_count": 1,
-      "has_resource_conflicts": false,
-      "conflict_count": 0
-    },
-    {
-      "bead_id": "clasp-af682038",
-      "title": "Verify ArgoCD reconciliation and SecretSynced status for npm-token-clasp",
       "priority": 1,
       "assignee": null,
       "manual_blocked": false,
