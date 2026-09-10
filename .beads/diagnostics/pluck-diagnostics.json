@@ -1,10 +1,10 @@
 {
-  "timestamp": "2026-09-10T18:05:42.614308703Z",
-  "total_open_beads": 23,
+  "timestamp": "2026-09-10T18:30:54.5666956Z",
+  "total_open_beads": 20,
   "exclusion_criteria": {
     "has_assignee": 0,
     "manually_blocked": 0,
-    "has_dependencies": 19,
+    "has_dependencies": 17,
     "resource_conflicts": 0
   },
   "final_candidate_count": 4,
@@ -166,39 +166,6 @@
     {
       "bead_id": "clasp-fa28b7a7",
       "title": "Document tooling/access verification results for argo-workflows-ns-iad-ci",
-      "priority": 2,
-      "assignee": null,
-      "manual_blocked": false,
-      "has_blockers": true,
-      "blocker_count": 1,
-      "has_resource_conflicts": false,
-      "conflict_count": 0
-    },
-    {
-      "bead_id": "clasp-44d6a232",
-      "title": "Confirm current kube context targets the expected cluster",
-      "priority": 2,
-      "assignee": null,
-      "manual_blocked": false,
-      "has_blockers": true,
-      "blocker_count": 1,
-      "has_resource_conflicts": false,
-      "conflict_count": 0
-    },
-    {
-      "bead_id": "clasp-f49fa28e",
-      "title": "Run kubectl get ns argocd to verify basic cluster connectivity",
-      "priority": 2,
-      "assignee": null,
-      "manual_blocked": false,
-      "has_blockers": true,
-      "blocker_count": 1,
-      "has_resource_conflicts": false,
-      "conflict_count": 0
-    },
-    {
-      "bead_id": "clasp-b1f7dcd9",
-      "title": "Run kubectl auth can-i check for argocd Applications and capture output",
       "priority": 2,
       "assignee": null,
       "manual_blocked": false,
