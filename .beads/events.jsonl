@@ -248,3 +248,6 @@
 {"bead":"clasp-c86a7e10","event":"claim","strand":"explore","ts":"2026-09-10T14:17:02.696831399+00:00","worker":"cgov-sonnet-20260910131635-0"}
 {"adapter":"claude-print","bead":"clasp-c86a7e10","event":"dispatch","model":"claude-sonnet-5","strand":"explore","ts":"2026-09-10T14:17:03.021301634+00:00","worker":"cgov-sonnet-20260910131635-0"}
 {"bead":"clasp-c86a7e10","duration_ms":91871,"event":"fail","exit_code":124,"outcome":"failure","strand":"explore","ts":"2026-09-10T14:18:34.987364077+00:00","worker":"cgov-sonnet-20260910131635-0"}
+{"bead":"clasp-c86a7e10","event":"claim","strand":"explore","ts":"2026-09-10T14:40:10.866420786+00:00","worker":"cgov-sonnet-20260910131635-0"}
+{"adapter":"claude-print","bead":"clasp-c86a7e10","event":"dispatch","model":"claude-sonnet-5","strand":"explore","ts":"2026-09-10T14:40:11.204136181+00:00","worker":"cgov-sonnet-20260910131635-0"}
+{"bead":"clasp-c86a7e10","duration_ms":46618,"event":"complete","exit_code":0,"outcome":"success","strand":"explore","ts":"2026-09-10T14:40:57.917573600+00:00","worker":"cgov-sonnet-20260910131635-0"}
