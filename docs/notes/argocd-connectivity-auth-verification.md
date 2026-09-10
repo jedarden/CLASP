@@ -424,3 +424,95 @@ Round verdict: **context identified as `apexalgo-iad-kalshi-oidc` →
 `--server` tailnet endpoint; both endpoint reachability (exit 0) and the §4
 headless caveat (exit 124) re-confirmed live.** No regression against any
 earlier round.
+
+## 10. Application read on the §9 connection — NO on iad-kalshi, yes on
+ardenone-cluster — 2026-09-10 (`clasp-b371077d`)
+
+Dispatched as: "Prove the identity used by the working connection from
+`clasp-d8f8411b` may read ArgoCD Applications in the argocd namespace."
+`clasp-d8f8411b`'s working connection is the §9 mode — explicit
+`--server http://kubectl-proxy-iad-kalshi:8001` against **iad-kalshi** — so the
+probe ran exactly as dispatched there, under `timeout 30`. The answer on that
+cluster is **no**, with the §4/§8 caveat as its root cause; the
+ardenone-cluster contrast (first-hand this round) answers **yes**.
+
+### iad-kalshi — NO (as dispatched, `clasp-b371077d`)
+
+```
+$ timeout 30 kubectl --server=http://kubectl-proxy-iad-kalshi:8001 auth can-i get applications.argoproj.io -n argocd
+Warning: the server doesn't have a resource type 'applications' in group 'argoproj.io'
+
+no
+# exit 1 — "auth can-i" exits 1 on a "no"
+
+$ timeout 30 kubectl --server=http://kubectl-proxy-iad-kalshi:8001 auth whoami
+ATTRIBUTE                                           VALUE
+Username                                            system:serviceaccount:devpod-observer:devpod-observer
+UID                                                 a8682a81-b2d8-4af6-a7b6-ca85ddb36360
+Groups                                              [system:serviceaccounts system:serviceaccounts:devpod-observer system:authenticated]
+Extra: authentication.kubernetes.io/credential-id   [JTI=7a51dad5-c24b-418c-bf82-02bf18a59619]
+Extra: authentication.kubernetes.io/node-name       [prod-instance-17854395072200685]
+Extra: authentication.kubernetes.io/node-uid        [d9213868-f030-4f84-8f41-b81e5827d970]
+Extra: authentication.kubernetes.io/pod-name        [kubectl-proxy-57b49c88bf-zqhvn]
+Extra: authentication.kubernetes.io/pod-uid         [9627eb25-2a1c-4ab1-b09d-19023f49efd7]
+# exit 0 — the answering identity is iad-kalshi's kubectl-proxy SA
+```
+
+Attribution of the `no`, probed in the same round:
+
+```
+$ timeout 30 kubectl --server=http://kubectl-proxy-iad-kalshi:8001 api-resources --api-group=argoproj.io
+NAME   SHORTNAMES   APIVERSION   NAMESPACED   KIND
+# exit 0 — empty table: no argoproj.io resource is served at all
+
+$ timeout 30 kubectl --server=http://kubectl-proxy-iad-kalshi:8001 get crd -o name | grep -i argo
+# grep exit 1, no matches — zero ArgoCD CRDs on the cluster
+
+$ timeout 30 kubectl --server=http://kubectl-proxy-iad-kalshi:8001 get deploy,sts -n argocd
+No resources found in argocd namespace.
+# exit 0 — no ArgoCD workloads in the namespace either
+```
+
+So the dispatched `no` is not a useful RBAC data point about ArgoCD: iad-kalshi
+has no ArgoCD installed — the `applications` type is not served (the kubectl
+warning above), no CRDs exist, and the `argocd` namespace holds no ArgoCD
+workloads. First-hand confirmation of the §4/§8 note ("Application reads there
+would fail for lack of the CRD regardless of auth"), now as an auth answer.
+
+### ardenone-cluster — yes (contrast, same round, first-hand)
+
+Where ArgoCD actually runs, the same probes through the same kind of
+credential-free tailnet endpoint answer as in every prior round:
+
+```
+$ timeout 30 kubectl --server=http://traefik-ardenone-cluster:8001 auth can-i get applications.argoproj.io -n argocd
+yes
+# exit 0
+
+$ timeout 30 kubectl --server=http://traefik-ardenone-cluster:8001 auth can-i list applications.argoproj.io -n argocd
+yes
+# exit 0
+
+$ timeout 30 kubectl --server=http://traefik-ardenone-cluster:8001 auth whoami
+ATTRIBUTE                                           VALUE
+Username                                            system:serviceaccount:devpod-observer:devpod-observer
+UID                                                 44c55d07-5de3-4698-a65c-e0420d2502b8
+Groups                                              [system:serviceaccounts system:serviceaccounts:devpod-observer system:authenticated]
+Extra: authentication.kubernetes.io/credential-id   [JTI=ab083ca2-b2df-4b3b-bf2b-f6878fc95628]
+Extra: authentication.kubernetes.io/node-name       [k3s-agent-d]
+Extra: authentication.kubernetes.io/node-uid        [3f264d64-03c8-4e68-a65c-e0420d2502b8]
+Extra: authentication.kubernetes.io/pod-name        [kubectl-proxy-c65cb5dc6-j8b6j]
+Extra: authentication.kubernetes.io/pod-uid         [362b8043-3188-476b-8d9b-ac562cc0e03a]
+# exit 0 — same SA, UID, node and proxy pod as §3/§5/§6/§8; only the per-session JTI rotated
+```
+
+Note the two answering identities share the SA *name*
+(`devpod-observer/devpod-observer`) but are distinct identities: different UID,
+node and proxy pod on each cluster.
+
+**Round verdict: read Applications on `clasp-d8f8411b`'s connection (iad-kalshi
+tailnet proxy) = NO — the resource is not served on that cluster (no ArgoCD
+installed), so the argocd namespace there is not an ArgoCD target; read
+Applications on ardenone-cluster = YES (get + list), re-confirmed first-hand.
+Any check that actually wants to read ArgoCD Applications must use the
+ardenone-cluster endpoint, not the cluster the configured context points at.**
