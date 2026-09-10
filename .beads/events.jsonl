@@ -236,3 +236,12 @@
 {"bead":"clasp-4a14a6a5","event":"claim","strand":"explore","ts":"2026-09-10T10:47:20.430430888+00:00","worker":"cgov-sonnet-20260910102032-0"}
 {"adapter":"claude-print","bead":"clasp-4a14a6a5","event":"dispatch","model":"claude-sonnet-5","strand":"explore","ts":"2026-09-10T10:47:20.740649408+00:00","worker":"cgov-sonnet-20260910102032-0"}
 {"bead":"clasp-4a14a6a5","duration_ms":70186,"event":"complete","exit_code":0,"outcome":"success","strand":"explore","ts":"2026-09-10T10:48:31.020917683+00:00","worker":"cgov-sonnet-20260910102032-0"}
+{"bead":"clasp-cb1a55f5","event":"claim","strand":"explore","ts":"2026-09-10T13:39:52.833116196+00:00","worker":"cgov-sonnet-20260910131635-0"}
+{"adapter":"claude-print","bead":"clasp-cb1a55f5","event":"dispatch","model":"claude-sonnet-5","strand":"explore","ts":"2026-09-10T13:39:53.135373655+00:00","worker":"cgov-sonnet-20260910131635-0"}
+{"bead":"clasp-cb1a55f5","duration_ms":14858,"event":"complete","exit_code":0,"outcome":"success","strand":"explore","ts":"2026-09-10T13:40:08.087826014+00:00","worker":"cgov-sonnet-20260910131635-0"}
+{"bead":"clasp-c86a7e10","event":"claim","strand":"explore","ts":"2026-09-10T13:46:17.746385482+00:00","worker":"cgov-sonnet-20260910131635-0"}
+{"adapter":"claude-print","bead":"clasp-c86a7e10","event":"dispatch","model":"claude-sonnet-5","strand":"explore","ts":"2026-09-10T13:46:18.081392716+00:00","worker":"cgov-sonnet-20260910131635-0"}
+{"bead":"clasp-c86a7e10","duration_ms":91506,"event":"fail","exit_code":124,"outcome":"failure","strand":"explore","ts":"2026-09-10T13:47:49.697771181+00:00","worker":"cgov-sonnet-20260910131635-0"}
+{"bead":"clasp-c86a7e10","event":"claim","strand":"explore","ts":"2026-09-10T14:01:51.977385661+00:00","worker":"cgov-sonnet-20260910131635-0"}
+{"adapter":"claude-print","bead":"clasp-c86a7e10","event":"dispatch","model":"claude-sonnet-5","strand":"explore","ts":"2026-09-10T14:01:52.301526640+00:00","worker":"cgov-sonnet-20260910131635-0"}
+{"bead":"clasp-c86a7e10","duration_ms":91853,"event":"fail","exit_code":124,"outcome":"failure","strand":"explore","ts":"2026-09-10T14:03:24.243998521+00:00","worker":"cgov-sonnet-20260910131635-0"}

@@ -1,6 +1,6 @@
 {
-  "timestamp": "2026-09-10T13:36:46.192784535Z",
-  "total_open_beads": 19,
+  "timestamp": "2026-09-10T14:07:15.096751197Z",
+  "total_open_beads": 18,
   "exclusion_criteria": {
     "has_assignee": 0,
     "manually_blocked": 0,
@@ -133,17 +133,6 @@
     {
       "bead_id": "clasp-2cb43cf7",
       "title": "Confirm argo-workflows-ns-iad-ci reaches Synced/Healthy and record evidence",
-      "priority": 2,
-      "assignee": null,
-      "manual_blocked": false,
-      "has_blockers": true,
-      "blocker_count": 1,
-      "has_resource_conflicts": false,
-      "conflict_count": 0
-    },
-    {
-      "bead_id": "clasp-c86a7e10",
-      "title": "Verify cluster connectivity and auth for the argocd namespace",
       "priority": 2,
       "assignee": null,
       "manual_blocked": false,
