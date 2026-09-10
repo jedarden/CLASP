@@ -1,6 +1,6 @@
 {
-  "timestamp": "2026-09-09T23:34:06.566526707Z",
-  "total_open_beads": 10,
+  "timestamp": "2026-09-10T00:06:44.653447207Z",
+  "total_open_beads": 9,
   "exclusion_criteria": {
     "has_assignee": 0,
     "manually_blocked": 0,
@@ -23,17 +23,6 @@
     {
       "bead_id": "clasp-b40ab0ec",
       "title": "Cut and prove one synchronized CLASP release across npm, GHCR, and GitHub",
-      "priority": 1,
-      "assignee": null,
-      "manual_blocked": false,
-      "has_blockers": true,
-      "blocker_count": 1,
-      "has_resource_conflicts": false,
-      "conflict_count": 0
-    },
-    {
-      "bead_id": "clasp-b4adff06",
-      "title": "Add ExternalSecret manifest for npm-token-clasp to declarative-config",
       "priority": 1,
       "assignee": null,
       "manual_blocked": false,
