@@ -1,10 +1,10 @@
 {
-  "timestamp": "2026-09-10T01:06:23.576260655Z",
-  "total_open_beads": 7,
+  "timestamp": "2026-09-10T01:36:37.414955223Z",
+  "total_open_beads": 11,
   "exclusion_criteria": {
     "has_assignee": 0,
     "manually_blocked": 0,
-    "has_dependencies": 4,
+    "has_dependencies": 7,
     "resource_conflicts": 0
   },
   "final_candidate_count": 4,
@@ -32,9 +32,53 @@
       "conflict_count": 0
     },
     {
+      "bead_id": "clasp-af682038",
+      "title": "Verify ArgoCD reconciliation and SecretSynced status for npm-token-clasp",
+      "priority": 1,
+      "assignee": null,
+      "manual_blocked": false,
+      "has_blockers": true,
+      "blocker_count": 1,
+      "has_resource_conflicts": false,
+      "conflict_count": 0
+    },
+    {
       "bead_id": "clasp-453553e2",
       "title": "Confirm workflow service account access and record final closure evidence",
       "priority": 1,
+      "assignee": null,
+      "manual_blocked": false,
+      "has_blockers": true,
+      "blocker_count": 1,
+      "has_resource_conflicts": false,
+      "conflict_count": 0
+    },
+    {
+      "bead_id": "clasp-75097194",
+      "title": "Confirm ExternalSecret for npm-token-clasp reports SecretSynced=True",
+      "priority": 2,
+      "assignee": null,
+      "manual_blocked": false,
+      "has_blockers": true,
+      "blocker_count": 1,
+      "has_resource_conflicts": false,
+      "conflict_count": 0
+    },
+    {
+      "bead_id": "clasp-707b5254",
+      "title": "Confirm npm-token-clasp Secret metadata exists in argo-workflows namespace",
+      "priority": 2,
+      "assignee": null,
+      "manual_blocked": false,
+      "has_blockers": true,
+      "blocker_count": 1,
+      "has_resource_conflicts": false,
+      "conflict_count": 0
+    },
+    {
+      "bead_id": "clasp-a4c126ba",
+      "title": "Compile and record final redacted verification evidence for npm-token-clasp",
+      "priority": 2,
       "assignee": null,
       "manual_blocked": false,
       "has_blockers": true,
