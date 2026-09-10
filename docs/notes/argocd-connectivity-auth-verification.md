@@ -250,3 +250,111 @@ Forbidden, missing-CRD, or timeout outcome.
 
 **Verdicts: Connectivity PASS · Application read (get + list) PASS · headless
 use of `apexalgo-iad-kalshi-oidc` FAIL (§4).**
+
+## 8. Re-verification — 2026-09-10 (`clasp-560fffc1`, `clasp-59456b91`, `clasp-57517e00`, `clasp-04e168cf`)
+
+A fourth same-day round, dispatched as four scoped split children of umbrella
+`clasp-c86a7e10` and consolidated here verbatim from their close records:
+`clasp-560fffc1` (configured context and API server), `clasp-59456b91`
+(reachability), `clasp-04e168cf` (RBAC), and `clasp-57517e00` (bounded
+reproduction of the headless failure). Same method as every round above: the
+credential-free `--server` tailnet endpoint for every cluster call, configured
+context untouched except where the §4 failure was deliberately reproduced under
+`timeout 15`.
+
+**Verdicts: reachability PASS · RBAC PASS · headless-context auth FAIL (§4, by
+design of the OIDC browser flow).**
+
+### Configured context — `clasp-560fffc1`
+
+Config-file reads only, no API server contacted; neither command invokes the
+exec plugin, so neither can hang (both exit 0):
+
+```
+$ timeout 15 kubectl config current-context
+apexalgo-iad-kalshi-oidc
+
+$ timeout 15 kubectl config view --minify --output jsonpath={.clusters[0].cluster.server}
+https://hcp-e00b0a44-a342-4b61-8500-d4c90ece0c2d.spot.rackspace.com
+# Rackspace Spot hosted control plane for iad-kalshi — matches §1/§7 verbatim
+```
+
+### Reachability — PASS (`clasp-59456b91`)
+
+```
+$ timeout 15 kubectl --server=http://traefik-ardenone-cluster:8001 get ns argocd
+NAME     STATUS   AGE
+argocd   Active   169d
+# exit 0
+```
+
+The child's second probe repeated the same read through the configured context
+with no `--server` override and hit the §4 hang — exit 124, killed by the
+timeout, stderr as reproduced verbatim in the headless section below.
+
+### RBAC — PASS (`clasp-04e168cf`)
+
+Via the credential-free read-only endpoint `http://traefik-ardenone-cluster:8001`:
+
+```
+$ kubectl --server=http://traefik-ardenone-cluster:8001 auth can-i get applications.argoproj.io -n argocd
+yes
+# exit 0
+
+$ kubectl --server=http://traefik-ardenone-cluster:8001 auth whoami
+# Username: system:serviceaccount:devpod-observer:devpod-observer — the
+# kubectl-proxy SA, pod kubectl-proxy-c65cb5dc6-j8b6j on k3s-agent-d, groups
+# [system:serviceaccounts:devpod-observer system:authenticated]. Same SA and
+# proxy pod as §3/§5/§6 — this SA is the identity behind the verdict.
+
+$ kubectl --server=http://traefik-ardenone-cluster:8001 auth can-i create applications.argoproj.io -n argocd
+no
+# exit 1 — "auth can-i" exits 1 on a "no"; the read-only proxy RBAC still cannot write
+```
+
+New in this round, the child ruled out CRD-absence on ardenone-cluster so the
+`yes`/`no` above are genuine RBAC decisions rather than a missing-CRD artifact
+(distinct from the §4 `iad-kalshi` situation):
+
+```
+$ kubectl --server=http://traefik-ardenone-cluster:8001 api-resources --api-group=argoproj.io
+# lists applications — argoproj.io/v1alpha1, namespaced, kind Application (served)
+
+$ kubectl --server=http://traefik-ardenone-cluster:8001 get applications.argoproj.io -n argocd
+# exit 0 — ground-truth read returned the same 4 Applications as §6:
+# miroir, miroir-dev, twitterapi-proxy-ardenone-cluster, whisper-stt
+```
+
+(The last two outputs are recorded as captured by the child; the api-resources
+listing and app names are verbatim from its close record, which did not
+preserve the raw table rendering.)
+
+### Headless-context auth — FAIL (`clasp-57517e00`, reproduced bounded)
+
+`clasp-57517e00` re-ran the §4 reproduction with instrumentation and confirmed
+the documented failure byte-for-byte — stderr identical, including the
+`localhost:18000` callback URL and the SIGTERM-induced `context canceled` tail
+(§4 lines 73–77):
+
+```
+$ timeout 15 kubectl get ns argocd </dev/null   # current context apexalgo-iad-kalshi-oidc
+# OUTCOME: HUNG — no output, killed by timeout SIGTERM; elapsed 15.01s
+# exit 124 · stdout: 0 bytes · stderr: 386 bytes, verbatim:
+error: could not open the browser: exec: "xdg-open,x-www-browser,www-browser": executable file not found in $PATH
+
+Please visit the following URL in your browser manually: http://localhost:18000/
+error: get-token: authentication error: authcode-browser error: authentication error: authorization code flow error: oauth2 error: authorization error: authorization error: context canceled
+```
+
+Pre-conditions verified immediately before the run: the plugin token cache dir
+`~/.kube/cache/oidc-login/org_KsELolwAOxl3Zxfm/` held only a 0-byte `.lock`
+file (cache empty), and `xdg-open`, `x-www-browser`, `www-browser` all miss
+`PATH`. New data points beyond §4: the failure is **verb-independent** (§4
+captured it via `auth can-i`; this round via `get ns`, and `clasp-59456b91`'s
+second probe hit the same wall), stdout is empty with all output on stderr, and
+the hang burns the full timeout (15.01s to the kill).
+
+Round verdict: **reachability PASS · RBAC PASS (read granted, write denied, CRD
+confirmed served) · headless use of `apexalgo-iad-kalshi-oidc` FAIL.** §4 and
+the tailnet-endpoint method remain the standing caveats; nothing regressed
+against any earlier round.
