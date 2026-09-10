@@ -343,3 +343,17 @@
 {"bead":"clasp-1090dcb4","event":"claim","strand":"pluck","ts":"2026-09-10T21:00:40.644438960+00:00","worker":"glm-tradegraph"}
 {"adapter":"claude-code-glm-5.3-flash","bead":"clasp-1090dcb4","event":"dispatch","model":"glm-5.3-flash","strand":"pluck","ts":"2026-09-10T21:00:40.969962607+00:00","worker":"glm-tradegraph"}
 {"bead":"clasp-1090dcb4","duration_ms":53610,"event":"complete","exit_code":0,"outcome":"success","strand":"pluck","ts":"2026-09-10T21:01:34.673212624+00:00","worker":"glm-tradegraph"}
+{"bead":"clasp-1090dcb4","event":"claim","strand":"pluck","ts":"2026-09-10T21:17:21.647435809+00:00","worker":"glm-tradegraph"}
+{"adapter":"claude-code-glm-5.3-flash","bead":"clasp-1090dcb4","event":"dispatch","model":"glm-5.3-flash","strand":"pluck","ts":"2026-09-10T21:17:21.992350732+00:00","worker":"glm-tradegraph"}
+{"bead":"clasp-1090dcb4","duration_ms":88505,"event":"complete","exit_code":0,"outcome":"success","strand":"pluck","ts":"2026-09-10T21:18:50.588687599+00:00","worker":"glm-tradegraph"}
+{"bead":"clasp-1d300508","event":"claim","strand":"pluck","ts":"2026-09-10T21:18:54.049604230+00:00","worker":"glm-tradegraph"}
+{"adapter":"claude-code-glm-5.3-flash","bead":"clasp-1d300508","event":"dispatch","model":"glm-5.3-flash","strand":"pluck","ts":"2026-09-10T21:18:54.411681825+00:00","worker":"glm-tradegraph"}
+{"bead":"clasp-1d300508","duration_ms":88405,"event":"complete","exit_code":0,"outcome":"success","strand":"pluck","ts":"2026-09-10T21:20:22.914659114+00:00","worker":"glm-tradegraph"}
+{"bead":"clasp-651a30ef","event":"claim","strand":"pluck","ts":"2026-09-10T21:20:26.384830113+00:00","worker":"glm-tradegraph"}
+{"adapter":"claude-code-glm-5.3-flash","bead":"clasp-651a30ef","event":"dispatch","model":"glm-5.3-flash","strand":"pluck","ts":"2026-09-10T21:20:26.726116038+00:00","worker":"glm-tradegraph"}
+{"bead":"clasp-651a30ef","duration_ms":316106,"event":"complete","exit_code":0,"outcome":"success","strand":"pluck","ts":"2026-09-10T21:25:42.916202651+00:00","worker":"glm-tradegraph"}
+{"bead":"clasp-c86a7e10","event":"claim","strand":"pluck","ts":"2026-09-10T21:25:46.339471676+00:00","worker":"glm-tradegraph"}
+{"adapter":"claude-code-glm-5.3-flash","bead":"clasp-c86a7e10","event":"dispatch","model":"glm-5.3-flash","strand":"pluck","ts":"2026-09-10T21:25:46.653688516+00:00","worker":"glm-tradegraph"}
+{"bead":"clasp-c86a7e10","duration_ms":640657,"event":"complete","exit_code":0,"outcome":"success","strand":"pluck","ts":"2026-09-10T21:36:27.405439717+00:00","worker":"glm-tradegraph"}
+{"bead":"clasp-560fffc1","event":"claim","strand":"pluck","ts":"2026-09-10T21:36:30.968500189+00:00","worker":"glm-tradegraph"}
+{"adapter":"claude-code-glm-5.3-flash","bead":"clasp-560fffc1","event":"dispatch","model":"glm-5.3-flash","strand":"pluck","ts":"2026-09-10T21:36:31.293850483+00:00","worker":"glm-tradegraph"}
