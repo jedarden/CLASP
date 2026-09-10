@@ -516,3 +516,85 @@ installed), so the argocd namespace there is not an ArgoCD target; read
 Applications on ardenone-cluster = YES (get + list), re-confirmed first-hand.
 Any check that actually wants to read ArgoCD Applications must use the
 ardenone-cluster endpoint, not the cluster the configured context points at.**
+
+## 11. Consolidated round — 2026-09-10 (`clasp-ea29db38`, `clasp-d8f8411b`, `clasp-b371077d`)
+
+The three-bead round that closed the umbrella's verification chain, consolidated
+here in one place with the per-check verdict: `clasp-ea29db38` (context and
+connection mode), its connectivity successor `clasp-d8f8411b`, and the RBAC
+child `clasp-b371077d`. Same method as every round above — explicit
+credential-free `--server` tailnet endpoint, every call under `timeout`
+(10 for config reads, 30 for cluster calls), bare `apexalgo-iad-kalshi-oidc`
+context untouched (§4/§8/§9 still apply). Outputs below are verbatim from the
+beads' close records; both live checks were re-run at documentation time and
+matched byte-for-byte.
+
+### Check 1 — context and connection mode: PASS (`clasp-ea29db38`)
+
+Full record in §9. Config-file reads only, all exit 0:
+
+```
+$ timeout 10 kubectl config current-context
+apexalgo-iad-kalshi-oidc
+# server https://hcp-e00b0a44-a342-4b61-8500-d4c90ece0c2d.spot.rackspace.com,
+# cluster=iad-kalshi user=oidc, single oidc-login exec credential block
+
+$ timeout 10 kubectl --server=http://kubectl-proxy-iad-kalshi:8001 get ns kube-system -o jsonpath='{.metadata.uid} {.metadata.name}'
+0738fad8-7667-4635-8dd5-384d00810ecb kube-system
+# exit 0 — the chosen endpoint, probed live for the first time
+```
+
+Chosen mode: **explicit `--server http://kubectl-proxy-iad-kalshi:8001`**, never
+the bare context — the oidc-login exec plugin cannot authenticate headless
+(browser-less box, empty token cache; §4/§8/§9, exit 124 under `timeout`).
+
+### Check 2 — connectivity: PASS (`clasp-d8f8411b`)
+
+The §9 connection mode exercised against the argocd namespace itself, exit 0
+well under the 30s bound:
+
+```
+$ timeout 30 kubectl --server=http://kubectl-proxy-iad-kalshi:8001 get ns argocd
+NAME     STATUS   AGE
+argocd   Active   129d
+# exit 0 — stderr empty
+```
+
+(First time this file records the **iad-kalshi** argocd namespace rather than
+ardenone-cluster's — note the different AGE, 129d vs the 169d of §2/§5/§6/§7/§8:
+distinct cluster, distinct namespace, both Active.)
+
+### Check 3 — can-i read Applications: NO on iad-kalshi, yes on ardenone-cluster (`clasp-b371077d`)
+
+Full record in §10, verbatim there. The dispatched probe on the check-2
+connection:
+
+```
+$ timeout 30 kubectl --server=http://kubectl-proxy-iad-kalshi:8001 auth can-i get applications.argoproj.io -n argocd
+Warning: the server doesn't have a resource type 'applications' in group 'argoproj.io'
+
+no
+# exit 1 — "auth can-i" exits 1 on a "no"
+```
+
+Attribution (§10, same round): the `no` is **not an RBAC denial** — iad-kalshi
+serves no `argoproj.io` resources at all (`api-resources --api-group=argoproj.io`
+→ empty table), has zero ArgoCD CRDs, and its `argocd` namespace holds no ArgoCD
+workloads. The answering identity was iad-kalshi's kubectl-proxy SA
+(`devpod-observer/devpod-observer`, UID `a8682a81-…`, pod
+`kubectl-proxy-57b49c88bf-zqhvn`). On ardenone-cluster, where ArgoCD actually
+runs, the same probes answer `yes` (get + list) via the tailnet proxy.
+
+### Overall verdict (per check)
+
+| Check | Verdict |
+|---|---|
+| Context / connection mode (`clasp-ea29db38`) | **PASS** — context `apexalgo-iad-kalshi-oidc` → iad-kalshi identified; connection mode = explicit `--server http://kubectl-proxy-iad-kalshi:8001` (credential-free, exit 0); bare-context headless auth FAIL by design (§4/§8/§9) |
+| Connectivity (`clasp-d8f8411b`) | **PASS** — `get ns argocd` via the chosen endpoint → `argocd Active 129d`, exit 0, stderr empty |
+| can-i read Applications (`clasp-b371077d`) | **NO on iad-kalshi** (exit 1 — but resource not served: no ArgoCD installed, not an RBAC denial) · **yes on ardenone-cluster** (exit 0, get + list) |
+
+Standing conclusion, unchanged since §10: the cluster the configured context
+points at has an `argocd` namespace but no ArgoCD; any check that actually wants
+to read ArgoCD Applications must use `http://traefik-ardenone-cluster:8001`.
+All cluster calls remain timeout-bounded and credential-free; nothing regressed
+against any earlier round.
