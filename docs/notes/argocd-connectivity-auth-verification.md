@@ -358,3 +358,69 @@ Round verdict: **reachability PASS · RBAC PASS (read granted, write denied, CRD
 confirmed served) · headless use of `apexalgo-iad-kalshi-oidc` FAIL.** §4 and
 the tailnet-endpoint method remain the standing caveats; nothing regressed
 against any earlier round.
+
+## 9. Kube context and connection mode — 2026-09-10 (`clasp-ea29db38`)
+
+Config-file reads only to identify the context `clasp-cb1a55f5` left active —
+no exec-plugin invocation, so no hang (all exit 0):
+
+```
+$ timeout 10 kubectl config current-context
+apexalgo-iad-kalshi-oidc
+
+$ timeout 10 kubectl config view --minify -o jsonpath='{.clusters[0].cluster.server}'
+https://hcp-e00b0a44-a342-4b61-8500-d4c90ece0c2d.spot.rackspace.com
+# matches §1/§7/§8 verbatim — Rackspace Spot hosted control plane
+
+$ timeout 10 kubectl config view --minify -o jsonpath='cluster={.contexts[0].context.cluster} user={.contexts[0].context.user} clusterName={.clusters[0].name}'
+cluster=iad-kalshi user=oidc clusterName=iad-kalshi
+```
+
+Auth mode, verbatim shape: the context's user `oidc` carries a single `exec`
+credential block (`client.authentication.k8s.io/v1beta1`,
+`provideClusterInfo: false`) running `kubectl oidc-login get-token` against
+`https://login.spot.rackspace.com/`, client-id `mwG3lUMV8KyeMqHe4fJ5Bb3nM1vBvRNa`,
+scopes `openid profile email`, auth-request extra param
+`organization=org_KsELolwAOxl3Zxfm`, token cache dir
+`~/.kube/cache/oidc-login/org_KsELolwAOxl3Zxfm`. No client certs, static
+tokens, or external auth-provider fields on the user or cluster.
+
+Documented credential-free tailnet kubectl-proxy endpoint for the same cluster
+(CLAUDE.md "Kubernetes Access" table, row `iad-kalshi` — the one row with no
+Traefik; the Tailscale operator exposes the proxy Service directly):
+`http://kubectl-proxy-iad-kalshi:8001`. Probed live this round — named in §4's
+caveat prose but exercised for the first time here:
+
+```
+$ timeout 10 kubectl --server=http://kubectl-proxy-iad-kalshi:8001 get ns kube-system -o jsonpath='{.metadata.uid} {.metadata.name}'
+0738fad8-7667-4635-8dd5-384d00810ecb kube-system
+# exit 0
+```
+
+### Connection mode chosen for the later checks
+
+**Explicit `--server http://kubectl-proxy-iad-kalshi:8001` for checks against
+this cluster — never the bare `apexalgo-iad-kalshi-oidc` context.** One-line
+justification: the context's oidc-login exec plugin cannot authenticate
+headless from this box (browser-less, token cache empty — §4/§8), while the
+tailnet proxy is credential-free and read-only, as the exit-0 probe above shows.
+
+The bare-context failure was re-confirmed live immediately before writing this
+(exit code correctly attributed this time — §8's child inferred 124 from the
+elapsed time; captured directly here), stderr byte-identical to §8 including
+the `localhost:18000` callback URL:
+
+```
+$ timeout 10 kubectl get ns kube-system </dev/null   # current context apexalgo-iad-kalshi-oidc
+# exit 124 · stdout: 0 bytes · stderr: 386 bytes, byte-identical to §8
+error: could not open the browser: exec: "xdg-open,x-www-browser,www-browser": executable file not found in $PATH
+
+Please visit the following URL in your browser manually: http://localhost:18000/
+error: get-token: authentication error: authcode-browser error: authentication error: authorization code flow error: oauth2 error: authorization error: authorization error: context canceled
+```
+
+Round verdict: **context identified as `apexalgo-iad-kalshi-oidc` →
+`iad-kalshi` (server and auth mode captured above); connection mode = explicit
+`--server` tailnet endpoint; both endpoint reachability (exit 0) and the §4
+headless caveat (exit 124) re-confirmed live.** No regression against any
+earlier round.
