@@ -104,3 +104,54 @@ a secret-less public-client flow).
   credential-free tailnet endpoints instead. The live failure demonstration is
   the parent bead's job (`clasp-0ffdb0a2`); see also the consolidated note
   `argocd-connectivity-auth-verification.md`.
+
+## 4. Token cache state on disk — bead `clasp-7cd679fc` (child 2 of the split)
+
+Recorded 2026-09-11 ~00:02 -0400.
+
+**Method:** metadata-only inspection — `find -printf` and `stat` on paths,
+types, sizes, modes and mtimes. No file content was read, printed, piped or
+recorded; no `kubectl` command of any kind was run by this bead (the
+timeout-guarded probe is child 3, `clasp-5568901c`). File *names* below are
+cache-key hashes and lock names — identifiers, not token material.
+
+### Cache inventory
+
+Cache root: `/home/coding/.kube/cache/oidc-login` (the `--token-cache-dir`
+recorded in §2, with `~` = `/home/coding`). Complete recursive listing:
+
+| path (relative to cache root) | type | size | mode | mtime | age |
+|---|---|---|---|---|---|
+| `.` | directory | 4096 | 700 | 2026-08-19 07:32:20.912 -0400 | ~32.5 weeks |
+| `org_KsELolwAOxl3Zxfm/` | directory | 4096 | 700 | 2026-08-07 19:21:29.735 -0400 | ~34.7 days |
+| `org_KsELolwAOxl3Zxfm/90e1f62b22c246b31866092f2b59453a9d1218ab22f4e4bb659eae988cbd2cc6.lock` | regular file | 0 | 600 | 2026-08-07 19:21:29.735 -0400 | ~34.7 days |
+| `60c449c69bd1768da2596f5be9516125e14747cce38141a74f0218ab4bf3cd54.lock` | regular file | 0 | 600 | 2026-08-19 07:32:20.912 -0400 | ~32.5 weeks |
+| `90e1f62b22c246b31866092f2b59453a9d1218ab22f4e4bb659eae988cbd2cc6.lock` | regular file | 0 | 600 | 2026-05-03 06:46:49.644 -0400 | ~131 days |
+
+Reading: kubelogin stores each cached token as a real entry file keyed by the
+same hash that names the lock (`90e1f62b…` = hash of the public issuer +
+client-id cache key — the identical hash appears at the cache root from an
+older flat-layout run, and inside `org_KsELolwAOxl3Zxfm/` for the current
+per-org layout). Here **every entry position holds only a zero-byte `.lock`**;
+there is no token file of any kind, so there is no id-token and no refresh
+token on disk. The org-dir lock (2026-08-07) is a leftover from a run that was
+killed after lock acquisition but before any token could be written — the
+newest entry anywhere in the cache is that empty lock, 34+ days stale. A
+sweep for other cache roots found only this one (a literal `~/` directory at
+`/home/coding/~` turned out to hold unexpanded-tilde NEEDLE state files, not
+kube caches — ruled out).
+
+### Prediction
+
+**Cache empty -> expect browser-block killed by timeout (exit 124).**
+
+Rationale: no cached token and no refresh token means the plugin cannot satisfy
+`get-token` from disk; with `interactiveMode: IfAvailable` on a headless,
+non-tty invocation it falls through to the authorization-code + browser flow —
+which cannot complete here — and blocks, until the `timeout 15` guard kills it.
+This is the parent's expected failure, now predicted from disk state alone,
+consistent with the 2026-08-07 lock leftover (same failure mode, last observed).
+If child 3's run instead authenticates, that is a deviation from this
+prediction and from the expected failure, and should be recorded as such.
+
+**No token material was printed, piped, or recorded anywhere in this section.**
