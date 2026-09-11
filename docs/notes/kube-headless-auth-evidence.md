@@ -15,7 +15,10 @@ No credential value appears anywhere in this doc.
 
 §5 extends this summary with the round-2 re-split capture
 (`clasp-e4955511`, later the same day) — its close reason is quoted
-character-for-character and reproduces §1's capture exactly.
+character-for-character and reproduces §1's capture exactly. §6 extends it
+again with the round-3 re-split capture (`clasp-8484a909`, same day) — its
+close reason is quoted character-for-character and is byte-identical to §1
+and §5, making the determinism finding three-round.
 
 ## 1. The exact command run (child 3, `clasp-5568901c`)
 
@@ -168,3 +171,59 @@ exec auth blocks headless.
 (For `iad-kalshi` specifically the endpoint is
 `http://kubectl-proxy-iad-kalshi:8001` — that cluster has no Traefik route.
 §4 above is the fully-qualified version of the same verdict.)
+
+## 6. Round-3 capture — re-split probe child `clasp-8484a909` (2026-09-11)
+
+`clasp-0ffdb0a2` was re-split a third time into an umbrella + 4-child chain
+(commit `75885a5`); its probe child `clasp-8484a909` (closed
+2026-09-11T05:55Z) re-ran the same guarded probe. The evidence below is
+quoted from its close reason character-for-character.
+
+### The exact command as run (guard included, no `--server`)
+
+```
+timeout 15 kubectl auth can-i get applications.argoproj.io -n argocd
+```
+
+Combined stdout+stderr went to a throwaway `mktemp` capture file; the exit
+code came from `$?` immediately after; the rounds-1–2 redaction filter
+(JWT-shape / long-base64-run / credential-keyword scans) was re-verified a
+**no-op** (0/0/0 hits) before anything was written down, and the capture
+file was deleted afterward.
+
+### Verbatim combined stdout+stderr (3 text lines, blank line between first and second)
+
+```
+error: could not open the browser: exec: "xdg-open,x-www-browser,www-browser": executable file not found in $PATH
+
+Please visit the following URL in your browser manually: http://localhost:18000/
+error: get-token: authentication error: authcode-browser error: authentication error: authorization code flow error: oauth2 error: authorization error: authorization error: context canceled
+```
+
+### Exit code
+
+```
+124
+```
+
+### Determinism across rounds 1–3
+
+This capture is **character-for-character identical** to the round-1 capture
+in §1 (child 3, `clasp-5568901c`) and the round-2 capture in §5
+(`clasp-e4955511`) — same three lines, same `localhost:18000` callback URL,
+same **386 bytes**, same exit 124 (`timeout`'s own code: the 15-second guard
+did the killing; no `Yes`/`No` was printed, so no API server request was ever
+made — the failure sits entirely inside credential acquisition). Three
+independent probes across one day produced byte-identical failures: the
+headless block is deterministic, not transient.
+
+### Default context identity and cache state — unchanged, no deviation
+
+Child 1 re-confirmed the identity at capture time via config-file read only
+(no API server contacted, exec plugin not executed); re-checked when this
+section was written: current context `apexalgo-iad-kalshi-oidc` (user `oidc`,
+cluster `iad-kalshi`) — identical to §1/§2/§5. The token cache still holds
+**only zero-byte `.lock` files** (3 files, newest mtime 2026-08-19) — no
+id-token and no refresh token has ever existed on disk, matching §2's
+inventory. The round-3 probe cached no token. **The context did not
+authenticate; there is no deviation from rounds 1–2.**
