@@ -596,3 +596,12 @@
 {"bead":"clasp-7b41db05","duration_ms":210830,"event":"complete","exit_code":0,"outcome":"success","strand":"pluck","ts":"2026-09-11T09:42:43.855911563+00:00","worker":"glm-tradegraph"}
 {"bead":"clasp-7b41db05","event":"claim","strand":"pluck","ts":"2026-09-11T10:04:59.690012693+00:00","worker":"glm-tradegraph"}
 {"adapter":"claude-code-glm-5.3-flash","bead":"clasp-7b41db05","event":"dispatch","model":"glm-5.3-flash","strand":"pluck","ts":"2026-09-11T10:05:00.040701039+00:00","worker":"glm-tradegraph"}
+{"bead":"clasp-7b41db05","duration_ms":455757,"event":"complete","exit_code":0,"outcome":"success","strand":"pluck","ts":"2026-09-11T10:12:35.899773643+00:00","worker":"glm-tradegraph"}
+{"bead":"clasp-24c59a59","event":"claim","strand":"pluck","ts":"2026-09-11T10:12:39.470349055+00:00","worker":"glm-tradegraph"}
+{"adapter":"claude-code-glm-5.3-flash","bead":"clasp-24c59a59","event":"dispatch","model":"glm-5.3-flash","strand":"pluck","ts":"2026-09-11T10:12:39.780297712+00:00","worker":"glm-tradegraph"}
+{"bead":"clasp-24c59a59","duration_ms":198447,"event":"complete","exit_code":0,"outcome":"success","strand":"pluck","ts":"2026-09-11T10:15:58.322120342+00:00","worker":"glm-tradegraph"}
+{"bead":"clasp-76493ff9","event":"claim","strand":"pluck","ts":"2026-09-11T10:16:01.800044481+00:00","worker":"glm-tradegraph"}
+{"adapter":"claude-code-glm-5.3-flash","bead":"clasp-76493ff9","event":"dispatch","model":"glm-5.3-flash","strand":"pluck","ts":"2026-09-11T10:16:02.124858493+00:00","worker":"glm-tradegraph"}
+{"bead":"clasp-76493ff9","duration_ms":931118,"event":"complete","exit_code":0,"outcome":"success","strand":"pluck","ts":"2026-09-11T10:31:33.331590407+00:00","worker":"glm-tradegraph"}
+{"bead":"clasp-76493ff9","event":"claim","strand":"pluck","ts":"2026-09-11T10:37:36.976214618+00:00","worker":"glm-tradegraph"}
+{"adapter":"claude-code-glm-5.3-flash","bead":"clasp-76493ff9","event":"dispatch","model":"glm-5.3-flash","strand":"pluck","ts":"2026-09-11T10:37:37.291594076+00:00","worker":"glm-tradegraph"}
