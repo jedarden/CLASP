@@ -1,10 +1,10 @@
 {
-  "timestamp": "2026-09-11T08:36:46.000234292Z",
-  "total_open_beads": 23,
+  "timestamp": "2026-09-11T09:05:33.564720647Z",
+  "total_open_beads": 26,
   "exclusion_criteria": {
     "has_assignee": 0,
     "manually_blocked": 0,
-    "has_dependencies": 19,
+    "has_dependencies": 23,
     "resource_conflicts": 0
   },
   "final_candidate_count": 4,
@@ -197,6 +197,17 @@
       "conflict_count": 0
     },
     {
+      "bead_id": "clasp-8024b505",
+      "title": "Run the round-5 timeout-guarded can-i probe on the default context and capture raw output",
+      "priority": 2,
+      "assignee": null,
+      "manual_blocked": false,
+      "has_blockers": true,
+      "blocker_count": 1,
+      "has_resource_conflicts": false,
+      "conflict_count": 0
+    },
+    {
       "bead_id": "clasp-c82c0c6a",
       "title": "Write the round-5 headless-auth evidence section into docs/notes/kube-headless-auth-evidence.md",
       "priority": 2,
@@ -210,6 +221,28 @@
     {
       "bead_id": "clasp-d9139a5f",
       "title": "Verify round-5 evidence byte-identity and secret audit against the checkpoint store",
+      "priority": 2,
+      "assignee": null,
+      "manual_blocked": false,
+      "has_blockers": true,
+      "blocker_count": 1,
+      "has_resource_conflicts": false,
+      "conflict_count": 0
+    },
+    {
+      "bead_id": "clasp-7b41db05",
+      "title": "Screen the round-5 probe capture for credential material and stage the verbatim quote",
+      "priority": 2,
+      "assignee": null,
+      "manual_blocked": false,
+      "has_blockers": true,
+      "blocker_count": 1,
+      "has_resource_conflicts": false,
+      "conflict_count": 0
+    },
+    {
+      "bead_id": "clasp-6feb9b5b",
+      "title": "Record the round-5 can-i probe evidence in the headless-auth evidence doc",
       "priority": 2,
       "assignee": null,
       "manual_blocked": false,
