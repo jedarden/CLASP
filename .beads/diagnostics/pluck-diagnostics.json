@@ -1,10 +1,10 @@
 {
-  "timestamp": "2026-09-11T22:34:52.143633264Z",
-  "total_open_beads": 49,
+  "timestamp": "2026-09-11T23:06:04.966302458Z",
+  "total_open_beads": 52,
   "exclusion_criteria": {
     "has_assignee": 0,
     "manually_blocked": 0,
-    "has_dependencies": 45,
+    "has_dependencies": 48,
     "resource_conflicts": 0
   },
   "final_candidate_count": 4,
@@ -483,6 +483,17 @@
       "conflict_count": 0
     },
     {
+      "bead_id": "clasp-e83023c5",
+      "title": "Check round-5 capture file existence at the expected path",
+      "priority": 2,
+      "assignee": null,
+      "manual_blocked": false,
+      "has_blockers": true,
+      "blocker_count": 1,
+      "has_resource_conflicts": false,
+      "conflict_count": 0
+    },
+    {
       "bead_id": "clasp-42670e92",
       "title": "Stat round-5 capture file and record type, size, and mode",
       "priority": 2,
@@ -496,6 +507,28 @@
     {
       "bead_id": "clasp-cce95e6b",
       "title": "Record consolidated round-5 capture existence metadata",
+      "priority": 2,
+      "assignee": null,
+      "manual_blocked": false,
+      "has_blockers": true,
+      "blocker_count": 1,
+      "has_resource_conflicts": false,
+      "conflict_count": 0
+    },
+    {
+      "bead_id": "clasp-a9740292",
+      "title": "Record round-5 capture directory findings if file is missing",
+      "priority": 2,
+      "assignee": null,
+      "manual_blocked": false,
+      "has_blockers": true,
+      "blocker_count": 1,
+      "has_resource_conflicts": false,
+      "conflict_count": 0
+    },
+    {
+      "bead_id": "clasp-f6b1d994",
+      "title": "Mark round-5 existence gate resolved for umbrella chain",
       "priority": 2,
       "assignee": null,
       "manual_blocked": false,
