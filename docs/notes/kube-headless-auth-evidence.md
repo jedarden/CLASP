@@ -18,7 +18,11 @@ No credential value appears anywhere in this doc.
 character-for-character and reproduces §1's capture exactly. §6 extends it
 again with the round-3 re-split capture (`clasp-8484a909`, same day) — its
 close reason is quoted character-for-character and is byte-identical to §1
-and §5, making the determinism finding three-round.
+and §5, making the determinism finding three-round. §9 extends it a fourth
+time: the round-4 re-split (`clasp-dfae1b0d`, `clasp-21a6660d`,
+`clasp-d7d08293`) re-confirmed every fact independently, and §9 assembles all
+three close reasons into one ready-to-paste evidence block for the umbrella
+verdict, making the determinism finding four-round.
 
 ## 1. The exact command run (child 3, `clasp-5568901c`)
 
@@ -305,3 +309,140 @@ only:
 
 Nothing else. This attestation was written without touching any of the
 pre-existing files above.
+
+## 9. Round-4 assembled evidence block (`clasp-c1d8a579`, 2026-09-11)
+
+`clasp-0ffdb0a2` was re-split a fourth time. This round's three children all
+closed with complete evidence: **`clasp-dfae1b0d`** (context/config facts via
+config subcommands only), **`clasp-21a6660d`** (the guarded probe, verbatim
+output and exit code), and **`clasp-d7d08293`** (the cache-state root cause).
+Their close reasons are quoted character-for-character in §9.1–§9.3; §9.4 is
+the assembly the umbrella verdict can paste. Re-confirmed at assembly time:
+`timeout 15 kubectl config current-context` (config-file read only, no plugin
+exec, no API round-trip) still returns `apexalgo-iad-kalshi-oidc`, exit 0.
+
+### 9.1 Context and auth config — `clasp-dfae1b0d` (close reason, verbatim)
+
+The evidence portion of the close reason, character-for-character:
+
+```
+CONTEXT: apexalgo-iad-kalshi-oidc -> cluster iad-kalshi, user oidc, namespace default.
+CLUSTER iad-kalshi: server https://hcp-e00b0a44-a342-4b61-8500-d4c90ece0c2d.spot.rackspace.com; certificate-authority-data present (inline CA bundle, value not recorded); insecure-skip-tls-verify absent.
+USER oidc: NO auth-provider block - the task expected one; this kubeconfig instead uses an exec credential plugin, whose args carry the OIDC non-secret fields. Recorded verbatim:
+- apiVersion: client.authentication.k8s.io/v1beta1
+- command: kubectl
+- args: oidc-login get-token --oidc-issuer-url=https://login.spot.rackspace.com/ --oidc-client-id=mwG3lUMV8KyeMqHe4fJ5Bb3nM1vBvRNa --oidc-extra-scope=openid --oidc-extra-scope=profile --oidc-extra-scope=email --oidc-auth-request-extra-params=organization=org_KsELolwAOxl3Zxfm --token-cache-dir=~/.kube/cache/oidc-login/org_KsELolwAOxl3Zxfm (local filesystem path, not a credential)
+- env: [] ; provideClusterInfo: false ; interactiveMode: IfAvailable
+```
+
+The child's secret audit found the kubeconfig holds **no** client-secret flag,
+no env values, and no token field — the extraction was nonetheless piped
+through a jq scrubber.
+
+### 9.2 The probe — `clasp-21a6660d` (close reason, verbatim)
+
+```
+Command: timeout 15 kubectl auth can-i get applications.argoproj.io -n argocd
+
+Exit code: 124 (timeout killed it at 15s - matches expected).
+
+stdout (verbatim): empty
+
+stderr (verbatim):
+error: could not open the browser: exec: "xdg-open,x-www-browser,www-browser": executable file not found in $PATH
+
+Please visit the following URL in your browser manually: http://localhost:18000/
+error: get-token: authentication error: authcode-browser error: authentication error: authorization code flow error: oauth2 error: authorization error: authorization error: context canceled
+```
+
+The child's deviation note, quoted verbatim: "Matches the expected behavior.
+Deviation from the expected transcript: none beyond that trailing cancellation
+line, which is the timeout artifact itself."
+
+### 9.3 Root cause — `clasp-d7d08293` (close reason, verbatim)
+
+The one-sentence root-cause statement, character-for-character:
+
+```
+Root cause: the guarded probe (clasp-21a6660d) exits 124 because no cached OIDC token exists at all — the oidc-login plugin's pinned token-cache-dir (~/.kube/cache/oidc-login/org_KsELolwAOxl3Zxfm) contains zero token files, only its own stale 0-byte .lock (mtime 2026-08-07 19:21) — so there is no unexpired token that could ever authenticate headlessly and every call falls back to an interactive browser flow that a headless box cannot complete, blocking until timeout kills it.
+```
+
+Supporting metadata (existence/expiry only, no values): no token cache file of
+any naming convention (recursive listing); three 0-byte `.lock` artifacts total
+(the pinned dir's, mtime 2026-08-07 19:21, plus two at the parent level, mtime
+2026-05-03 06:46 and 2026-08-19 07:32); dir mtime unchanged since 2026-08-07 —
+kubelogin writes the cache only after a successful acquisition, which has
+never happened here.
+
+### 9.4 The assembled block — ready to paste into the umbrella verdict
+
+```
+ASSEMBLED EVIDENCE — headless-auth failure of the default kube context
+(round 4: clasp-dfae1b0d + clasp-21a6660d + clasp-d7d08293; assembled by
+clasp-c1d8a579, 2026-09-11)
+
+1) CONTEXT/CONFIG FACTS (clasp-dfae1b0d; config subcommands only — no
+get-token, no API round-trip): default context apexalgo-iad-kalshi-oidc ->
+cluster iad-kalshi (server
+https://hcp-e00b0a44-a342-4b61-8500-d4c90ece0c2d.spot.rackspace.com), user
+oidc, namespace default. NO auth-provider block: auth is an exec credential
+plugin, apiVersion client.authentication.k8s.io/v1beta1, command kubectl,
+args verbatim:
+  oidc-login get-token --oidc-issuer-url=https://login.spot.rackspace.com/ --oidc-client-id=mwG3lUMV8KyeMqHe4fJ5Bb3nM1vBvRNa --oidc-extra-scope=openid --oidc-extra-scope=profile --oidc-extra-scope=email --oidc-auth-request-extra-params=organization=org_KsELolwAOxl3Zxfm --token-cache-dir=~/.kube/cache/oidc-login/org_KsELolwAOxl3Zxfm
+env: []; provideClusterInfo: false; interactiveMode: IfAvailable.
+(--oidc-client-id is a public OAuth client identifier, not a secret;
+certificate-authority-data present but not recorded.)
+
+2) THE PROBE (clasp-21a6660d; run once, never without the guard):
+Command: timeout 15 kubectl auth can-i get applications.argoproj.io -n argocd
+Exit code: 124
+stdout (verbatim): empty
+stderr (verbatim):
+---
+error: could not open the browser: exec: "xdg-open,x-www-browser,www-browser": executable file not found in $PATH
+
+Please visit the following URL in your browser manually: http://localhost:18000/
+error: get-token: authentication error: authcode-browser error: authentication error: authorization code flow error: oauth2 error: authorization error: authorization error: context canceled
+---
+
+3) ROOT CAUSE (clasp-d7d08293; cache inspected with ls/stat metadata only):
+no cached OIDC token exists at all — the plugin's pinned token-cache-dir
+(~/.kube/cache/oidc-login/org_KsELolwAOxl3Zxfm) contains zero token files,
+only its own stale 0-byte .lock (mtime 2026-08-07 19:21) — so there is no
+unexpired token that could ever authenticate headlessly and every call falls
+back to an interactive browser flow that a headless box cannot complete,
+blocking until timeout kills it.
+
+4) DEVIATION NOTE: the probe did NOT unexpectedly succeed — exit 124 is the
+predicted outcome; the only transcript deviation is the trailing "context
+canceled" line, the timeout SIGTERM artifact itself. (Config-level deviation
+from the round's framing: the kubeconfig uses an exec credential plugin, not
+an auth-provider block — recorded by clasp-dfae1b0d.)
+
+VERDICT (quotable): every cluster read from this box must use an explicit
+--server=http://traefik-<cluster>:8001 endpoint (http://kubectl-proxy-iad-kalshi:8001
+for iad-kalshi) because the default context's exec auth blocks headless.
+
+Secret audit: no clientSecret, no id-token, no refresh token appears above —
+the kubeconfig holds none and the probe output is credential-free.
+```
+
+### 9.5 Cross-round determinism and methodology note
+
+The round-4 stderr is **character-for-character identical** to the round-1
+(§1, `clasp-5568901c`), round-2 (§5, `clasp-e4955511`), and round-3 (§6,
+`clasp-8484a909`) captures — same three lines, same `localhost:18000` callback
+URL, same exit 124. Four independent probes across one day produced
+byte-identical failures: the headless block is deterministic. One methodology
+difference: rounds 1–3 captured combined stdout+stderr (386 bytes); round 4
+captured the streams separately, which isolates `stdout: empty` — proof no
+API-server response (`Yes`/`No`) ever arrived.
+
+### 9.6 Secret audit for this section
+
+Every value in §9.1–§9.4 is quoted from the children's close reasons, which
+were captured under scrubbers: no clientSecret, no id-token, no refresh token,
+and no token-shaped material appears anywhere in this section. The
+`--oidc-client-id` value is a public OAuth client identifier (§2), the org
+parameter and cache-dir path are non-secret identifiers, and the CA bundle
+value is withheld as in §1–§6.
