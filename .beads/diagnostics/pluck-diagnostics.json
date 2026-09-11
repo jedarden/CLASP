@@ -1,10 +1,10 @@
 {
-  "timestamp": "2026-09-11T04:05:40.94861061Z",
-  "total_open_beads": 22,
+  "timestamp": "2026-09-11T04:23:51.477599003Z",
+  "total_open_beads": 20,
   "exclusion_criteria": {
     "has_assignee": 0,
     "manually_blocked": 0,
-    "has_dependencies": 19,
+    "has_dependencies": 16,
     "resource_conflicts": 0
   },
   "final_candidate_count": 4,
@@ -175,30 +175,8 @@
       "conflict_count": 0
     },
     {
-      "bead_id": "clasp-0ffdb0a2",
-      "title": "Capture the headless-auth failure of the default kube context as verbatim evidence",
-      "priority": 2,
-      "assignee": null,
-      "manual_blocked": false,
-      "has_blockers": true,
-      "blocker_count": 1,
-      "has_resource_conflicts": false,
-      "conflict_count": 0
-    },
-    {
       "bead_id": "clasp-a92f2c0f",
       "title": "Record the round verdict on umbrella clasp-c86a7e10 with verbatim evidence",
-      "priority": 2,
-      "assignee": null,
-      "manual_blocked": false,
-      "has_blockers": true,
-      "blocker_count": 1,
-      "has_resource_conflicts": false,
-      "conflict_count": 0
-    },
-    {
-      "bead_id": "clasp-cadee0e6",
-      "title": "Write the headless-auth evidence summary doc with the quotable verdict line",
       "priority": 2,
       "assignee": null,
       "manual_blocked": false,
