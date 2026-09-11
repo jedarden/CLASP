@@ -1,10 +1,10 @@
 {
-  "timestamp": "2026-09-11T21:46:34.804151229Z",
-  "total_open_beads": 46,
+  "timestamp": "2026-09-11T22:08:13.475208829Z",
+  "total_open_beads": 49,
   "exclusion_criteria": {
     "has_assignee": 0,
     "manually_blocked": 0,
-    "has_dependencies": 42,
+    "has_dependencies": 45,
     "resource_conflicts": 0
   },
   "final_candidate_count": 4,
@@ -450,6 +450,17 @@
       "conflict_count": 0
     },
     {
+      "bead_id": "clasp-867b3063",
+      "title": "Verify round-5 capture file exists",
+      "priority": 2,
+      "assignee": null,
+      "manual_blocked": false,
+      "has_blockers": true,
+      "blocker_count": 1,
+      "has_resource_conflicts": false,
+      "conflict_count": 0
+    },
+    {
       "bead_id": "clasp-2edd0acc",
       "title": "Compute line count of round-5 capture file",
       "priority": 2,
@@ -463,6 +474,28 @@
     {
       "bead_id": "clasp-c85b46e4",
       "title": "Confirm round-5 line count matches prior verified state",
+      "priority": 2,
+      "assignee": null,
+      "manual_blocked": false,
+      "has_blockers": true,
+      "blocker_count": 1,
+      "has_resource_conflicts": false,
+      "conflict_count": 0
+    },
+    {
+      "bead_id": "clasp-42670e92",
+      "title": "Stat round-5 capture file and record type, size, and mode",
+      "priority": 2,
+      "assignee": null,
+      "manual_blocked": false,
+      "has_blockers": true,
+      "blocker_count": 1,
+      "has_resource_conflicts": false,
+      "conflict_count": 0
+    },
+    {
+      "bead_id": "clasp-cce95e6b",
+      "title": "Record consolidated round-5 capture existence metadata",
       "priority": 2,
       "assignee": null,
       "manual_blocked": false,
