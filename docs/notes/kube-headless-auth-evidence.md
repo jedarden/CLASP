@@ -258,3 +258,50 @@ Quotable verdict (one line): Every cluster read from this box must use an explic
 
 Determinism: this capture is character-for-character identical to the round-1 capture (clasp-5568901c, §1) and the round-2 capture (clasp-e4955511, §5), same 386 bytes. No credential-shaped material appears anywhere in the output.
 ```
+
+## 8. Verification-context attestation — working-tree debris at dispatch time (`clasp-0bc66be2`)
+
+This shared checkout carries in-flight edits from other work. They are recorded
+here so that verifying this chain's closure (or the parent `clasp-0ffdb0a2`'s)
+does not mistake them for chain products, and so that no closing worker sweeps
+them into a commit.
+
+**Dispatch SHA.** The `.needle-predispatch-sha` marker written at dispatch
+holds the full SHA `320836806fe9e68802ccd94572d45fe96d0d1e07` (short
+`3208368`) — HEAD at dispatch time, the commit *chore(beads): close
+clasp-b4424bf6 parent close-reason block composition* (2026-09-11T02:27:13-04:00).
+Note a discrepancy in the dispatch text itself: the bead description cites
+`6757cbd` (the round-2 evidence commit, `clasp-16d7722e`), an ancestor five
+commits behind HEAD. The on-disk marker is authoritative. Both candidate SHAs
+are ancestors of HEAD, so the debris determination below is unaffected either
+way.
+
+**Pre-existing at dispatch — NOT products of the headless-auth chain:**
+
+Modified (tracked), belonging to other in-flight work — do not commit, revert,
+or stage:
+
+- `internal/logging/logging.go`
+- `internal/proxy/costs.go`
+- `internal/proxy/handler.go`
+- `internal/proxy/proxy_test.go`
+
+Untracked:
+
+- `docs/vertex-ai-openai-compatible.md` — other in-flight work
+- `.needle-predispatch-sha` — the dispatch marker itself, deliberately left
+  untracked
+
+`.beads/` churn (checkpoint rotation under `.beads/checkpoint/`, `events.jsonl`,
+`heartbeats.jsonl`, `pluck-diagnostics.json`) is bead-store noise, not
+working-tree debris; it stages normally with bead commits.
+
+**Staging rule.** Workers closing this chain (the round-3 children under parent
+`clasp-0ffdb0a2`, including `clasp-0bc66be2`) or closing the parent may stage
+only:
+
+1. the chain's own evidence-note path, `docs/notes/kube-headless-auth-evidence.md`, and
+2. `.beads/` state.
+
+Nothing else. This attestation was written without touching any of the
+pre-existing files above.
