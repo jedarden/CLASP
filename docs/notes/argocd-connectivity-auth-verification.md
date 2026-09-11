@@ -598,3 +598,131 @@ points at has an `argocd` namespace but no ArgoCD; any check that actually wants
 to read ArgoCD Applications must use `http://traefik-ardenone-cluster:8001`.
 All cluster calls remain timeout-bounded and credential-free; nothing regressed
 against any earlier round.
+
+## 12. Re-verification against the pinned iad-kalshi endpoint — 2026-09-11
+(`clasp-a4423070`, `clasp-6c87155b`, `clasp-f985699d`)
+
+A fourth split round for umbrella `clasp-c86a7e10`, and the first consolidated
+against **iad-kalshi** end to end — the cluster the configured context actually
+points at — instead of ardenone-cluster. Three scoped children, assembled here
+as child 4 of the split: `clasp-a4423070` (pins the one context and the
+endpoint every later step must use), its reachability successor
+`clasp-6c87155b`, and the RBAC child `clasp-f985699d`. Same method as every
+round above: explicit credential-free `--server` tailnet endpoint, every
+command under `timeout` (10 for config reads, 15 for cluster calls, 5 for the
+deliberate wrong-endpoint probe) with stdin closed (`</dev/null`). All live
+outputs below were re-run first-hand at documentation time (2026-09-11
+01:00–01:07 UTC) and match the children's close records; stdout/stderr are
+attributed per command.
+
+### Pin — `clasp-a4423070`
+
+Config-file reads only, no exec-plugin invocation, all exit 0:
+
+```
+$ timeout 10 kubectl config current-context
+apexalgo-iad-kalshi-oidc
+
+$ timeout 10 kubectl config view --minify -o jsonpath='{.contexts[0].context.cluster} {.contexts[0].context.user} clusterServer={.clusters[0].cluster.server}'
+iad-kalshi oidc clusterServer=https://hcp-e00b0a44-a342-4b61-8500-d4c90ece0c2d.spot.rackspace.com
+# matches §1/§7/§9 verbatim — Rackspace Spot hosted control plane
+```
+
+**Pinned endpoint: `http://kubectl-proxy-iad-kalshi:8001`.** iad-kalshi is the
+one CLAUDE.md-table row with no Traefik kubectl-proxy route — the proxy Service
+is exposed directly by the Tailscale operator — and the child's close record is
+explicit that `traefik-iad-kalshi:8001` must not be substituted for it: the
+name resolves (100.93.235.82) but refuses connections. That refusal is now
+captured verbatim first-hand (stderr; five identical `E…memcache.go` lines,
+first one shown, then the summary line):
+
+```
+$ timeout 5 kubectl --server=http://traefik-iad-kalshi:8001 get ns argocd </dev/null
+E0910 21:06:41.758338 1889681 memcache.go:265] "Unhandled Error" err="couldn't get current server API group list: Get \"http://traefik-iad-kalshi:8001/api?timeout=32s\": dial tcp 100.93.235.82:8001: connect: connection refused"
+# (… four more identical E-lines …)
+The connection to the server traefik-iad-kalshi:8001 was refused - did you specify the right host or port?
+# exit 1 — stdout empty
+```
+
+### Reachability — PASS (`clasp-6c87155b`)
+
+```
+$ timeout 15 kubectl --server=http://kubectl-proxy-iad-kalshi:8001 get ns argocd </dev/null
+NAME     STATUS   AGE
+argocd   Active   129d
+# exit 0 — stderr empty
+
+$ timeout 15 kubectl --server=http://kubectl-proxy-iad-kalshi:8001 version </dev/null
+Client Version: v1.36.3
+Kustomize Version: v5.8.1
+Server Version: v1.34.9
+# stderr: Warning: version difference between client (1.36) and server (1.34) exceeds the supported minor version skew of +/-1
+# exit 0 — first time this file records the bare version probe; the skew warning is advisory, not a failure
+
+$ timeout 15 kubectl --server=http://kubectl-proxy-iad-kalshi:8001 auth whoami </dev/null
+ATTRIBUTE                                           VALUE
+Username                                            system:serviceaccount:devpod-observer:devpod-observer
+UID                                                 a8682a81-b2d8-4af6-a7b6-ca85ddb36360
+Groups                                              [system:serviceaccounts system:serviceaccounts:devpod-observer system:authenticated]
+Extra: authentication.kubernetes.io/credential-id   [JTI=13621b53-bf4b-4b0d-9753-fd47c3345f60]
+Extra: authentication.kubernetes.io/node-name       [prod-instance-17854395072200685]
+Extra: authentication.kubernetes.io/node-uid        [d9213868-f030-4f84-8f41-b81e5827d970]
+Extra: authentication.kubernetes.io/pod-name        [kubectl-proxy-57b49c88bf-zqhvn]
+Extra: authentication.kubernetes.io/pod-uid         [9627eb25-2a1c-4ab1-b09d-19023f49efd7]
+# exit 0 — same iad-kalshi kubectl-proxy SA as §10 (UID, node and proxy pod all
+# match); only the per-session JTI rotated
+```
+
+### RBAC — can-i read Applications: NO, CRD-absent, not a denial (`clasp-f985699d`)
+
+```
+$ timeout 15 kubectl --server=http://kubectl-proxy-iad-kalshi:8001 auth can-i get applications.argoproj.io -n argocd </dev/null
+Warning: the server doesn't have a resource type 'applications' in group 'argoproj.io'
+
+no
+# exit 1 — stdout: no; stderr: the Warning above. The CRD-absent shape (§10),
+# NOT an RBAC denial.
+
+$ timeout 15 kubectl --server=http://kubectl-proxy-iad-kalshi:8001 api-resources --api-group=argoproj.io </dev/null
+NAME   SHORTNAMES   APIVERSION   NAMESPACED   KIND
+# exit 0 — empty table: no argoproj.io resource is served at all
+
+$ timeout 15 kubectl --server=http://kubectl-proxy-iad-kalshi:8001 get ns argocd </dev/null
+NAME     STATUS   AGE
+argocd   Active   129d
+# exit 0 — fallback probe: endpoint and identity both work, so the exit-1 above
+# is about the resource, not the caller
+```
+
+Answer UNCHANGED from §10/§11: iad-kalshi → CRD absent (no ArgoCD installed —
+the namespace exists but holds no ArgoCD, §10).
+
+### Headless-OIDC caveat — still applies
+
+The configured context is unchanged (reads above) and its oidc-login exec
+plugin's token cache is still empty — the cache dir holds only a 0-byte
+`.lock`, mtime 2026-08-07:
+
+```
+$ ls -la ~/.kube/cache/oidc-login/org_KsELolwAOxl3Zxfm/
+total 8
+drwx------ 2 coding users 4096 Aug  7 19:21 .
+drwx------ 3 coding users 4096 Aug 19 07:32 ..
+-rw------- 1 coding users    0 Aug  7 19:21 90e1f62b22c246b31866092f2b59453a9d1218ab22f4e4bb659eae988cbd2cc6.lock
+```
+
+So the §4/§8/§9 failure mode stands byte-for-byte; `clasp-a4423070` re-confirmed
+it live the same day (`timeout 10 kubectl get ns` on the bare context blocks
+until killed), and no new reproduction was run in this round. Every live check
+above therefore still runs through the pinned `--server` endpoint, never the
+bare context.
+
+**Round verdict: pin PASS (context `apexalgo-iad-kalshi-oidc` → iad-kalshi;
+endpoint `http://kubectl-proxy-iad-kalshi:8001`; the wrong-endpoint refusal
+captured verbatim) · reachability PASS (`argocd Active 129d`, version probe
+exit 0, answering identity = iad-kalshi's kubectl-proxy SA) · can-i read
+Applications NO on iad-kalshi — CRD-absent, not an RBAC denial, unchanged
+since §10 · headless use of `apexalgo-iad-kalshi-oidc` still FAIL (§4).**
+Nothing regressed; §11's standing conclusion is unchanged — checks that
+actually want to read ArgoCD Applications belong on
+`http://traefik-ardenone-cluster:8001`.
