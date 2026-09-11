@@ -611,3 +611,15 @@
 {"bead":"clasp-20f3600e","duration_ms":583454,"event":"complete","exit_code":0,"outcome":"success","strand":"pluck","ts":"2026-09-11T10:54:09.252893129+00:00","worker":"glm-tradegraph"}
 {"bead":"clasp-20f3600e","event":"claim","strand":"pluck","ts":"2026-09-11T10:59:16.276482737+00:00","worker":"glm-tradegraph"}
 {"adapter":"claude-code-glm-5.3-flash","bead":"clasp-20f3600e","event":"dispatch","model":"glm-5.3-flash","strand":"pluck","ts":"2026-09-11T10:59:16.591795407+00:00","worker":"glm-tradegraph"}
+{"bead":"clasp-20f3600e","duration_ms":713645,"event":"complete","exit_code":0,"outcome":"success","strand":"pluck","ts":"2026-09-11T11:11:10.331039896+00:00","worker":"glm-tradegraph"}
+{"bead":"clasp-e0372412","event":"claim","strand":"pluck","ts":"2026-09-11T11:11:13.801253102+00:00","worker":"glm-tradegraph"}
+{"adapter":"claude-code-glm-5.3-flash","bead":"clasp-e0372412","event":"dispatch","model":"glm-5.3-flash","strand":"pluck","ts":"2026-09-11T11:11:14.131919651+00:00","worker":"glm-tradegraph"}
+{"bead":"clasp-e0372412","duration_ms":547682,"event":"complete","exit_code":0,"outcome":"success","strand":"pluck","ts":"2026-09-11T11:20:21.915795244+00:00","worker":"glm-tradegraph"}
+{"bead":"clasp-7b41db05","event":"claim","strand":"pluck","ts":"2026-09-11T11:20:25.362465402+00:00","worker":"glm-tradegraph"}
+{"adapter":"claude-code-glm-5.3-flash","bead":"clasp-7b41db05","event":"dispatch","model":"glm-5.3-flash","strand":"pluck","ts":"2026-09-11T11:20:25.711652376+00:00","worker":"glm-tradegraph"}
+{"bead":"clasp-7b41db05","duration_ms":533446,"event":"complete","exit_code":0,"outcome":"success","strand":"pluck","ts":"2026-09-11T11:29:19.249839232+00:00","worker":"glm-tradegraph"}
+{"bead":"clasp-e9868af7","event":"claim","strand":"pluck","ts":"2026-09-11T11:29:22.854692452+00:00","worker":"glm-tradegraph"}
+{"adapter":"claude-code-glm-5.3-flash","bead":"clasp-e9868af7","event":"dispatch","model":"glm-5.3-flash","strand":"pluck","ts":"2026-09-11T11:29:23.187466085+00:00","worker":"glm-tradegraph"}
+{"bead":"clasp-e9868af7","duration_ms":125460,"event":"complete","exit_code":0,"outcome":"success","strand":"pluck","ts":"2026-09-11T11:31:28.741161976+00:00","worker":"glm-tradegraph"}
+{"bead":"clasp-e9868af7","event":"claim","strand":"pluck","ts":"2026-09-11T11:37:06.241029089+00:00","worker":"glm-tradegraph"}
+{"adapter":"claude-code-glm-5.3-flash","bead":"clasp-e9868af7","event":"dispatch","model":"glm-5.3-flash","strand":"pluck","ts":"2026-09-11T11:37:06.626953822+00:00","worker":"glm-tradegraph"}
