@@ -1,10 +1,10 @@
 {
-  "timestamp": "2026-09-11T05:26:50.998807019Z",
-  "total_open_beads": 20,
+  "timestamp": "2026-09-11T05:57:24.249206201Z",
+  "total_open_beads": 23,
   "exclusion_criteria": {
     "has_assignee": 0,
     "manually_blocked": 0,
-    "has_dependencies": 17,
+    "has_dependencies": 20,
     "resource_conflicts": 0
   },
   "final_candidate_count": 4,
@@ -175,8 +175,41 @@
       "conflict_count": 0
     },
     {
+      "bead_id": "clasp-0ffdb0a2",
+      "title": "Capture the headless-auth failure of the default kube context as verbatim evidence",
+      "priority": 2,
+      "assignee": null,
+      "manual_blocked": false,
+      "has_blockers": true,
+      "blocker_count": 1,
+      "has_resource_conflicts": false,
+      "conflict_count": 0
+    },
+    {
       "bead_id": "clasp-a92f2c0f",
       "title": "Record the round verdict on umbrella clasp-c86a7e10 with verbatim evidence",
+      "priority": 2,
+      "assignee": null,
+      "manual_blocked": false,
+      "has_blockers": true,
+      "blocker_count": 1,
+      "has_resource_conflicts": false,
+      "conflict_count": 0
+    },
+    {
+      "bead_id": "clasp-b4424bf6",
+      "title": "Compose the parent's close-reason evidence block quoting the verbatim probe failure",
+      "priority": 2,
+      "assignee": null,
+      "manual_blocked": false,
+      "has_blockers": true,
+      "blocker_count": 1,
+      "has_resource_conflicts": false,
+      "conflict_count": 0
+    },
+    {
+      "bead_id": "clasp-0bc66be2",
+      "title": "Record a pre-existing-debris attestation separating chain files from unrelated working-tree changes",
       "priority": 2,
       "assignee": null,
       "manual_blocked": false,
