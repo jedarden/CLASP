@@ -1,10 +1,10 @@
 {
-  "timestamp": "2026-09-11T16:03:38.124017895Z",
-  "total_open_beads": 33,
+  "timestamp": "2026-09-11T16:34:09.908488576Z",
+  "total_open_beads": 37,
   "exclusion_criteria": {
     "has_assignee": 0,
     "manually_blocked": 0,
-    "has_dependencies": 29,
+    "has_dependencies": 33,
     "resource_conflicts": 0
   },
   "final_candidate_count": 4,
@@ -320,6 +320,50 @@
     {
       "bead_id": "clasp-b3645d3c",
       "title": "Compile round-5 capture inventory record from child findings",
+      "priority": 2,
+      "assignee": null,
+      "manual_blocked": false,
+      "has_blockers": true,
+      "blocker_count": 1,
+      "has_resource_conflicts": false,
+      "conflict_count": 0
+    },
+    {
+      "bead_id": "clasp-82371069",
+      "title": "Record round-5 count and path on umbrella bead clasp-8d17bbf0",
+      "priority": 2,
+      "assignee": null,
+      "manual_blocked": false,
+      "has_blockers": true,
+      "blocker_count": 1,
+      "has_resource_conflicts": false,
+      "conflict_count": 0
+    },
+    {
+      "bead_id": "clasp-34315a86",
+      "title": "Write the verified round-5 metadata line onto umbrella bead clasp-8d17bbf0",
+      "priority": 2,
+      "assignee": null,
+      "manual_blocked": false,
+      "has_blockers": true,
+      "blocker_count": 1,
+      "has_resource_conflicts": false,
+      "conflict_count": 0
+    },
+    {
+      "bead_id": "clasp-c08ff567",
+      "title": "Verify umbrella clasp-8d17bbf0 notes are complete and audit the chain for content leakage",
+      "priority": 2,
+      "assignee": null,
+      "manual_blocked": false,
+      "has_blockers": true,
+      "blocker_count": 1,
+      "has_resource_conflicts": false,
+      "conflict_count": 0
+    },
+    {
+      "bead_id": "clasp-27dfbca4",
+      "title": "Record the ready-to-use close reason for parent clasp-82371069",
       "priority": 2,
       "assignee": null,
       "manual_blocked": false,
