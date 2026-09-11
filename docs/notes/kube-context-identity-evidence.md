@@ -155,3 +155,72 @@ If child 3's run instead authenticates, that is a deviation from this
 prediction and from the expected failure, and should be recorded as such.
 
 **No token material was printed, piped, or recorded anywhere in this section.**
+
+## 5. Live probe — bead `clasp-5568901c` (child 3 of the split)
+
+Recorded 2026-09-11 ~00:09 -0400, minutes after §4's prediction.
+
+**Method:** the parent bead's probe, run exactly as specified and **never
+without the guard** — the guard is what makes this probe completable on a
+headless box rather than a hang. Combined stdout+stderr was redirected into a
+throwaway temp capture file, the exit code taken from `$?` immediately after,
+and the recorded text below passed through the same redaction-filter family as
+§1 before being written down.
+
+### Command as run
+
+```
+timeout 15 kubectl auth can-i get applications.argoproj.io -n argocd
+```
+
+(Shell redirection `> "$OUT" 2>&1` captured the combined output to the temp
+file; the probe line itself is verbatim and unmodified.)
+
+### Verbatim combined output (after redaction filter)
+
+```
+error: could not open the browser: exec: "xdg-open,x-www-browser,www-browser": executable file not found in $PATH
+
+Please visit the following URL in your browser manually: http://localhost:18000/
+error: get-token: authentication error: authcode-browser error: authentication error: authorization code flow error: oauth2 error: authorization error: authorization error: context canceled
+```
+
+**Redaction note:** the filter (JWT-shaped strings, `code=`/`state=`/`nonce=`/
+`token=`/`secret=` query-style pairs, 40+-char hex runs) applied to the capture
+was a **verified no-op** — `diff` of before/after identical (capture: 386
+bytes, 4 lines, no CRs, single trailing newline). The output contains no
+token-shaped material at all. The only URL printed is the plugin's own local
+callback listener (`http://localhost:18000/`) — bare, no query parameters, no
+secrets.
+
+### Exit code
+
+```
+124
+```
+
+### Reading
+
+This **confirms §4's prediction** — no deviation:
+
+- With the token cache empty (§4: only zero-byte `.lock` files, no token entry
+  anywhere), `kubectl oidc-login get-token` could not serve the exec plugin
+  from disk and fell through to the authorization-code + browser flow.
+- Line 1: the browser exec failed outright — this box has no `xdg-open`,
+  `x-www-browser`, or `www-browser`.
+- Line 3: kubelogin fell back to "visit this URL manually" and **blocked on its
+  localhost callback listener**. That 15-second block is the parent bead's
+  suspected hang, now observed live.
+- Line 4 is the plugin's reaction to the guard's SIGTERM at t=15s (`context
+  canceled`), surfaced by `kubectl` as an exec-plugin authentication error —
+  an artifact of the kill, not an independent auth verdict. No API server
+  request was ever made; the failure is entirely inside credential acquisition.
+- Exit `124` is `timeout` reporting the job was killed on the deadline — the
+  probe never reached an authorization decision (`Yes`/`No` never printed).
+
+**Net:** parent `clasp-0ffdb0a2`'s expected failure is now demonstrated
+end-to-end — empty cache (§4) → browser flow (§2 config) → headless block →
+guard kill, exit 124. Headless use of `apexalgo-iad-kalshi-oidc` is
+structurally impossible, reinforcing the tailnet-endpoint rule for every
+cluster read from this box. Consolidated context:
+`argocd-connectivity-auth-verification.md`.
