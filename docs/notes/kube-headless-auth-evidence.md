@@ -13,6 +13,10 @@ Every command across children 1–3 ran under a `timeout 15` guard, and all
 recorded output passed through a redaction filter before being written down.
 No credential value appears anywhere in this doc.
 
+§5 extends this summary with the round-2 re-split capture
+(`clasp-e4955511`, later the same day) — its close reason is quoted
+character-for-character and reproduces §1's capture exactly.
+
 ## 1. The exact command run (child 3, `clasp-5568901c`)
 
 Run deliberately **without** `--server`, i.e. against the default context
@@ -105,3 +109,62 @@ end to end: empty cache → browser flow → headless block → guard kill.
 > OIDC flow that cannot run headless — with an empty token cache it blocks on
 > a localhost callback and is killed by `timeout` at exit 124 before any API
 > request is made.
+
+## 5. Round-2 capture — re-split probe child `clasp-e4955511` (2026-09-11)
+
+Later the same day, `clasp-0ffdb0a2` was re-split into a fresh child chain.
+Its probe child `clasp-e4955511` (closed 2026-09-11T05:05Z) re-ran the same
+guarded probe; the evidence below is quoted from its close reason
+character-for-character. The chain's cache-inventory child `clasp-2cc96fa3`
+closed with "PREDICTION: probe will block on the browser flow (expect exit
+124)" from a cache dir holding only a zero-byte lock file — confirmed on both
+prongs.
+
+### The exact command as run (guard included, no `--server`)
+
+```
+timeout 15 kubectl auth can-i get applications.argoproj.io -n argocd
+```
+
+### Verbatim combined stdout+stderr (3 lines, blank line between first and second)
+
+```
+error: could not open the browser: exec: "xdg-open,x-www-browser,www-browser": executable file not found in $PATH
+
+Please visit the following URL in your browser manually: http://localhost:18000/
+error: get-token: authentication error: authcode-browser error: authentication error: authorization code flow error: oauth2 error: authorization error: authorization error: context canceled
+```
+
+### Exit code
+
+```
+124
+```
+
+`timeout`'s own code — proving the 15-second guard did the killing; an instant
+plugin failure would have exited 1 immediately.
+
+### Reproduction check
+
+This capture is **character-for-character identical** to the round-1 capture
+in §1 — same three lines, same `localhost:18000` callback URL, same exit 124.
+The failure is deterministic, not transient.
+
+### Confirmed default context identity
+
+`apexalgo-iad-kalshi-oidc` — unchanged across both rounds: cluster `iad-kalshi`
+(Rackspace Spot hosted control plane) via the `kubectl oidc-login get-token`
+exec plugin against `https://login.spot.rackspace.com/`, with **no** static
+token and an **empty** token cache (only a zero-byte `.lock` file, stale since
+2026-08-07). Neither probe cached a token; nothing about the context changed
+between rounds.
+
+### One-line verdict (quotable verbatim)
+
+Every cluster read from this box must use an explicit
+--server=http://traefik-<cluster>:8001 endpoint because the default context's
+exec auth blocks headless.
+
+(For `iad-kalshi` specifically the endpoint is
+`http://kubectl-proxy-iad-kalshi:8001` — that cluster has no Traefik route.
+§4 above is the fully-qualified version of the same verdict.)
