@@ -560,3 +560,12 @@
 {"bead":"clasp-c1d8a579","duration_ms":1126214,"event":"complete","exit_code":0,"outcome":"success","strand":"pluck","ts":"2026-09-11T07:22:56.816896093+00:00","worker":"glm-tradegraph"}
 {"bead":"clasp-0ffdb0a2","event":"claim","strand":"pluck","ts":"2026-09-11T07:23:00.244873754+00:00","worker":"glm-tradegraph"}
 {"adapter":"claude-code-glm-5.3-flash","bead":"clasp-0ffdb0a2","event":"dispatch","model":"glm-5.3-flash","strand":"pluck","ts":"2026-09-11T07:23:00.556293443+00:00","worker":"glm-tradegraph"}
+{"bead":"clasp-0ffdb0a2","duration_ms":1093700,"event":"complete","exit_code":0,"outcome":"success","strand":"pluck","ts":"2026-09-11T07:41:14.354004660+00:00","worker":"glm-tradegraph"}
+{"bead":"clasp-5671371a","event":"claim","strand":"pluck","ts":"2026-09-11T07:41:18.011293347+00:00","worker":"glm-tradegraph"}
+{"adapter":"claude-code-glm-5.3-flash","bead":"clasp-5671371a","event":"dispatch","model":"glm-5.3-flash","strand":"pluck","ts":"2026-09-11T07:41:18.400791646+00:00","worker":"glm-tradegraph"}
+{"bead":"clasp-5671371a","duration_ms":453803,"event":"complete","exit_code":0,"outcome":"success","strand":"pluck","ts":"2026-09-11T07:48:52.307229518+00:00","worker":"glm-tradegraph"}
+{"bead":"clasp-8024b505","event":"claim","strand":"pluck","ts":"2026-09-11T07:48:55.774680089+00:00","worker":"glm-tradegraph"}
+{"adapter":"claude-code-glm-5.3-flash","bead":"clasp-8024b505","event":"dispatch","model":"glm-5.3-flash","strand":"pluck","ts":"2026-09-11T07:48:56.149161334+00:00","worker":"glm-tradegraph"}
+{"bead":"clasp-8024b505","duration_ms":656591,"event":"complete","exit_code":0,"outcome":"success","strand":"pluck","ts":"2026-09-11T07:59:52.829421809+00:00","worker":"glm-tradegraph"}
+{"bead":"clasp-8024b505","event":"claim","strand":"pluck","ts":"2026-09-11T08:05:59.338744461+00:00","worker":"glm-tradegraph"}
+{"adapter":"claude-code-glm-5.3-flash","bead":"clasp-8024b505","event":"dispatch","model":"glm-5.3-flash","strand":"pluck","ts":"2026-09-11T08:05:59.694693423+00:00","worker":"glm-tradegraph"}
