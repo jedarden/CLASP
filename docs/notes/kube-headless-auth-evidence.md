@@ -227,3 +227,34 @@ cluster `iad-kalshi`) — identical to §1/§2/§5. The token cache still holds
 id-token and no refresh token has ever existed on disk, matching §2's
 inventory. The round-3 probe cached no token. **The context did not
 authenticate; there is no deviation from rounds 1–2.**
+
+## 7. Close-reason block for the parent `clasp-0ffdb0a2` (ready to paste)
+
+Rounds 1–2 closed their child chains but never delivered the parent a
+packaged close reason, which is why it kept failing verification after its
+children closed. The block below is that packaging, quoted from child 1's
+(`clasp-8484a909`) close reason — the §6 capture — verified against the live
+store. The worker closing the parent can paste it verbatim as the `--reason`
+of `bead close clasp-0ffdb0a2` without re-deriving anything:
+
+```
+Round-3 timeout-guarded auth can-i probe (child 1 clasp-8484a909 of the round-3 re-split). Command, verbatim, deliberately no --server:
+
+timeout 15 kubectl auth can-i get applications.argoproj.io -n argocd
+
+Verbatim combined stdout+stderr (3 text lines, blank line between first and second):
+---
+error: could not open the browser: exec: "xdg-open,x-www-browser,www-browser": executable file not found in $PATH
+
+Please visit the following URL in your browser manually: http://localhost:18000/
+error: get-token: authentication error: authcode-browser error: authentication error: authorization code flow error: oauth2 error: authorization error: authorization error: context canceled
+---
+
+Exit code: 124 — timeout's own code: the 15-second guard did the killing; no Yes/No was printed, so no API server request was ever made; the failure sits entirely inside credential acquisition.
+
+Attestation: the probe was never run without the "timeout 15" guard.
+
+Quotable verdict (one line): Every cluster read from this box must use an explicit --server=http://traefik-<cluster>:8001 endpoint (http://kubectl-proxy-iad-kalshi:8001 for iad-kalshi) because the default context's exec auth blocks headless.
+
+Determinism: this capture is character-for-character identical to the round-1 capture (clasp-5568901c, §1) and the round-2 capture (clasp-e4955511, §5), same 386 bytes. No credential-shaped material appears anywhere in the output.
+```
