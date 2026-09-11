@@ -1,10 +1,10 @@
 {
-  "timestamp": "2026-09-11T13:34:26.166183518Z",
-  "total_open_beads": 32,
+  "timestamp": "2026-09-11T14:06:04.898387635Z",
+  "total_open_beads": 35,
   "exclusion_criteria": {
     "has_assignee": 0,
     "manually_blocked": 0,
-    "has_dependencies": 28,
+    "has_dependencies": 31,
     "resource_conflicts": 0
   },
   "final_candidate_count": 4,
@@ -296,6 +296,17 @@
       "conflict_count": 0
     },
     {
+      "bead_id": "clasp-8d17bbf0",
+      "title": "Count lines in round-5 capture and record only the count",
+      "priority": 2,
+      "assignee": null,
+      "manual_blocked": false,
+      "has_blockers": true,
+      "blocker_count": 1,
+      "has_resource_conflicts": false,
+      "conflict_count": 0
+    },
+    {
       "bead_id": "clasp-649f6089",
       "title": "Hash round-5 capture and record its sha256 digest",
       "priority": 2,
@@ -309,6 +320,28 @@
     {
       "bead_id": "clasp-b3645d3c",
       "title": "Compile round-5 capture inventory record from child findings",
+      "priority": 2,
+      "assignee": null,
+      "manual_blocked": false,
+      "has_blockers": true,
+      "blocker_count": 1,
+      "has_resource_conflicts": false,
+      "conflict_count": 0
+    },
+    {
+      "bead_id": "clasp-d91fe864",
+      "title": "Cross-check live round-5 line count against the recorded prior count",
+      "priority": 2,
+      "assignee": null,
+      "manual_blocked": false,
+      "has_blockers": true,
+      "blocker_count": 1,
+      "has_resource_conflicts": false,
+      "conflict_count": 0
+    },
+    {
+      "bead_id": "clasp-1eac6b88",
+      "title": "Record final verified round-5 capture count summary",
       "priority": 2,
       "assignee": null,
       "manual_blocked": false,
