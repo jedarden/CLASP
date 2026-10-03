@@ -871,30 +871,34 @@ func (h *Handler) handlePassthroughRequest(w http.ResponseWriter, r *http.Reques
 
 	// Handle streaming vs non-streaming passthrough
 	if anthropicReq.Stream {
-		h.handlePassthroughStreaming(w, resp)
+		h.handlePassthroughStreaming(w, resp, anthropicReq.Model)
 	} else {
 		h.handlePassthroughNonStreaming(w, resp, cacheKey, cacheable)
 	}
 }
 
 // handlePassthroughStreaming streams the Anthropic response directly.
-func (h *Handler) handlePassthroughStreaming(w http.ResponseWriter, resp *http.Response) {
+func (h *Handler) handlePassthroughStreaming(w http.ResponseWriter, resp *http.Response, model string) {
 	// Set SSE headers
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 	w.Header().Set("X-Accel-Buffering", "no")
+	announceRequestCostTrailer(w)
 
 	// Flush headers
 	if f, ok := w.(http.Flusher); ok {
 		f.Flush()
 	}
 
-	// Stream response directly
+	// Stream response directly and track usage for the cost trailer.
+	var usage anthropicStreamUsage
 	buf := make([]byte, 4096)
 	for {
 		n, err := resp.Body.Read(buf)
 		if n > 0 {
+			usage.consume(buf[:n])
+
 			if _, writeErr := w.Write(buf[:n]); writeErr != nil {
 				logging.Error("Error writing passthrough stream: %v", writeErr)
 				return
@@ -906,6 +910,10 @@ func (h *Handler) handlePassthroughStreaming(w http.ResponseWriter, resp *http.R
 		if err != nil {
 			if err != io.EOF {
 				logging.Error("Error reading passthrough stream: %v", err)
+			}
+			if h.costTracker != nil && usage.complete() {
+				h.costTracker.RecordUsage("anthropic", model, usage.inputTokens, usage.outputTokens)
+				setRequestCostHeader(w, h.costTracker, model, usage.inputTokens, usage.outputTokens)
 			}
 			return
 		}
@@ -933,10 +941,17 @@ func (h *Handler) handlePassthroughNonStreaming(w http.ResponseWriter, resp *htt
 	// Parse response for caching and cost tracking
 	var anthropicResp models.AnthropicResponse
 	if err := json.Unmarshal(body, &anthropicResp); err == nil {
-		// Track costs for passthrough
+		// Track costs for passthrough and calculate per-request cost
 		if h.costTracker != nil && anthropicResp.Usage != nil {
 			h.costTracker.RecordUsage(
 				"anthropic",
+				anthropicResp.Model,
+				anthropicResp.Usage.InputTokens,
+				anthropicResp.Usage.OutputTokens,
+			)
+
+			// Calculate per-request cost for response header
+			setRequestCostHeader(w, h.costTracker,
 				anthropicResp.Model,
 				anthropicResp.Usage.InputTokens,
 				anthropicResp.Usage.OutputTokens,
@@ -1048,6 +1063,7 @@ func (h *Handler) handleStreamingResponse(w http.ResponseWriter, resp *http.Resp
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 	w.Header().Set("X-Accel-Buffering", "no")
+	announceRequestCostTrailer(w)
 
 	// Flush headers
 	if f, ok := w.(http.Flusher); ok {
@@ -1075,6 +1091,7 @@ func (h *Handler) handleStreamingResponse(w http.ResponseWriter, resp *http.Resp
 				inputTokens,
 				outputTokens,
 			)
+			setRequestCostHeader(w, h.costTracker, targetModel, inputTokens, outputTokens)
 			logging.Info("Streaming cost tracked: %d input tokens, %d output tokens", inputTokens, outputTokens)
 		})
 	}
@@ -1179,10 +1196,17 @@ func (h *Handler) handleNonStreamingResponse(w http.ResponseWriter, resp *http.R
 		logging.LogDebugRequestRaw("RESPONSE", "/v1/messages (transformed)", maskedJSON)
 	}
 
-	// Track costs
+	// Track costs and calculate per-request cost
 	if h.costTracker != nil && anthropicResp.Usage != nil {
 		h.costTracker.RecordUsage(
 			h.provider.Name(),
+			targetModel,
+			anthropicResp.Usage.InputTokens,
+			anthropicResp.Usage.OutputTokens,
+		)
+
+		// Calculate per-request cost for response header
+		setRequestCostHeader(w, h.costTracker,
 			targetModel,
 			anthropicResp.Usage.InputTokens,
 			anthropicResp.Usage.OutputTokens,
@@ -1211,6 +1235,7 @@ func (h *Handler) handleResponsesStreamingResponse(w http.ResponseWriter, resp *
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 	w.Header().Set("X-Accel-Buffering", "no")
+	announceRequestCostTrailer(w)
 
 	// Flush headers
 	if f, ok := w.(http.Flusher); ok {
@@ -1238,6 +1263,7 @@ func (h *Handler) handleResponsesStreamingResponse(w http.ResponseWriter, resp *
 				inputTokens,
 				outputTokens,
 			)
+			setRequestCostHeader(w, h.costTracker, targetModel, inputTokens, outputTokens)
 			logging.Info("Responses API streaming cost tracked: %d input tokens, %d output tokens", inputTokens, outputTokens)
 		})
 	}
@@ -1400,10 +1426,17 @@ func (h *Handler) handleResponsesNonStreamingResponse(w http.ResponseWriter, res
 		logging.LogDebugRequestRaw("RESPONSE", "/v1/messages (from responses)", maskedJSON)
 	}
 
-	// Track costs
+	// Track costs and calculate per-request cost
 	if h.costTracker != nil && anthropicResp.Usage != nil {
 		h.costTracker.RecordUsage(
 			h.provider.Name(),
+			targetModel,
+			anthropicResp.Usage.InputTokens,
+			anthropicResp.Usage.OutputTokens,
+		)
+
+		// Calculate per-request cost for response header
+		setRequestCostHeader(w, h.costTracker,
 			targetModel,
 			anthropicResp.Usage.InputTokens,
 			anthropicResp.Usage.OutputTokens,

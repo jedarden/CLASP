@@ -299,6 +299,22 @@ func (ct *CostTracker) GetTotalCostUSD() float64 {
 	return float64(inputCostMicro+outputCostMicro) / 100000000.0
 }
 
+// CalculateRequestCost calculates the cost for a specific request without recording it.
+// Returns the cost in USD.
+func (ct *CostTracker) CalculateRequestCost(model string, inputTokens, outputTokens int) float64 {
+	pricing := ct.GetPricing(model)
+
+	// Calculate costs in microcents
+	inputCostMicro := int64(inputTokens) * int64(pricing.InputPer1M)
+	outputCostMicro := int64(outputTokens) * int64(pricing.OutputPer1M)
+	totalCostMicro := inputCostMicro + outputCostMicro
+
+	// Convert microcents to USD
+	// microcents / 1,000,000 = cents
+	// cents / 100 = dollars
+	return float64(totalCostMicro) / 100000000.0
+}
+
 // Reset resets all cost tracking data.
 func (ct *CostTracker) Reset() {
 	ct.mu.Lock()
