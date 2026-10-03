@@ -4,7 +4,6 @@ package proxy
 import (
 	"context"
 	"fmt"
-	"log"
 	"net"
 	"net/http"
 	"os"
@@ -54,7 +53,7 @@ func NewServerWithVersion(cfg *config.Config, version string) (*Server, error) {
 	// Initialize status line manager
 	statusManager, err := statusline.NewManager()
 	if err != nil {
-		log.Printf("[CLASP] Warning: Could not initialize status line: %v", err)
+		logging.Warn("Could not initialize status line: %v", err)
 		// Continue without status line support
 	}
 
@@ -87,7 +86,7 @@ func NewServerWithVersion(cfg *config.Config, version string) (*Server, error) {
 	if cfg.PromptCacheEnabled {
 		promptCache := cache.NewPromptCache(cfg.PromptCacheMaxSize, time.Duration(cfg.CacheTTL)*time.Second)
 		s.handler.SetPromptCache(promptCache)
-		log.Printf("[CLASP] Prompt caching enabled: max %d prefixes, TTL %d seconds",
+		logging.Info("Prompt caching enabled: max %d prefixes, TTL %d seconds",
 			cfg.PromptCacheMaxSize, cfg.CacheTTL)
 	}
 
@@ -179,7 +178,7 @@ func NewServerWithVersion(cfg *config.Config, version string) (*Server, error) {
 		ttl := time.Duration(cfg.SessionTimeoutSec) * time.Second
 		s.sessionTracker = session.NewTracker(ttl)
 		s.handler.SetSessionTracker(s.sessionTracker)
-		log.Printf("[CLASP] Compaction enabled (session TTL: %v)", ttl)
+		logging.Info("Compaction enabled (session TTL: %v)", ttl)
 	}
 
 	return s, nil
@@ -205,33 +204,33 @@ func (s *Server) Start() error {
 	// Apply rate limiting middleware if enabled
 	if s.rateLimiter != nil {
 		handler = RateLimitMiddleware(s.rateLimiter)(handler)
-		log.Printf("[CLASP] Rate limiting enabled: %d requests per %d seconds (burst: %d)",
+		logging.Info("Rate limiting enabled: %d requests per %d seconds (burst: %d)",
 			s.cfg.RateLimitRequests, s.cfg.RateLimitWindow, s.cfg.RateLimitBurst)
 	} else {
-		log.Printf("[CLASP] Warning: Rate limiting is disabled. Set RATE_LIMIT_ENABLED=true for production use.")
+		logging.Warn("Rate limiting is disabled. Set RATE_LIMIT_ENABLED=true for production use.")
 	}
 
 	// Log cache status
 	if s.cache != nil {
-		log.Printf("[CLASP] Response caching enabled: max %d entries, TTL %d seconds",
+		logging.Info("Response caching enabled: max %d entries, TTL %d seconds",
 			s.cfg.CacheMaxSize, s.cfg.CacheTTL)
 	}
 
 	// Log queue status
 	if s.queue != nil {
-		log.Printf("[CLASP] Request queue enabled: max %d requests, timeout %d seconds",
+		logging.Info("Request queue enabled: max %d requests, timeout %d seconds",
 			s.cfg.QueueMaxSize, s.cfg.QueueMaxWaitSeconds)
 	}
 
 	// Log circuit breaker status
 	if s.circuitBreaker != nil {
-		log.Printf("[CLASP] Circuit breaker enabled: threshold %d failures, recovery %d successes, timeout %d seconds",
+		logging.Info("Circuit breaker enabled: threshold %d failures, recovery %d successes, timeout %d seconds",
 			s.cfg.CircuitBreakerThreshold, s.cfg.CircuitBreakerRecovery, s.cfg.CircuitBreakerTimeoutSec)
 	}
 
 	// Log and start health checker
 	if s.healthChecker != nil {
-		log.Printf("[CLASP] Health checker enabled: interval %d seconds, timeout %d seconds",
+		logging.Info("Health checker enabled: interval %d seconds, timeout %d seconds",
 			s.cfg.HealthCheckIntervalSec, s.cfg.HealthCheckTimeoutSec)
 		s.healthChecker.Start()
 	}
@@ -239,10 +238,10 @@ func (s *Server) Start() error {
 	// Apply authentication middleware if enabled
 	if s.authConfig != nil && s.authConfig.Enabled {
 		handler = AuthMiddleware(s.authConfig)(handler)
-		log.Printf("[CLASP] Authentication enabled (anonymous health: %v, anonymous metrics: %v)",
+		logging.Info("Authentication enabled (anonymous health: %v, anonymous metrics: %v)",
 			s.authConfig.AllowAnonymousHealth, s.authConfig.AllowAnonymousMetrics)
 	} else {
-		log.Printf("[CLASP] Warning: Authentication is disabled. Set AUTH_ENABLED=true for production use.")
+		logging.Warn("Authentication is disabled. Set AUTH_ENABLED=true for production use.")
 	}
 
 	// Apply logging middleware
@@ -251,14 +250,14 @@ func (s *Server) Start() error {
 	// Auto-select port if default port is in use
 	port := s.cfg.Port
 	if !isPortAvailable(port) {
-		log.Printf("[CLASP] Port %d is in use, finding available port...", port)
+		logging.Warn("Port %d is in use, finding available port...", port)
 		newPort, err := findAvailablePort(port)
 		if err != nil {
 			return fmt.Errorf("failed to find available port: %w", err)
 		}
 		port = newPort
 		s.cfg.Port = port
-		log.Printf("[CLASP] Using port %d instead", port)
+		logging.Info("Using port %d instead", port)
 	}
 
 	// Set session port for logging - this enables port-specific log files
@@ -281,15 +280,15 @@ func (s *Server) Start() error {
 		// Configure status line on first run
 		if !s.statusManager.IsConfigured() {
 			if err := s.statusManager.Setup(); err != nil {
-				log.Printf("[CLASP] Warning: Could not configure status line: %v", err)
+				logging.Warn("Could not configure status line: %v", err)
 			} else {
-				log.Printf("[CLASP] Status line configured for Claude Code")
+				logging.Info("Status line configured for Claude Code")
 			}
 		}
 
 		// Clean up stale status files from previous instances
 		if cleaned, err := statusline.CleanupStaleInstances(); err == nil && cleaned > 0 {
-			log.Printf("[CLASP] Cleaned up %d stale status file(s)", cleaned)
+			logging.Info("Cleaned up %d stale status file(s)", cleaned)
 		}
 
 		// Write initial status
@@ -315,7 +314,7 @@ func (s *Server) Start() error {
 			status.Fallback = string(s.cfg.FallbackProvider)
 		}
 		if err := s.statusManager.UpdateStatus(status); err != nil {
-			log.Printf("[CLASP] Warning: Could not update status: %v", err)
+			logging.Warn("Could not update status: %v", err)
 		}
 
 		// Start metrics update goroutine
@@ -325,12 +324,12 @@ func (s *Server) Start() error {
 	// Start server in goroutine
 	errCh := make(chan error, 1)
 	go func() {
-		log.Printf("[CLASP] Starting proxy server on port %d", port)
-		log.Printf("[CLASP] Provider: %s", s.cfg.Provider)
+		logging.Info("Starting proxy server on port %d", port)
+		logging.Info("Provider: %s", s.cfg.Provider)
 		if s.cfg.DefaultModel != "" {
-			log.Printf("[CLASP] Default model: %s", s.cfg.DefaultModel)
+			logging.Info("Default model: %s", s.cfg.DefaultModel)
 		}
-		log.Printf("[CLASP] Set ANTHROPIC_BASE_URL=http://localhost:%d to use with Claude Code", port)
+		logging.Info("Set ANTHROPIC_BASE_URL=http://localhost:%d to use with Claude Code", port)
 
 		if err := s.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			errCh <- err
@@ -345,7 +344,7 @@ func (s *Server) Start() error {
 	case err := <-errCh:
 		return fmt.Errorf("server error: %w", err)
 	case sig := <-sigCh:
-		log.Printf("[CLASP] Received signal %v, shutting down...", sig)
+		logging.Info("Received signal %v, shutting down...", sig)
 		return s.Shutdown()
 	}
 }
@@ -406,7 +405,7 @@ func (s *Server) Shutdown() error {
 	// Mark status as stopped
 	if s.statusManager != nil {
 		if err := s.statusManager.ClearStatus(); err != nil {
-			log.Printf("[CLASP] Warning: Could not clear status: %v", err)
+			logging.Warn("Could not clear status: %v", err)
 		}
 	}
 
@@ -417,7 +416,7 @@ func (s *Server) Shutdown() error {
 		return fmt.Errorf("shutdown error: %w", err)
 	}
 
-	log.Printf("[CLASP] Server stopped")
+	logging.Info("Server stopped")
 	return nil
 }
 
@@ -491,7 +490,7 @@ func loggingMiddleware(next http.Handler) http.Handler {
 		next.ServeHTTP(lrw, r)
 
 		duration := time.Since(start)
-		log.Printf("[CLASP] %s %s %d %v", r.Method, r.URL.Path, lrw.statusCode, duration)
+		logging.Info("%s %s %d %v", r.Method, r.URL.Path, lrw.statusCode, duration)
 	})
 }
 

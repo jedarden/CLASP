@@ -9,9 +9,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -30,38 +30,38 @@ import (
 
 // Handler handles incoming Anthropic API requests.
 type Handler struct {
-	cfg              *config.Config
-	provider         provider.Provider
-	fallbackProvider provider.Provider
-	client           *http.Client
-	metrics          *Metrics
-	rateLimiter      *RateLimiter
-	cache            *RequestCache
-	promptCache      *cache.PromptCache
+	cfg                *config.Config
+	provider           provider.Provider
+	fallbackProvider   provider.Provider
+	client             *http.Client
+	metrics            *Metrics
+	rateLimiter        *RateLimiter
+	cache              *RequestCache
+	promptCache        *cache.PromptCache
 	promptCachePending sync.Map // map[string]promptCacheCtx — per-request prompt cache context
-	queue            *RequestQueue
-	circuitBreaker   *CircuitBreaker
-	costTracker      *CostTracker
-	healthChecker    *HealthChecker
-	tierProviders    map[config.ModelTier]provider.Provider
-	tierFallbacks    map[config.ModelTier]provider.Provider
-	sessionTracker   *session.Tracker
-	version          string
+	queue              *RequestQueue
+	circuitBreaker     *CircuitBreaker
+	costTracker        *CostTracker
+	healthChecker      *HealthChecker
+	tierProviders      map[config.ModelTier]provider.Provider
+	tierFallbacks      map[config.ModelTier]provider.Provider
+	sessionTracker     *session.Tracker
+	version            string
 }
 
 // Metrics tracks request statistics.
 type Metrics struct {
-	TotalRequests      int64
-	SuccessRequests    int64
-	ErrorRequests      int64
-	StreamRequests     int64
-	ToolCallRequests   int64
-	TotalLatencyMs     int64
-	FallbackAttempts   int64
-	FallbackSuccesses  int64
-	CompactionHits     int64 // Responses API requests using previous_response_id
-	CompactionMisses   int64 // Responses API requests without a stored session
-	StartTime          time.Time
+	TotalRequests     int64
+	SuccessRequests   int64
+	ErrorRequests     int64
+	StreamRequests    int64
+	ToolCallRequests  int64
+	TotalLatencyMs    int64
+	FallbackAttempts  int64
+	FallbackSuccesses int64
+	CompactionHits    int64 // Responses API requests using previous_response_id
+	CompactionMisses  int64 // Responses API requests without a stored session
+	StartTime         time.Time
 }
 
 // isReasoningModel checks if the model is a reasoning/codex model that may require extended timeouts.
@@ -132,7 +132,7 @@ func NewHandler(cfg *config.Config) (*Handler, error) {
 		if fallbackCfg := cfg.GetGlobalFallbackConfig(); fallbackCfg != nil {
 			if fallbackProvider, err := createTierProvider(fallbackCfg); err == nil {
 				handler.fallbackProvider = fallbackProvider
-				log.Printf("[CLASP] Global fallback: %s (%s)", cfg.FallbackProvider, cfg.FallbackModel)
+				logging.Info("Global fallback: %s (%s)", cfg.FallbackProvider, cfg.FallbackModel)
 			}
 		}
 	}
@@ -146,9 +146,9 @@ func NewHandler(cfg *config.Config) (*Handler, error) {
 
 	// Check if default model is a reasoning/codex model with insufficient timeout
 	if cfg.DefaultModel != "" && isReasoningModel(cfg.DefaultModel) && cfg.HTTPClientTimeoutSec < 600 {
-		log.Printf("[CLASP WARNING] Model %s is a reasoning/codex model that may require extended timeouts.", cfg.DefaultModel)
-		log.Printf("[CLASP WARNING] Current HTTP timeout: %d seconds. Recommended: 900 seconds (15 minutes).", cfg.HTTPClientTimeoutSec)
-		log.Printf("[CLASP WARNING] Set CLASP_HTTP_TIMEOUT=900 to avoid timeout errors on long-running requests.")
+		logging.Warn("Model %s is a reasoning/codex model that may require extended timeouts.", cfg.DefaultModel)
+		logging.Warn("Current HTTP timeout: %d seconds. Recommended: 900 seconds (15 minutes).", cfg.HTTPClientTimeoutSec)
+		logging.Warn("Set CLASP_HTTP_TIMEOUT=900 to avoid timeout errors on long-running requests.")
 	}
 
 	return handler, nil
@@ -163,7 +163,7 @@ func (h *Handler) initializeTier(tier config.ModelTier, tierCfg *config.TierConf
 	// Initialize main tier provider
 	if tierProvider, err := createTierProvider(tierCfg); err == nil {
 		h.tierProviders[tier] = tierProvider
-		log.Printf("[CLASP] Multi-provider: %s -> %s (%s)", tier, tierCfg.Provider, tierCfg.Model)
+		logging.Info("Multi-provider: %s -> %s (%s)", tier, tierCfg.Provider, tierCfg.Model)
 	}
 
 	// Initialize tier-specific fallback
@@ -171,7 +171,7 @@ func (h *Handler) initializeTier(tier config.ModelTier, tierCfg *config.TierConf
 		if fb := tierCfg.GetFallbackConfig(); fb != nil {
 			if fbProvider, err := createTierProvider(fb); err == nil {
 				h.tierFallbacks[tier] = fbProvider
-				log.Printf("[CLASP] Fallback: %s -> %s (%s)", tier, fb.Provider, fb.Model)
+				logging.Info("Fallback: %s -> %s (%s)", tier, fb.Provider, fb.Model)
 			}
 		}
 	}
@@ -225,6 +225,33 @@ func (h *Handler) GetMetrics() *Metrics {
 // GetCostTracker returns the cost tracker.
 func (h *Handler) GetCostTracker() *CostTracker {
 	return h.costTracker
+}
+
+// isProviderHealthy checks if a provider is currently healthy based on background health checks.
+// Returns true if the provider is healthy or if health checking is disabled.
+func (h *Handler) isProviderHealthy(providerName string) bool {
+	if h.healthChecker == nil {
+		// Health checking disabled - assume healthy
+		return true
+	}
+
+	health := h.healthChecker.GetProviderHealth(providerName)
+	if health == nil {
+		// Provider not registered in health checker - assume healthy
+		return true
+	}
+
+	// Check both the healthy flag and circuit breaker state
+	if !health.Healthy {
+		return false
+	}
+
+	// Also check if circuit breaker is open (if available)
+	if h.circuitBreaker != nil && h.circuitBreaker.IsOpen() {
+		return false
+	}
+
+	return true
 }
 
 // createProvider creates the appropriate provider based on config.
@@ -369,7 +396,7 @@ func (h *Handler) HandleMessages(w http.ResponseWriter, r *http.Request) {
 	// Azure OpenAI does not support the Responses API (gpt-5, gpt-5.1, codex)
 	if selectedProvider.Name() == "azure" && translator.RequiresResponsesAPI(targetModel) {
 		atomic.AddInt64(&h.metrics.ErrorRequests, 1)
-		log.Printf("[CLASP] Invalid combination: Azure provider + Responses API model '%s'", targetModel)
+		logging.Warn("Invalid combination: Azure provider + Responses API model '%s'", targetModel)
 		h.writeErrorResponse(w, http.StatusBadRequest, "invalid_request_error",
 			"Azure OpenAI does not support the Responses API. The model '"+targetModel+"' requires the Responses API (/v1/responses), which is only available via OpenAI or OpenRouter providers. Use provider 'openai' or 'openrouter' for gpt-5 and codex models.")
 		return
@@ -385,7 +412,7 @@ func (h *Handler) HandleMessages(w http.ResponseWriter, r *http.Request) {
 				previousResponseID = entry.ResponseID
 				newMessagesOffset = entry.MessageCount
 				atomic.AddInt64(&h.metrics.CompactionHits, 1)
-				log.Printf("[CLASP] Compaction: continuing session %s..., previous_response_id=%s (offset=%d)",
+				logging.Info("Compaction: continuing session %s..., previous_response_id=%s (offset=%d)",
 					sessionKey[:8], previousResponseID, newMessagesOffset)
 			} else {
 				atomic.AddInt64(&h.metrics.CompactionMisses, 1)
@@ -396,7 +423,7 @@ func (h *Handler) HandleMessages(w http.ResponseWriter, r *http.Request) {
 	// Check circuit breaker
 	if h.circuitBreaker != nil && !h.circuitBreaker.Allow() {
 		atomic.AddInt64(&h.metrics.ErrorRequests, 1)
-		log.Printf("[CLASP] Circuit breaker open - rejecting request")
+		logging.Warn("Circuit breaker open - rejecting request")
 		w.Header().Set("X-CLASP-Circuit-Breaker", "open")
 		h.writeErrorResponse(w, http.StatusServiceUnavailable, "overloaded_error", "Service temporarily unavailable - circuit breaker open")
 		return
@@ -415,7 +442,7 @@ func (h *Handler) HandleMessages(w http.ResponseWriter, r *http.Request) {
 		if h.circuitBreaker != nil {
 			h.circuitBreaker.RecordFailure()
 		}
-		log.Printf("[CLASP] Error making upstream request: %v", execErr)
+		logging.Error("Error making upstream request: %v", execErr)
 		h.writeErrorResponse(w, http.StatusBadGateway, "api_error", "Error connecting to upstream provider")
 		return
 	}
@@ -467,7 +494,7 @@ func (h *Handler) parseAndValidateRequest(r *http.Request) (*models.AnthropicReq
 	// Parse request body
 	var anthropicReq models.AnthropicRequest
 	if err := json.NewDecoder(r.Body).Decode(&anthropicReq); err != nil {
-		log.Printf("[CLASP] Error parsing request: %v", err)
+		logging.Error("Error parsing request: %v", err)
 		return nil, &requestError{
 			statusCode: http.StatusBadRequest,
 			errType:    "invalid_request_error",
@@ -492,14 +519,14 @@ func (h *Handler) parseAndValidateRequest(r *http.Request) (*models.AnthropicReq
 	originalModel := anthropicReq.Model
 	anthropicReq.Model = h.cfg.ResolveAlias(anthropicReq.Model)
 	if anthropicReq.Model != originalModel {
-		log.Printf("[CLASP] Resolved model alias: %s -> %s", originalModel, anthropicReq.Model)
+		logging.Info("Resolved model alias: %s -> %s", originalModel, anthropicReq.Model)
 	}
 
 	// Debug logging for incoming request (secrets are masked)
 	if h.cfg.DebugRequests {
 		debugJSON, _ := json.MarshalIndent(anthropicReq, "", "  ")
 		maskedJSON := secrets.MaskJSONSecrets(debugJSON)
-		log.Printf("[CLASP DEBUG] Incoming Anthropic request:\n%s", string(maskedJSON))
+		logging.Debug("Incoming Anthropic request:\n%s", string(maskedJSON))
 		logging.LogDebugRequestRaw("INCOMING", "/v1/messages", maskedJSON)
 	}
 
@@ -549,7 +576,7 @@ func (h *Handler) checkCache(w http.ResponseWriter, req *models.AnthropicRequest
 	}
 
 	if cachedResp, found := h.cache.Get(cacheKey); found {
-		log.Printf("[CLASP] Cache HIT for request")
+		logging.Info("Cache HIT for request")
 		atomic.AddInt64(&h.metrics.SuccessRequests, 1)
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("X-CLASP-Cache", "HIT")
@@ -557,7 +584,7 @@ func (h *Handler) checkCache(w http.ResponseWriter, req *models.AnthropicRequest
 		return "HIT", true
 	}
 
-	log.Printf("[CLASP] Cache MISS for request")
+	logging.Info("Cache MISS for request")
 	return cacheKey, cacheable
 }
 
@@ -576,7 +603,7 @@ func (h *Handler) tryStorePromptCache(cacheKey string, resp *models.AnthropicRes
 	if val, ok := h.promptCachePending.LoadAndDelete(cacheKey); ok {
 		ctx := val.(promptCacheCtx)
 		h.promptCache.Set(ctx.key, resp, ctx.tokens)
-		log.Printf("[CLASP] Response stored in prompt cache (prefix ~%d tokens)", ctx.tokens)
+		logging.Info("Response stored in prompt cache (prefix ~%d tokens)", ctx.tokens)
 	}
 }
 
@@ -589,12 +616,32 @@ func (h *Handler) selectProviderAndModel(req *models.AnthropicRequest) (provider
 	if tierCfg != nil {
 		tier := config.GetModelTier(req.Model)
 		if tierProvider, ok := h.tierProviders[tier]; ok {
+			// Check if tier provider is healthy before dispatching
+			if h.healthChecker != nil && !h.isProviderHealthy(string(tier)) {
+				logging.Warn("Tier provider %s is unhealthy, checking fallback", tier)
+				// Try to use fallback provider instead
+				if fallbackProvider, fallbackModel := h.getFallbackProvider(req.Model); fallbackProvider != nil {
+					selectedProvider = fallbackProvider
+					if fallbackModel != "" {
+						targetModel = fallbackModel
+					} else {
+						targetModel = tierCfg.Model
+						if targetModel == "" {
+							targetModel = h.cfg.MapModel(req.Model)
+						}
+					}
+					logging.Warn("Multi-provider routing with pre-fallback: %s -> %s via %s (fallback for unhealthy %s)", req.Model, targetModel, selectedProvider.Name(), tier)
+					return selectedProvider, targetModel
+				}
+				logging.Error("Tier provider %s is unhealthy but no fallback available, will attempt and fail fast", tier)
+			}
+
 			selectedProvider = tierProvider
 			targetModel = tierCfg.Model
 			if targetModel == "" {
 				targetModel = h.cfg.MapModel(req.Model)
 			}
-			log.Printf("[CLASP] Multi-provider routing: %s -> %s via %s", req.Model, targetModel, tierCfg.Provider)
+			logging.Info("Multi-provider routing: %s -> %s via %s", req.Model, targetModel, tierCfg.Provider)
 		} else {
 			targetModel = h.cfg.MapModel(req.Model)
 			targetModel = selectedProvider.TransformModelID(targetModel)
@@ -604,7 +651,7 @@ func (h *Handler) selectProviderAndModel(req *models.AnthropicRequest) (provider
 		targetModel = selectedProvider.TransformModelID(targetModel)
 	}
 
-	log.Printf("[CLASP] Request: %s -> %s (streaming: %v, provider: %s, passthrough: %v)",
+	logging.Info("Request: %s -> %s (streaming: %v, provider: %s, passthrough: %v)",
 		req.Model, targetModel, req.Stream, selectedProvider.Name(), !selectedProvider.RequiresTransformation())
 
 	return selectedProvider, targetModel
@@ -655,43 +702,43 @@ func (h *Handler) transformRequest(req *models.AnthropicRequest, targetModel str
 		}
 		responsesReq, err := translator.TransformRequestToResponses(reqToTransform, targetModel, previousResponseID)
 		if err != nil {
-			log.Printf("[CLASP] Error transforming request to Responses API: %v", err)
+			logging.Error("Error transforming request to Responses API: %v", err)
 			return nil, err
 		}
 
 		reqBody, err := json.Marshal(responsesReq)
 		if err != nil {
-			log.Printf("[CLASP] Error marshaling Responses request: %v", err)
+			logging.Error("Error marshaling Responses request: %v", err)
 			return nil, err
 		}
 
 		if h.cfg.DebugRequests {
 			debugJSON, _ := json.MarshalIndent(responsesReq, "", "  ")
 			maskedJSON := secrets.MaskJSONSecrets(debugJSON)
-			log.Printf("[CLASP DEBUG] Outgoing OpenAI Responses API request:\n%s", string(maskedJSON))
+			logging.Debug("Outgoing OpenAI Responses API request:\n%s", string(maskedJSON))
 			logging.LogDebugRequestRaw("OUTGOING", "/v1/responses", maskedJSON)
 		}
 
-		log.Printf("[CLASP] Using Responses API for model: %s", targetModel)
+		logging.Info("Using Responses API for model: %s", targetModel)
 		return reqBody, nil
 	}
 
 	openAIReq, err := translator.TransformRequest(req, targetModel)
 	if err != nil {
-		log.Printf("[CLASP] Error transforming request: %v", err)
+		logging.Error("Error transforming request: %v", err)
 		return nil, err
 	}
 
 	reqBody, err := json.Marshal(openAIReq)
 	if err != nil {
-		log.Printf("[CLASP] Error marshaling request: %v", err)
+		logging.Error("Error marshaling request: %v", err)
 		return nil, err
 	}
 
 	if h.cfg.DebugRequests {
 		debugJSON, _ := json.MarshalIndent(openAIReq, "", "  ")
 		maskedJSON := secrets.MaskJSONSecrets(debugJSON)
-		log.Printf("[CLASP DEBUG] Outgoing OpenAI Chat Completions request:\n%s", string(maskedJSON))
+		logging.Debug("Outgoing OpenAI Chat Completions request:\n%s", string(maskedJSON))
 		logging.LogDebugRequestRaw("OUTGOING", "/v1/chat/completions", maskedJSON)
 	}
 
@@ -711,7 +758,7 @@ func (h *Handler) tryFallback(ctx interface{ Done() <-chan struct{} }, req *mode
 	}
 
 	atomic.AddInt64(&h.metrics.FallbackAttempts, 1)
-	log.Printf("[CLASP] Primary provider failed, attempting fallback to %s", fallbackProvider.Name())
+	logging.Warn("Primary provider failed, attempting fallback to %s", fallbackProvider.Name())
 
 	// Re-transform request with fallback model if specified
 	useResponsesAPI := false
@@ -737,7 +784,7 @@ func (h *Handler) tryFallback(ctx interface{ Done() <-chan struct{} }, req *mode
 	resp, err = h.doRequestWithRetry(ctx, reqBody, fallbackProvider)
 	if err == nil && resp.StatusCode < 500 {
 		atomic.AddInt64(&h.metrics.FallbackSuccesses, 1)
-		log.Printf("[CLASP] Fallback to %s succeeded", fallbackProvider.Name())
+		logging.Info("Fallback to %s succeeded", fallbackProvider.Name())
 		return resp, targetModel, useResponsesAPI, true, nil
 	}
 
@@ -752,7 +799,7 @@ func (h *Handler) handleUpstreamError(w http.ResponseWriter, resp *http.Response
 	}
 	body, _ := io.ReadAll(resp.Body)
 	maskedBody := secrets.MaskAllSecrets(string(body))
-	log.Printf("[CLASP] Upstream error (%d): %s", resp.StatusCode, maskedBody)
+	logging.Error("Upstream error (%d): %s", resp.StatusCode, maskedBody)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(resp.StatusCode)
 	_, _ = w.Write(body)
@@ -799,7 +846,7 @@ func (h *Handler) checkPromptCache(w http.ResponseWriter, req *models.AnthropicR
 	}
 
 	// Cache hit - write response
-	log.Printf("[CLASP] Prompt cache HIT (prefix match, ~%d tokens saved)", tokenEstimate)
+	logging.Info("Prompt cache HIT (prefix match, ~%d tokens saved)", tokenEstimate)
 	atomic.AddInt64(&h.metrics.SuccessRequests, 1)
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("X-CLASP-Cache", "HIT")
@@ -817,7 +864,7 @@ func (h *Handler) handlePassthroughRequest(w http.ResponseWriter, r *http.Reques
 	reqBody, err := json.Marshal(anthropicReq)
 	if err != nil {
 		atomic.AddInt64(&h.metrics.ErrorRequests, 1)
-		log.Printf("[CLASP] Error marshaling passthrough request: %v", err)
+		logging.Error("Error marshaling passthrough request: %v", err)
 		h.writeErrorResponse(w, http.StatusInternalServerError, "api_error", "Error preparing request")
 		return
 	}
@@ -825,7 +872,7 @@ func (h *Handler) handlePassthroughRequest(w http.ResponseWriter, r *http.Reques
 	// Debug logging for passthrough request (secrets are masked)
 	if h.cfg.DebugRequests {
 		maskedJSON := secrets.MaskJSONSecrets(reqBody)
-		log.Printf("[CLASP DEBUG] Passthrough to Anthropic API:\n%s", string(maskedJSON))
+		logging.Debug("Passthrough to Anthropic API:\n%s", string(maskedJSON))
 		// Also log to dedicated debug file
 		logging.LogDebugRequestRaw("PASSTHROUGH", "/v1/messages", maskedJSON)
 	}
@@ -837,7 +884,7 @@ func (h *Handler) handlePassthroughRequest(w http.ResponseWriter, r *http.Reques
 		if h.circuitBreaker != nil {
 			h.circuitBreaker.RecordFailure()
 		}
-		log.Printf("[CLASP] Error in passthrough request: %v", err)
+		logging.Error("Error in passthrough request: %v", err)
 		h.writeErrorResponse(w, http.StatusBadGateway, "api_error", "Error connecting to Anthropic API")
 		return
 	}
@@ -852,7 +899,7 @@ func (h *Handler) handlePassthroughRequest(w http.ResponseWriter, r *http.Reques
 		body, _ := io.ReadAll(resp.Body)
 		// Mask any secrets in error response before logging
 		maskedBody := secrets.MaskAllSecrets(string(body))
-		log.Printf("[CLASP] Anthropic API error (%d): %s", resp.StatusCode, maskedBody)
+		logging.Error("Anthropic API error (%d): %s", resp.StatusCode, maskedBody)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(resp.StatusCode)
 		_, _ = w.Write(body) // Send original response to client
@@ -891,13 +938,36 @@ func (h *Handler) handlePassthroughStreaming(w http.ResponseWriter, resp *http.R
 		f.Flush()
 	}
 
-	// Stream response directly
+	// Stream response directly and track usage for cost header
+	var inputTokens, outputTokens int
 	buf := make([]byte, 4096)
 	for {
 		n, err := resp.Body.Read(buf)
 		if n > 0 {
+			// Track usage from passthrough stream if cost tracker is enabled
+			if h.costTracker != nil {
+				// Parse incoming chunk for usage information
+				// Anthropic sends usage in a message_stop event
+				chunk := string(buf[:n])
+				if strings.Contains(chunk, `"type":"message_stop"`) {
+					// Try to extract usage from the event
+					if idx := strings.Index(chunk, `"usage":`); idx != -1 {
+						// Look for input_tokens and output_tokens
+						if inputIdx := strings.Index(chunk[idx:], `"input_tokens":`); inputIdx != -1 {
+							inputTokens = parseIntAt(chunk[idx+inputIdx+16:], 10)
+						}
+						if outputIdx := strings.Index(chunk[idx:], `"output_tokens":`); outputIdx != -1 {
+							outputTokens = parseIntAt(chunk[idx+outputIdx+17:], 10)
+						}
+						if inputTokens > 0 || outputTokens > 0 {
+							h.costTracker.RecordUsage("anthropic", "passthrough", inputTokens, outputTokens)
+						}
+					}
+				}
+			}
+
 			if _, writeErr := w.Write(buf[:n]); writeErr != nil {
-				log.Printf("[CLASP] Error writing passthrough stream: %v", writeErr)
+				logging.Error("Error writing passthrough stream: %v", writeErr)
 				return
 			}
 			if f, ok := w.(http.Flusher); ok {
@@ -906,11 +976,31 @@ func (h *Handler) handlePassthroughStreaming(w http.ResponseWriter, resp *http.R
 		}
 		if err != nil {
 			if err != io.EOF {
-				log.Printf("[CLASP] Error reading passthrough stream: %v", err)
+				logging.Error("Error reading passthrough stream: %v", err)
+			}
+			// Send final cost event if we tracked usage
+			if h.costTracker != nil && inputTokens > 0 && outputTokens > 0 {
+				requestCost := h.costTracker.CalculateRequestCost("passthrough", inputTokens, outputTokens)
+				fmt.Fprintf(w, "event: cost\ndata: {\"cost_usd\": %.6f, \"input_tokens\": %d, \"output_tokens\": %d}\n\n", requestCost, inputTokens, outputTokens)
+				if f, ok := w.(http.Flusher); ok {
+					f.Flush()
+				}
 			}
 			return
 		}
 	}
+}
+
+// parseIntAt parses an integer from a string starting at position 0, stopping at non-digit or maxLen.
+func parseIntAt(s string, maxLen int) int {
+	i := 0
+	for ; i < len(s) && i < maxLen && s[i] >= '0' && s[i] <= '9'; i++ {
+	}
+	if i == 0 {
+		return 0
+	}
+	val, _ := strconv.Atoi(s[:i])
+	return val
 }
 
 // handlePassthroughNonStreaming handles non-streaming passthrough responses.
@@ -918,7 +1008,7 @@ func (h *Handler) handlePassthroughNonStreaming(w http.ResponseWriter, resp *htt
 	// Read response body
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		log.Printf("[CLASP] Error reading passthrough response: %v", err)
+		logging.Error("Error reading passthrough response: %v", err)
 		h.writeErrorResponse(w, http.StatusBadGateway, "api_error", "Error reading upstream response")
 		return
 	}
@@ -926,7 +1016,7 @@ func (h *Handler) handlePassthroughNonStreaming(w http.ResponseWriter, resp *htt
 	// Debug logging (secrets are masked)
 	if h.cfg.DebugResponses {
 		maskedBody := secrets.MaskJSONSecrets(body)
-		log.Printf("[CLASP DEBUG] Passthrough response:\n%s", string(maskedBody))
+		logging.Debug("Passthrough response:\n%s", string(maskedBody))
 		// Also log to dedicated debug file
 		logging.LogDebugRequestRaw("RESPONSE", "/v1/messages (passthrough)", maskedBody)
 	}
@@ -934,7 +1024,7 @@ func (h *Handler) handlePassthroughNonStreaming(w http.ResponseWriter, resp *htt
 	// Parse response for caching and cost tracking
 	var anthropicResp models.AnthropicResponse
 	if err := json.Unmarshal(body, &anthropicResp); err == nil {
-		// Track costs for passthrough
+		// Track costs for passthrough and calculate per-request cost
 		if h.costTracker != nil && anthropicResp.Usage != nil {
 			h.costTracker.RecordUsage(
 				"anthropic",
@@ -942,12 +1032,20 @@ func (h *Handler) handlePassthroughNonStreaming(w http.ResponseWriter, resp *htt
 				anthropicResp.Usage.InputTokens,
 				anthropicResp.Usage.OutputTokens,
 			)
+
+			// Calculate per-request cost for response header
+			requestCost := h.costTracker.CalculateRequestCost(
+				anthropicResp.Model,
+				anthropicResp.Usage.InputTokens,
+				anthropicResp.Usage.OutputTokens,
+			)
+			w.Header().Set("X-CLASP-Cost", fmt.Sprintf("%.6f", requestCost))
 		}
 
 		// Cache if enabled
 		if h.cache != nil && cacheable && cacheKey != "" {
 			h.cache.Set(cacheKey, &anthropicResp)
-			log.Printf("[CLASP] Passthrough response cached (key: %s...)", cacheKey[:16])
+			logging.Info("Passthrough response cached (key: %s...)", cacheKey[:16])
 			h.tryStorePromptCache(cacheKey, &anthropicResp)
 		}
 	}
@@ -994,7 +1092,7 @@ func (h *Handler) doRequestWithRetry(ctx interface{ Done() <-chan struct{} }, re
 		// Don't retry on last attempt
 		if attempt < maxRetries-1 {
 			delay := baseDelay * time.Duration(1<<attempt) // Exponential backoff
-			log.Printf("[CLASP] Retry %d/%d after %v: %v", attempt+1, maxRetries, delay, lastErr)
+			logging.Warn("Retry %d/%d after %v: %v", attempt+1, maxRetries, delay, lastErr)
 
 			select {
 			case <-ctx.Done():
@@ -1068,20 +1166,32 @@ func (h *Handler) handleStreamingResponse(w http.ResponseWriter, resp *http.Resp
 	processor := translator.NewStreamProcessor(fw, messageID, targetModel)
 
 	// Set up cost tracking callback if cost tracker is available
+	var finalInputTokens, finalOutputTokens int
 	if h.costTracker != nil {
 		processor.SetUsageCallback(func(inputTokens, outputTokens int) {
+			finalInputTokens = inputTokens
+			finalOutputTokens = outputTokens
 			h.costTracker.RecordUsage(
 				h.provider.Name(),
 				targetModel,
 				inputTokens,
 				outputTokens,
 			)
-			log.Printf("[CLASP] Streaming cost tracked: %d input tokens, %d output tokens", inputTokens, outputTokens)
+			logging.Info("Streaming cost tracked: %d input tokens, %d output tokens", inputTokens, outputTokens)
 		})
 	}
 
 	if err := processor.ProcessStream(resp.Body); err != nil {
-		log.Printf("[CLASP] Error processing stream: %v", err)
+		logging.Error("Error processing stream: %v", err)
+	}
+
+	// Send final cost event if we tracked usage
+	if h.costTracker != nil && finalInputTokens > 0 && finalOutputTokens > 0 {
+		requestCost := h.costTracker.CalculateRequestCost(targetModel, finalInputTokens, finalOutputTokens)
+		fmt.Fprintf(w, "event: cost\ndata: {\"cost_usd\": %.6f, \"input_tokens\": %d, \"output_tokens\": %d}\n\n", requestCost, finalInputTokens, finalOutputTokens)
+		if fw.flusher != nil {
+			fw.flusher.Flush()
+		}
 	}
 }
 
@@ -1090,7 +1200,7 @@ func (h *Handler) handleNonStreamingResponse(w http.ResponseWriter, resp *http.R
 	// Read response body
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		log.Printf("[CLASP] Error reading response: %v", err)
+		logging.Error("Error reading response: %v", err)
 		http.Error(w, "Error reading upstream response", http.StatusBadGateway)
 		return
 	}
@@ -1098,7 +1208,7 @@ func (h *Handler) handleNonStreamingResponse(w http.ResponseWriter, resp *http.R
 	// Debug logging for raw response (secrets are masked)
 	if h.cfg.DebugResponses {
 		maskedBody := secrets.MaskJSONSecrets(body)
-		log.Printf("[CLASP DEBUG] Raw OpenAI response:\n%s", string(maskedBody))
+		logging.Debug("Raw OpenAI response:\n%s", string(maskedBody))
 		// Also log to dedicated debug file
 		logging.LogDebugRequestRaw("RESPONSE", "/v1/chat/completions (raw)", maskedBody)
 	}
@@ -1128,7 +1238,7 @@ func (h *Handler) handleNonStreamingResponse(w http.ResponseWriter, resp *http.R
 	}
 
 	if err := json.Unmarshal(body, &openAIResp); err != nil {
-		log.Printf("[CLASP] Error parsing response: %v", err)
+		logging.Error("Error parsing response: %v", err)
 		http.Error(w, "Error parsing upstream response", http.StatusBadGateway)
 		return
 	}
@@ -1175,12 +1285,12 @@ func (h *Handler) handleNonStreamingResponse(w http.ResponseWriter, resp *http.R
 	if h.cfg.DebugResponses {
 		debugJSON, _ := json.MarshalIndent(anthropicResp, "", "  ")
 		maskedJSON := secrets.MaskJSONSecrets(debugJSON)
-		log.Printf("[CLASP DEBUG] Transformed Anthropic response:\n%s", string(maskedJSON))
+		logging.Debug("Transformed Anthropic response:\n%s", string(maskedJSON))
 		// Also log to dedicated debug file
 		logging.LogDebugRequestRaw("RESPONSE", "/v1/messages (transformed)", maskedJSON)
 	}
 
-	// Track costs
+	// Track costs and calculate per-request cost
 	if h.costTracker != nil && anthropicResp.Usage != nil {
 		h.costTracker.RecordUsage(
 			h.provider.Name(),
@@ -1188,12 +1298,20 @@ func (h *Handler) handleNonStreamingResponse(w http.ResponseWriter, resp *http.R
 			anthropicResp.Usage.InputTokens,
 			anthropicResp.Usage.OutputTokens,
 		)
+
+		// Calculate per-request cost for response header
+		requestCost := h.costTracker.CalculateRequestCost(
+			targetModel,
+			anthropicResp.Usage.InputTokens,
+			anthropicResp.Usage.OutputTokens,
+		)
+		w.Header().Set("X-CLASP-Cost", fmt.Sprintf("%.6f", requestCost))
 	}
 
 	// Store in cache if cacheable
 	if h.cache != nil && cacheable && cacheKey != "" {
 		h.cache.Set(cacheKey, &anthropicResp)
-		log.Printf("[CLASP] Response cached (key: %s...)", cacheKey[:16])
+		logging.Info("Response cached (key: %s...)", cacheKey[:16])
 		h.tryStorePromptCache(cacheKey, &anthropicResp)
 	}
 
@@ -1231,28 +1349,40 @@ func (h *Handler) handleResponsesStreamingResponse(w http.ResponseWriter, resp *
 	processor := translator.NewResponsesStreamProcessor(fw, messageID, targetModel)
 
 	// Set up cost tracking callback if cost tracker is available
+	var finalInputTokens, finalOutputTokens int
 	if h.costTracker != nil {
 		processor.SetUsageCallback(func(inputTokens, outputTokens int) {
+			finalInputTokens = inputTokens
+			finalOutputTokens = outputTokens
 			h.costTracker.RecordUsage(
 				h.provider.Name(),
 				targetModel,
 				inputTokens,
 				outputTokens,
 			)
-			log.Printf("[CLASP] Responses API streaming cost tracked: %d input tokens, %d output tokens", inputTokens, outputTokens)
+			logging.Info("Responses API streaming cost tracked: %d input tokens, %d output tokens", inputTokens, outputTokens)
 		})
 	}
 
 	if err := processor.ProcessStream(resp.Body); err != nil {
-		log.Printf("[CLASP] Error processing Responses API stream: %v", err)
+		logging.Error("Error processing Responses API stream: %v", err)
 	}
 
 	// Store response ID in session tracker for compaction.
 	if responseID := processor.GetResponseID(); responseID != "" {
-		log.Printf("[CLASP] Responses API response ID: %s", responseID)
+		logging.Info("Responses API response ID: %s", responseID)
 		if h.sessionTracker != nil && sessionKey != "" {
 			h.sessionTracker.Set(sessionKey, responseID, messageCount)
-			log.Printf("[CLASP] Compaction: stored session %s... (messages=%d)", sessionKey[:8], messageCount)
+			logging.Info("Compaction: stored session %s... (messages=%d)", sessionKey[:8], messageCount)
+		}
+	}
+
+	// Send final cost event if we tracked usage
+	if h.costTracker != nil && finalInputTokens > 0 && finalOutputTokens > 0 {
+		requestCost := h.costTracker.CalculateRequestCost(targetModel, finalInputTokens, finalOutputTokens)
+		fmt.Fprintf(w, "event: cost\ndata: {\"cost_usd\": %.6f, \"input_tokens\": %d, \"output_tokens\": %d}\n\n", requestCost, finalInputTokens, finalOutputTokens)
+		if fw.flusher != nil {
+			fw.flusher.Flush()
 		}
 	}
 }
@@ -1263,7 +1393,7 @@ func (h *Handler) handleResponsesNonStreamingResponse(w http.ResponseWriter, res
 	// Read response body
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		log.Printf("[CLASP] Error reading Responses API response: %v", err)
+		logging.Error("Error reading Responses API response: %v", err)
 		http.Error(w, "Error reading upstream response", http.StatusBadGateway)
 		return
 	}
@@ -1271,7 +1401,7 @@ func (h *Handler) handleResponsesNonStreamingResponse(w http.ResponseWriter, res
 	// Debug logging for raw response (secrets are masked)
 	if h.cfg.DebugResponses {
 		maskedBody := secrets.MaskJSONSecrets(body)
-		log.Printf("[CLASP DEBUG] Raw OpenAI Responses API response:\n%s", string(maskedBody))
+		logging.Debug("Raw OpenAI Responses API response:\n%s", string(maskedBody))
 		// Also log to dedicated debug file
 		logging.LogDebugRequestRaw("RESPONSE", "/v1/responses (raw)", maskedBody)
 	}
@@ -1279,7 +1409,7 @@ func (h *Handler) handleResponsesNonStreamingResponse(w http.ResponseWriter, res
 	// Parse Responses API response
 	var responsesResp models.ResponsesResponse
 	if err := json.Unmarshal(body, &responsesResp); err != nil {
-		log.Printf("[CLASP] Error parsing Responses API response: %v", err)
+		logging.Error("Error parsing Responses API response: %v", err)
 		http.Error(w, "Error parsing upstream response", http.StatusBadGateway)
 		return
 	}
@@ -1287,7 +1417,7 @@ func (h *Handler) handleResponsesNonStreamingResponse(w http.ResponseWriter, res
 	// Store response ID in session tracker for compaction.
 	if h.sessionTracker != nil && sessionKey != "" && responsesResp.ID != "" {
 		h.sessionTracker.Set(sessionKey, responsesResp.ID, messageCount)
-		log.Printf("[CLASP] Compaction: stored session %s... response_id=%s (messages=%d)",
+		logging.Info("Compaction: stored session %s... response_id=%s (messages=%d)",
 			sessionKey[:8], responsesResp.ID, messageCount)
 	}
 
@@ -1396,12 +1526,12 @@ func (h *Handler) handleResponsesNonStreamingResponse(w http.ResponseWriter, res
 	if h.cfg.DebugResponses {
 		debugJSON, _ := json.MarshalIndent(anthropicResp, "", "  ")
 		maskedJSON := secrets.MaskJSONSecrets(debugJSON)
-		log.Printf("[CLASP DEBUG] Transformed Anthropic response from Responses API:\n%s", string(maskedJSON))
+		logging.Debug("Transformed Anthropic response from Responses API:\n%s", string(maskedJSON))
 		// Also log to dedicated debug file
 		logging.LogDebugRequestRaw("RESPONSE", "/v1/messages (from responses)", maskedJSON)
 	}
 
-	// Track costs
+	// Track costs and calculate per-request cost
 	if h.costTracker != nil && anthropicResp.Usage != nil {
 		h.costTracker.RecordUsage(
 			h.provider.Name(),
@@ -1409,12 +1539,20 @@ func (h *Handler) handleResponsesNonStreamingResponse(w http.ResponseWriter, res
 			anthropicResp.Usage.InputTokens,
 			anthropicResp.Usage.OutputTokens,
 		)
+
+		// Calculate per-request cost for response header
+		requestCost := h.costTracker.CalculateRequestCost(
+			targetModel,
+			anthropicResp.Usage.InputTokens,
+			anthropicResp.Usage.OutputTokens,
+		)
+		w.Header().Set("X-CLASP-Cost", fmt.Sprintf("%.6f", requestCost))
 	}
 
 	// Store in cache if cacheable
 	if h.cache != nil && cacheable && cacheKey != "" {
 		h.cache.Set(cacheKey, &anthropicResp)
-		log.Printf("[CLASP] Responses API response cached (key: %s...)", cacheKey[:16])
+		logging.Info("Responses API response cached (key: %s...)", cacheKey[:16])
 		h.tryStorePromptCache(cacheKey, &anthropicResp)
 	}
 
@@ -1514,11 +1652,11 @@ func (h *Handler) HandleMetrics(w http.ResponseWriter, r *http.Request) {
 			compRate = float64(compHits) / float64(total) * 100
 		}
 		response["compaction"] = map[string]interface{}{
-			"enabled":          true,
-			"hits":             compHits,
-			"misses":           compMisses,
-			"hit_rate":         fmt.Sprintf("%.2f%%", compRate),
-			"active_sessions":  h.sessionTracker.Len(),
+			"enabled":           true,
+			"hits":              compHits,
+			"misses":            compMisses,
+			"hit_rate":          fmt.Sprintf("%.2f%%", compRate),
+			"active_sessions":   h.sessionTracker.Len(),
 			"session_timeout_s": h.cfg.SessionTimeoutSec,
 		}
 	}
@@ -1553,13 +1691,13 @@ func (h *Handler) HandleMetrics(w http.ResponseWriter, r *http.Request) {
 	if h.promptCache != nil {
 		pcStats := h.promptCache.Stats()
 		response["prompt_cache"] = map[string]interface{}{
-			"enabled":          true,
-			"size":             pcStats.Size,
-			"max_size":         pcStats.MaxSize,
-			"hits":             pcStats.Hits,
-			"misses":           pcStats.Misses,
-			"hit_rate":         fmt.Sprintf("%.2f%%", pcStats.HitRate),
-			"savings_tokens":   pcStats.SavingsTokens,
+			"enabled":        true,
+			"size":           pcStats.Size,
+			"max_size":       pcStats.MaxSize,
+			"hits":           pcStats.Hits,
+			"misses":         pcStats.Misses,
+			"hit_rate":       fmt.Sprintf("%.2f%%", pcStats.HitRate),
+			"savings_tokens": pcStats.SavingsTokens,
 		}
 	}
 
@@ -1911,12 +2049,12 @@ func (h *Handler) HandleRoot(w http.ResponseWriter, r *http.Request) {
 		"provider": h.provider.Name(),
 		"status":   "running",
 		"endpoints": map[string]string{
-			"messages":        "/v1/messages",
-			"health":          "/health",
+			"messages":         "/v1/messages",
+			"health":           "/health",
 			"providers_health": "/providers/health",
-			"metrics":         "/metrics",
-			"prometheus":      "/metrics/prometheus",
-			"costs":           "/costs",
+			"metrics":          "/metrics",
+			"prometheus":       "/metrics/prometheus",
+			"costs":            "/costs",
 		},
 	}
 

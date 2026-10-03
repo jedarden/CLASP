@@ -4,32 +4,32 @@ package proxy
 import (
 	"context"
 	"encoding/json"
-	"log"
 	"net/http"
 	"sync"
 	"time"
 
 	"github.com/jedarden/clasp/internal/config"
+	"github.com/jedarden/clasp/internal/logging"
 	"github.com/jedarden/clasp/internal/provider"
 )
 
 // ProviderHealth represents the health status of a single provider.
 type ProviderHealth struct {
-	Name                  string        `json:"name"`
-	Healthy               bool          `json:"healthy"`
-	CircuitBreakerState   string        `json:"circuit_breaker_state,omitempty"`
-	LastCheckTime         time.Time     `json:"last_check_time"`
-	LastSuccessTime       *time.Time    `json:"last_success_time,omitempty"`
-	LastFailureTime       *time.Time    `json:"last_failure_time,omitempty"`
-	LastLatency           time.Duration `json:"last_latency,omitempty"`
-	AvgLatencyMs          int64         `json:"avg_latency_ms"`
-	ConsecutiveFailures   int           `json:"consecutive_failures"`
-	TotalChecks           int64         `json:"total_checks"`
-	SuccessfulChecks      int64         `json:"successful_checks"`
-	FailedChecks          int64         `json:"failed_checks"`
-	LastError             string        `json:"last_error,omitempty"`
-	Endpoint              string        `json:"endpoint"`
-	RequiresTransform     bool          `json:"requires_transformation"`
+	Name                string        `json:"name"`
+	Healthy             bool          `json:"healthy"`
+	CircuitBreakerState string        `json:"circuit_breaker_state,omitempty"`
+	LastCheckTime       time.Time     `json:"last_check_time"`
+	LastSuccessTime     *time.Time    `json:"last_success_time,omitempty"`
+	LastFailureTime     *time.Time    `json:"last_failure_time,omitempty"`
+	LastLatency         time.Duration `json:"last_latency,omitempty"`
+	AvgLatencyMs        int64         `json:"avg_latency_ms"`
+	ConsecutiveFailures int           `json:"consecutive_failures"`
+	TotalChecks         int64         `json:"total_checks"`
+	SuccessfulChecks    int64         `json:"successful_checks"`
+	FailedChecks        int64         `json:"failed_checks"`
+	LastError           string        `json:"last_error,omitempty"`
+	Endpoint            string        `json:"endpoint"`
+	RequiresTransform   bool          `json:"requires_transformation"`
 }
 
 // HealthCheckerConfig holds configuration for the health checker.
@@ -128,7 +128,7 @@ func (hc *HealthChecker) Start() {
 	}
 
 	go hc.run()
-	log.Printf("[CLASP] Health checker started (interval: %v)", hc.config.CheckInterval)
+	logging.Info("Health checker started (interval: %v)", hc.config.CheckInterval)
 }
 
 // Stop stops the health checker.

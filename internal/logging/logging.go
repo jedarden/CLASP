@@ -399,14 +399,7 @@ func LogDebugSSE(direction, eventType, data string) {
 func LogDebugMessage(format string, args ...interface{}) {
 	mu.Lock()
 	defer mu.Unlock()
-
-	if !debugEnabled || debugLogger == nil {
-		return
-	}
-
-	// Prepend session ID to format
-	sessionFormat := fmt.Sprintf("[session:%s] %s", sessionID, format)
-	debugLogger.Printf(sessionFormat, args...)
+	logDebugLocked(format, args...)
 }
 
 // rotateDebugLog rotates the debug log file by renaming it with a timestamp.
@@ -555,4 +548,53 @@ func GetAllMainLogPaths() ([]string, error) {
 	}
 
 	return files, nil
+}
+
+// Info logs an informational message with the CLASP prefix and session ID.
+func Info(format string, args ...interface{}) {
+	logLevel("INFO", format, args...)
+}
+
+// Warn logs a warning message with the CLASP prefix and session ID.
+func Warn(format string, args ...interface{}) {
+	logLevel("WARN", format, args...)
+}
+
+// Error logs an error message with the CLASP prefix and session ID.
+func Error(format string, args ...interface{}) {
+	logLevel("ERROR", format, args...)
+}
+
+// Debug logs a debug message to the debug log when debug logging is enabled.
+func Debug(format string, args ...interface{}) {
+	mu.Lock()
+	defer mu.Unlock()
+	logDebugLocked(format, args...)
+}
+
+// logLevel writes a leveled message through the standard logger. Keeping the
+// level formatting here ensures every caller gets the same structured prefix.
+func logLevel(level, format string, args ...interface{}) {
+	mu.Lock()
+	defer mu.Unlock()
+
+	sessionPrefix := ""
+	if sessionID != "" {
+		sessionPrefix = fmt.Sprintf("[session:%s] ", sessionID)
+	}
+	message := fmt.Sprintf("[CLASP] [%s] %s%s", level, sessionPrefix, fmt.Sprintf(format, args...))
+	_ = log.Output(2, message) // Skip this helper to report the public caller.
+}
+
+func logDebugLocked(format string, args ...interface{}) {
+	if !debugEnabled || debugLogger == nil {
+		return
+	}
+
+	sessionPrefix := ""
+	if sessionID != "" {
+		sessionPrefix = fmt.Sprintf("[session:%s] ", sessionID)
+	}
+	message := fmt.Sprintf("[CLASP] [DEBUG] %s%s", sessionPrefix, fmt.Sprintf(format, args...))
+	debugLogger.Print(message)
 }
