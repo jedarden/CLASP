@@ -240,23 +240,22 @@ func TestStreamProcessor_ProcessStream_InvalidJSON(t *testing.T) {
 	var buf bytes.Buffer
 	sp := NewStreamProcessor(&buf, "msg_123", "gpt-4o")
 
-	// Stream with invalid JSON (should be skipped)
+	// A malformed provider event must stop processing so the proxy can emit a
+	// normalized Anthropic stream error instead of silently corrupting output.
 	input := `data: {invalid json}
 
 data: {"choices":[{"delta":{"content":"Valid"}}]}
 
 data: {"choices":[{"delta":{},"finish_reason":"stop"}]}
 
-data: [DONE]
+	data: [DONE]
 `
 	err := sp.ProcessStream(strings.NewReader(input))
-	if err != nil {
-		t.Fatalf("ProcessStream failed: %v", err)
+	if err == nil {
+		t.Fatal("ProcessStream succeeded for malformed provider event")
 	}
-
-	// Should still process valid data
-	if !strings.Contains(buf.String(), "\"text\":\"Valid\"") {
-		t.Error("Output missing valid content")
+	if !strings.Contains(err.Error(), "malformed provider stream event") {
+		t.Fatalf("error = %v, want malformed provider stream event", err)
 	}
 }
 

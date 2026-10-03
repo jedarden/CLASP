@@ -130,7 +130,7 @@ func (sp *ResponsesStreamProcessor) ProcessStream(reader io.Reader) error {
 			var event models.ResponsesStreamEvent
 			if err := json.Unmarshal([]byte(data), &event); err != nil {
 				logging.LogDebugMessage("[STREAM] Error parsing Responses API event: %v", err)
-				continue
+				return fmt.Errorf("malformed provider stream event: %w", err)
 			}
 
 			if err := sp.processEvent(&event); err != nil {

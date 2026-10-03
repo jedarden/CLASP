@@ -146,7 +146,7 @@ func (sp *StreamProcessor) ProcessStream(reader io.Reader) error {
 			var chunk models.OpenAIStreamChunk
 			if err := json.Unmarshal([]byte(data), &chunk); err != nil {
 				logging.LogDebugMessage("[STREAM] Error parsing chunk: %v", err)
-				continue
+				return fmt.Errorf("malformed provider stream event: %w", err)
 			}
 
 			if err := sp.processChunk(&chunk); err != nil {

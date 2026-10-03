@@ -29,38 +29,38 @@ import (
 
 // Handler handles incoming Anthropic API requests.
 type Handler struct {
-	cfg              *config.Config
-	provider         provider.Provider
-	fallbackProvider provider.Provider
-	client           *http.Client
-	metrics          *Metrics
-	rateLimiter      *RateLimiter
-	cache            *RequestCache
-	promptCache      *cache.PromptCache
+	cfg                *config.Config
+	provider           provider.Provider
+	fallbackProvider   provider.Provider
+	client             *http.Client
+	metrics            *Metrics
+	rateLimiter        *RateLimiter
+	cache              *RequestCache
+	promptCache        *cache.PromptCache
 	promptCachePending sync.Map // map[string]promptCacheCtx — per-request prompt cache context
-	queue            *RequestQueue
-	circuitBreaker   *CircuitBreaker
-	costTracker      *CostTracker
-	healthChecker    *HealthChecker
-	tierProviders    map[config.ModelTier]provider.Provider
-	tierFallbacks    map[config.ModelTier]provider.Provider
-	sessionTracker   *session.Tracker
-	version          string
+	queue              *RequestQueue
+	circuitBreaker     *CircuitBreaker
+	costTracker        *CostTracker
+	healthChecker      *HealthChecker
+	tierProviders      map[config.ModelTier]provider.Provider
+	tierFallbacks      map[config.ModelTier]provider.Provider
+	sessionTracker     *session.Tracker
+	version            string
 }
 
 // Metrics tracks request statistics.
 type Metrics struct {
-	TotalRequests      int64
-	SuccessRequests    int64
-	ErrorRequests      int64
-	StreamRequests     int64
-	ToolCallRequests   int64
-	TotalLatencyMs     int64
-	FallbackAttempts   int64
-	FallbackSuccesses  int64
-	CompactionHits     int64 // Responses API requests using previous_response_id
-	CompactionMisses   int64 // Responses API requests without a stored session
-	StartTime          time.Time
+	TotalRequests     int64
+	SuccessRequests   int64
+	ErrorRequests     int64
+	StreamRequests    int64
+	ToolCallRequests  int64
+	TotalLatencyMs    int64
+	FallbackAttempts  int64
+	FallbackSuccesses int64
+	CompactionHits    int64 // Responses API requests using previous_response_id
+	CompactionMisses  int64 // Responses API requests without a stored session
+	StartTime         time.Time
 }
 
 // isReasoningModel checks if the model is a reasoning/codex model that may require extended timeouts.
@@ -224,6 +224,33 @@ func (h *Handler) GetMetrics() *Metrics {
 // GetCostTracker returns the cost tracker.
 func (h *Handler) GetCostTracker() *CostTracker {
 	return h.costTracker
+}
+
+// isProviderHealthy checks if a provider is currently healthy based on background health checks.
+// Returns true if the provider is healthy or if health checking is disabled.
+func (h *Handler) isProviderHealthy(providerName string) bool {
+	if h.healthChecker == nil {
+		// Health checking disabled - assume healthy
+		return true
+	}
+
+	health := h.healthChecker.GetProviderHealth(providerName)
+	if health == nil {
+		// Provider not registered in health checker - assume healthy
+		return true
+	}
+
+	// Check both the healthy flag and circuit breaker state
+	if !health.Healthy {
+		return false
+	}
+
+	// Also check if circuit breaker is open (if available)
+	if h.circuitBreaker != nil && h.circuitBreaker.IsOpen() {
+		return false
+	}
+
+	return true
 }
 
 // createProvider creates the appropriate provider based on config.
@@ -415,7 +442,8 @@ func (h *Handler) HandleMessages(w http.ResponseWriter, r *http.Request) {
 			h.circuitBreaker.RecordFailure()
 		}
 		logging.Error("Error making upstream request: %v", execErr)
-		h.writeErrorResponse(w, http.StatusBadGateway, "api_error", "Error connecting to upstream provider")
+		normalized := normalizeUpstreamFailure(execErr)
+		h.writeErrorResponse(w, normalized.status, normalized.errType, normalized.message)
 		return
 	}
 	defer resp.Body.Close()
@@ -588,6 +616,26 @@ func (h *Handler) selectProviderAndModel(req *models.AnthropicRequest) (provider
 	if tierCfg != nil {
 		tier := config.GetModelTier(req.Model)
 		if tierProvider, ok := h.tierProviders[tier]; ok {
+			// Check if tier provider is healthy before dispatching
+			if h.healthChecker != nil && !h.isProviderHealthy(string(tier)) {
+				logging.Warn("Tier provider %s is unhealthy, checking fallback", tier)
+				// Try to use fallback provider instead
+				if fallbackProvider, fallbackModel := h.getFallbackProvider(req.Model); fallbackProvider != nil {
+					selectedProvider = fallbackProvider
+					if fallbackModel != "" {
+						targetModel = fallbackModel
+					} else {
+						targetModel = tierCfg.Model
+						if targetModel == "" {
+							targetModel = h.cfg.MapModel(req.Model)
+						}
+					}
+					logging.Warn("Multi-provider routing with pre-fallback: %s -> %s via %s (fallback for unhealthy %s)", req.Model, targetModel, selectedProvider.Name(), tier)
+					return selectedProvider, targetModel
+				}
+				logging.Error("Tier provider %s is unhealthy but no fallback available, will attempt and fail fast", tier)
+			}
+
 			selectedProvider = tierProvider
 			targetModel = tierCfg.Model
 			if targetModel == "" {
@@ -610,7 +658,7 @@ func (h *Handler) selectProviderAndModel(req *models.AnthropicRequest) (provider
 }
 
 // transformAndExecute transforms the request and executes it against the provider.
-func (h *Handler) transformAndExecute(ctx interface{ Done() <-chan struct{} }, req *models.AnthropicRequest, selectedProvider provider.Provider, targetModel, previousResponseID string, newMessagesOffset int) (*http.Response, string, bool, bool, error) {
+func (h *Handler) transformAndExecute(ctx context.Context, req *models.AnthropicRequest, selectedProvider provider.Provider, targetModel, previousResponseID string, newMessagesOffset int) (*http.Response, string, bool, bool, error) {
 	endpointType := translator.GetEndpointType(targetModel)
 	useResponsesAPI := endpointType == translator.EndpointResponses
 
@@ -698,7 +746,7 @@ func (h *Handler) transformRequest(req *models.AnthropicRequest, targetModel str
 }
 
 // tryFallback attempts to use a fallback provider if the primary fails.
-func (h *Handler) tryFallback(ctx interface{ Done() <-chan struct{} }, req *models.AnthropicRequest, resp *http.Response, targetModel string, originalErr error) (*http.Response, string, bool, bool, error) {
+func (h *Handler) tryFallback(ctx context.Context, req *models.AnthropicRequest, resp *http.Response, targetModel string, originalErr error) (*http.Response, string, bool, bool, error) {
 	fallbackProvider, fallbackModel := h.getFallbackProvider(req.Model)
 	if fallbackProvider == nil {
 		return resp, targetModel, false, false, originalErr
@@ -752,9 +800,8 @@ func (h *Handler) handleUpstreamError(w http.ResponseWriter, resp *http.Response
 	body, _ := io.ReadAll(resp.Body)
 	maskedBody := secrets.MaskAllSecrets(string(body))
 	logging.Error("Upstream error (%d): %s", resp.StatusCode, maskedBody)
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(resp.StatusCode)
-	_, _ = w.Write(body)
+	normalized := normalizeUpstreamError(resp.StatusCode)
+	writeAnthropicError(w, normalized.status, normalized.errType, normalized.message)
 }
 
 // handleResponse routes the response to the appropriate handler.
@@ -837,7 +884,8 @@ func (h *Handler) handlePassthroughRequest(w http.ResponseWriter, r *http.Reques
 			h.circuitBreaker.RecordFailure()
 		}
 		logging.Error("Error in passthrough request: %v", err)
-		h.writeErrorResponse(w, http.StatusBadGateway, "api_error", "Error connecting to Anthropic API")
+		normalized := normalizeUpstreamFailure(err)
+		h.writeErrorResponse(w, normalized.status, normalized.errType, normalized.message)
 		return
 	}
 	defer resp.Body.Close()
@@ -852,9 +900,8 @@ func (h *Handler) handlePassthroughRequest(w http.ResponseWriter, r *http.Reques
 		// Mask any secrets in error response before logging
 		maskedBody := secrets.MaskAllSecrets(string(body))
 		logging.Error("Anthropic API error (%d): %s", resp.StatusCode, maskedBody)
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(resp.StatusCode)
-		_, _ = w.Write(body) // Send original response to client
+		normalized := normalizeUpstreamError(resp.StatusCode)
+		writeAnthropicError(w, normalized.status, normalized.errType, normalized.message)
 		return
 	}
 
@@ -926,7 +973,8 @@ func (h *Handler) handlePassthroughNonStreaming(w http.ResponseWriter, resp *htt
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		logging.Error("Error reading passthrough response: %v", err)
-		h.writeErrorResponse(w, http.StatusBadGateway, "api_error", "Error reading upstream response")
+		normalized := malformedProviderResponseError()
+		h.writeErrorResponse(w, normalized.status, normalized.errType, normalized.message)
 		return
 	}
 
@@ -940,7 +988,11 @@ func (h *Handler) handlePassthroughNonStreaming(w http.ResponseWriter, resp *htt
 
 	// Parse response for caching and cost tracking
 	var anthropicResp models.AnthropicResponse
-	if err := json.Unmarshal(body, &anthropicResp); err == nil {
+	if err := json.Unmarshal(body, &anthropicResp); err != nil || anthropicResp.Type != "message" {
+		normalized := malformedProviderResponseError()
+		h.writeErrorResponse(w, normalized.status, normalized.errType, normalized.message)
+		return
+	} else {
 		// Track costs for passthrough and calculate per-request cost
 		if h.costTracker != nil && anthropicResp.Usage != nil {
 			h.costTracker.RecordUsage(
@@ -973,14 +1025,14 @@ func (h *Handler) handlePassthroughNonStreaming(w http.ResponseWriter, resp *htt
 }
 
 // doRequestWithRetry executes the upstream request with exponential backoff retry.
-func (h *Handler) doRequestWithRetry(ctx interface{ Done() <-chan struct{} }, reqBody []byte, p provider.Provider) (*http.Response, error) {
+func (h *Handler) doRequestWithRetry(ctx context.Context, reqBody []byte, p provider.Provider) (*http.Response, error) {
 	maxRetries := 3
 	baseDelay := 500 * time.Millisecond
 
 	var lastErr error
 	for attempt := 0; attempt < maxRetries; attempt++ {
 		// Create fresh request for each attempt with context
-		upstreamReq, err := http.NewRequestWithContext(context.Background(), http.MethodPost, p.GetEndpointURL(), bytes.NewReader(reqBody))
+		upstreamReq, err := http.NewRequestWithContext(ctx, http.MethodPost, p.GetEndpointURL(), bytes.NewReader(reqBody))
 		if err != nil {
 			return nil, fmt.Errorf("creating request: %w", err)
 		}
@@ -1012,7 +1064,7 @@ func (h *Handler) doRequestWithRetry(ctx interface{ Done() <-chan struct{} }, re
 
 			select {
 			case <-ctx.Done():
-				return nil, fmt.Errorf("context canceled")
+				return nil, ctx.Err()
 			case <-time.After(delay):
 			}
 		}
@@ -1045,15 +1097,7 @@ func (h *Handler) getFallbackProvider(requestModel string) (provider.Provider, s
 
 // writeErrorResponse writes an Anthropic-formatted error response.
 func (h *Handler) writeErrorResponse(w http.ResponseWriter, status int, errType, message string) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{
-		"type": "error",
-		"error": map[string]string{
-			"type":    errType,
-			"message": message,
-		},
-	})
+	writeAnthropicError(w, status, errType, message)
 }
 
 // handleStreamingResponse handles SSE streaming responses.
@@ -1098,6 +1142,10 @@ func (h *Handler) handleStreamingResponse(w http.ResponseWriter, resp *http.Resp
 
 	if err := processor.ProcessStream(resp.Body); err != nil {
 		logging.Error("Error processing stream: %v", err)
+		normalized := streamFailureError(err)
+		if writeErr := writeAnthropicStreamError(fw, normalized.errType, normalized.message); writeErr != nil {
+			logging.Error("Error writing normalized stream error: %v", writeErr)
+		}
 	}
 }
 
@@ -1107,7 +1155,8 @@ func (h *Handler) handleNonStreamingResponse(w http.ResponseWriter, resp *http.R
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		logging.Error("Error reading response: %v", err)
-		http.Error(w, "Error reading upstream response", http.StatusBadGateway)
+		normalized := malformedProviderResponseError()
+		h.writeErrorResponse(w, normalized.status, normalized.errType, normalized.message)
 		return
 	}
 
@@ -1145,7 +1194,14 @@ func (h *Handler) handleNonStreamingResponse(w http.ResponseWriter, resp *http.R
 
 	if err := json.Unmarshal(body, &openAIResp); err != nil {
 		logging.Error("Error parsing response: %v", err)
-		http.Error(w, "Error parsing upstream response", http.StatusBadGateway)
+		normalized := malformedProviderResponseError()
+		h.writeErrorResponse(w, normalized.status, normalized.errType, normalized.message)
+		return
+	}
+	if openAIResp.ID == "" || len(openAIResp.Choices) == 0 {
+		logging.Error("Upstream Chat Completions response is missing id or choices")
+		normalized := malformedProviderResponseError()
+		h.writeErrorResponse(w, normalized.status, normalized.errType, normalized.message)
 		return
 	}
 
@@ -1270,6 +1326,10 @@ func (h *Handler) handleResponsesStreamingResponse(w http.ResponseWriter, resp *
 
 	if err := processor.ProcessStream(resp.Body); err != nil {
 		logging.Error("Error processing Responses API stream: %v", err)
+		normalized := streamFailureError(err)
+		if writeErr := writeAnthropicStreamError(fw, normalized.errType, normalized.message); writeErr != nil {
+			logging.Error("Error writing normalized Responses stream error: %v", writeErr)
+		}
 	}
 
 	// Store response ID in session tracker for compaction.
@@ -1289,7 +1349,8 @@ func (h *Handler) handleResponsesNonStreamingResponse(w http.ResponseWriter, res
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		logging.Error("Error reading Responses API response: %v", err)
-		http.Error(w, "Error reading upstream response", http.StatusBadGateway)
+		normalized := malformedProviderResponseError()
+		h.writeErrorResponse(w, normalized.status, normalized.errType, normalized.message)
 		return
 	}
 
@@ -1305,7 +1366,14 @@ func (h *Handler) handleResponsesNonStreamingResponse(w http.ResponseWriter, res
 	var responsesResp models.ResponsesResponse
 	if err := json.Unmarshal(body, &responsesResp); err != nil {
 		logging.Error("Error parsing Responses API response: %v", err)
-		http.Error(w, "Error parsing upstream response", http.StatusBadGateway)
+		normalized := malformedProviderResponseError()
+		h.writeErrorResponse(w, normalized.status, normalized.errType, normalized.message)
+		return
+	}
+	if responsesResp.ID == "" || responsesResp.Status == "" {
+		logging.Error("Upstream Responses API response is missing id or status")
+		normalized := malformedProviderResponseError()
+		h.writeErrorResponse(w, normalized.status, normalized.errType, normalized.message)
 		return
 	}
 
@@ -1546,11 +1614,11 @@ func (h *Handler) HandleMetrics(w http.ResponseWriter, r *http.Request) {
 			compRate = float64(compHits) / float64(total) * 100
 		}
 		response["compaction"] = map[string]interface{}{
-			"enabled":          true,
-			"hits":             compHits,
-			"misses":           compMisses,
-			"hit_rate":         fmt.Sprintf("%.2f%%", compRate),
-			"active_sessions":  h.sessionTracker.Len(),
+			"enabled":           true,
+			"hits":              compHits,
+			"misses":            compMisses,
+			"hit_rate":          fmt.Sprintf("%.2f%%", compRate),
+			"active_sessions":   h.sessionTracker.Len(),
 			"session_timeout_s": h.cfg.SessionTimeoutSec,
 		}
 	}
@@ -1585,13 +1653,13 @@ func (h *Handler) HandleMetrics(w http.ResponseWriter, r *http.Request) {
 	if h.promptCache != nil {
 		pcStats := h.promptCache.Stats()
 		response["prompt_cache"] = map[string]interface{}{
-			"enabled":          true,
-			"size":             pcStats.Size,
-			"max_size":         pcStats.MaxSize,
-			"hits":             pcStats.Hits,
-			"misses":           pcStats.Misses,
-			"hit_rate":         fmt.Sprintf("%.2f%%", pcStats.HitRate),
-			"savings_tokens":   pcStats.SavingsTokens,
+			"enabled":        true,
+			"size":           pcStats.Size,
+			"max_size":       pcStats.MaxSize,
+			"hits":           pcStats.Hits,
+			"misses":         pcStats.Misses,
+			"hit_rate":       fmt.Sprintf("%.2f%%", pcStats.HitRate),
+			"savings_tokens": pcStats.SavingsTokens,
 		}
 	}
 
@@ -1943,12 +2011,12 @@ func (h *Handler) HandleRoot(w http.ResponseWriter, r *http.Request) {
 		"provider": h.provider.Name(),
 		"status":   "running",
 		"endpoints": map[string]string{
-			"messages":        "/v1/messages",
-			"health":          "/health",
+			"messages":         "/v1/messages",
+			"health":           "/health",
 			"providers_health": "/providers/health",
-			"metrics":         "/metrics",
-			"prometheus":      "/metrics/prometheus",
-			"costs":           "/costs",
+			"metrics":          "/metrics",
+			"prometheus":       "/metrics/prometheus",
+			"costs":            "/costs",
 		},
 	}
 
