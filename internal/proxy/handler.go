@@ -11,7 +11,6 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -30,38 +29,38 @@ import (
 
 // Handler handles incoming Anthropic API requests.
 type Handler struct {
-	cfg                *config.Config
-	provider           provider.Provider
-	fallbackProvider   provider.Provider
-	client             *http.Client
-	metrics            *Metrics
-	rateLimiter        *RateLimiter
-	cache              *RequestCache
-	promptCache        *cache.PromptCache
+	cfg              *config.Config
+	provider         provider.Provider
+	fallbackProvider provider.Provider
+	client           *http.Client
+	metrics          *Metrics
+	rateLimiter      *RateLimiter
+	cache            *RequestCache
+	promptCache      *cache.PromptCache
 	promptCachePending sync.Map // map[string]promptCacheCtx — per-request prompt cache context
-	queue              *RequestQueue
-	circuitBreaker     *CircuitBreaker
-	costTracker        *CostTracker
-	healthChecker      *HealthChecker
-	tierProviders      map[config.ModelTier]provider.Provider
-	tierFallbacks      map[config.ModelTier]provider.Provider
-	sessionTracker     *session.Tracker
-	version            string
+	queue            *RequestQueue
+	circuitBreaker   *CircuitBreaker
+	costTracker      *CostTracker
+	healthChecker    *HealthChecker
+	tierProviders    map[config.ModelTier]provider.Provider
+	tierFallbacks    map[config.ModelTier]provider.Provider
+	sessionTracker   *session.Tracker
+	version          string
 }
 
 // Metrics tracks request statistics.
 type Metrics struct {
-	TotalRequests     int64
-	SuccessRequests   int64
-	ErrorRequests     int64
-	StreamRequests    int64
-	ToolCallRequests  int64
-	TotalLatencyMs    int64
-	FallbackAttempts  int64
-	FallbackSuccesses int64
-	CompactionHits    int64 // Responses API requests using previous_response_id
-	CompactionMisses  int64 // Responses API requests without a stored session
-	StartTime         time.Time
+	TotalRequests      int64
+	SuccessRequests    int64
+	ErrorRequests      int64
+	StreamRequests     int64
+	ToolCallRequests   int64
+	TotalLatencyMs     int64
+	FallbackAttempts   int64
+	FallbackSuccesses  int64
+	CompactionHits     int64 // Responses API requests using previous_response_id
+	CompactionMisses   int64 // Responses API requests without a stored session
+	StartTime          time.Time
 }
 
 // isReasoningModel checks if the model is a reasoning/codex model that may require extended timeouts.
@@ -225,33 +224,6 @@ func (h *Handler) GetMetrics() *Metrics {
 // GetCostTracker returns the cost tracker.
 func (h *Handler) GetCostTracker() *CostTracker {
 	return h.costTracker
-}
-
-// isProviderHealthy checks if a provider is currently healthy based on background health checks.
-// Returns true if the provider is healthy or if health checking is disabled.
-func (h *Handler) isProviderHealthy(providerName string) bool {
-	if h.healthChecker == nil {
-		// Health checking disabled - assume healthy
-		return true
-	}
-
-	health := h.healthChecker.GetProviderHealth(providerName)
-	if health == nil {
-		// Provider not registered in health checker - assume healthy
-		return true
-	}
-
-	// Check both the healthy flag and circuit breaker state
-	if !health.Healthy {
-		return false
-	}
-
-	// Also check if circuit breaker is open (if available)
-	if h.circuitBreaker != nil && h.circuitBreaker.IsOpen() {
-		return false
-	}
-
-	return true
 }
 
 // createProvider creates the appropriate provider based on config.
@@ -616,26 +588,6 @@ func (h *Handler) selectProviderAndModel(req *models.AnthropicRequest) (provider
 	if tierCfg != nil {
 		tier := config.GetModelTier(req.Model)
 		if tierProvider, ok := h.tierProviders[tier]; ok {
-			// Check if tier provider is healthy before dispatching
-			if h.healthChecker != nil && !h.isProviderHealthy(string(tier)) {
-				logging.Warn("Tier provider %s is unhealthy, checking fallback", tier)
-				// Try to use fallback provider instead
-				if fallbackProvider, fallbackModel := h.getFallbackProvider(req.Model); fallbackProvider != nil {
-					selectedProvider = fallbackProvider
-					if fallbackModel != "" {
-						targetModel = fallbackModel
-					} else {
-						targetModel = tierCfg.Model
-						if targetModel == "" {
-							targetModel = h.cfg.MapModel(req.Model)
-						}
-					}
-					logging.Warn("Multi-provider routing with pre-fallback: %s -> %s via %s (fallback for unhealthy %s)", req.Model, targetModel, selectedProvider.Name(), tier)
-					return selectedProvider, targetModel
-				}
-				logging.Error("Tier provider %s is unhealthy but no fallback available, will attempt and fail fast", tier)
-			}
-
 			selectedProvider = tierProvider
 			targetModel = tierCfg.Model
 			if targetModel == "" {
@@ -938,34 +890,11 @@ func (h *Handler) handlePassthroughStreaming(w http.ResponseWriter, resp *http.R
 		f.Flush()
 	}
 
-	// Stream response directly and track usage for cost header
-	var inputTokens, outputTokens int
+	// Stream response directly
 	buf := make([]byte, 4096)
 	for {
 		n, err := resp.Body.Read(buf)
 		if n > 0 {
-			// Track usage from passthrough stream if cost tracker is enabled
-			if h.costTracker != nil {
-				// Parse incoming chunk for usage information
-				// Anthropic sends usage in a message_stop event
-				chunk := string(buf[:n])
-				if strings.Contains(chunk, `"type":"message_stop"`) {
-					// Try to extract usage from the event
-					if idx := strings.Index(chunk, `"usage":`); idx != -1 {
-						// Look for input_tokens and output_tokens
-						if inputIdx := strings.Index(chunk[idx:], `"input_tokens":`); inputIdx != -1 {
-							inputTokens = parseIntAt(chunk[idx+inputIdx+16:], 10)
-						}
-						if outputIdx := strings.Index(chunk[idx:], `"output_tokens":`); outputIdx != -1 {
-							outputTokens = parseIntAt(chunk[idx+outputIdx+17:], 10)
-						}
-						if inputTokens > 0 || outputTokens > 0 {
-							h.costTracker.RecordUsage("anthropic", "passthrough", inputTokens, outputTokens)
-						}
-					}
-				}
-			}
-
 			if _, writeErr := w.Write(buf[:n]); writeErr != nil {
 				logging.Error("Error writing passthrough stream: %v", writeErr)
 				return
@@ -978,29 +907,9 @@ func (h *Handler) handlePassthroughStreaming(w http.ResponseWriter, resp *http.R
 			if err != io.EOF {
 				logging.Error("Error reading passthrough stream: %v", err)
 			}
-			// Send final cost event if we tracked usage
-			if h.costTracker != nil && inputTokens > 0 && outputTokens > 0 {
-				requestCost := h.costTracker.CalculateRequestCost("passthrough", inputTokens, outputTokens)
-				fmt.Fprintf(w, "event: cost\ndata: {\"cost_usd\": %.6f, \"input_tokens\": %d, \"output_tokens\": %d}\n\n", requestCost, inputTokens, outputTokens)
-				if f, ok := w.(http.Flusher); ok {
-					f.Flush()
-				}
-			}
 			return
 		}
 	}
-}
-
-// parseIntAt parses an integer from a string starting at position 0, stopping at non-digit or maxLen.
-func parseIntAt(s string, maxLen int) int {
-	i := 0
-	for ; i < len(s) && i < maxLen && s[i] >= '0' && s[i] <= '9'; i++ {
-	}
-	if i == 0 {
-		return 0
-	}
-	val, _ := strconv.Atoi(s[:i])
-	return val
 }
 
 // handlePassthroughNonStreaming handles non-streaming passthrough responses.
@@ -1024,7 +933,7 @@ func (h *Handler) handlePassthroughNonStreaming(w http.ResponseWriter, resp *htt
 	// Parse response for caching and cost tracking
 	var anthropicResp models.AnthropicResponse
 	if err := json.Unmarshal(body, &anthropicResp); err == nil {
-		// Track costs for passthrough and calculate per-request cost
+		// Track costs for passthrough
 		if h.costTracker != nil && anthropicResp.Usage != nil {
 			h.costTracker.RecordUsage(
 				"anthropic",
@@ -1032,14 +941,6 @@ func (h *Handler) handlePassthroughNonStreaming(w http.ResponseWriter, resp *htt
 				anthropicResp.Usage.InputTokens,
 				anthropicResp.Usage.OutputTokens,
 			)
-
-			// Calculate per-request cost for response header
-			requestCost := h.costTracker.CalculateRequestCost(
-				anthropicResp.Model,
-				anthropicResp.Usage.InputTokens,
-				anthropicResp.Usage.OutputTokens,
-			)
-			w.Header().Set("X-CLASP-Cost", fmt.Sprintf("%.6f", requestCost))
 		}
 
 		// Cache if enabled
@@ -1166,11 +1067,8 @@ func (h *Handler) handleStreamingResponse(w http.ResponseWriter, resp *http.Resp
 	processor := translator.NewStreamProcessor(fw, messageID, targetModel)
 
 	// Set up cost tracking callback if cost tracker is available
-	var finalInputTokens, finalOutputTokens int
 	if h.costTracker != nil {
 		processor.SetUsageCallback(func(inputTokens, outputTokens int) {
-			finalInputTokens = inputTokens
-			finalOutputTokens = outputTokens
 			h.costTracker.RecordUsage(
 				h.provider.Name(),
 				targetModel,
@@ -1183,15 +1081,6 @@ func (h *Handler) handleStreamingResponse(w http.ResponseWriter, resp *http.Resp
 
 	if err := processor.ProcessStream(resp.Body); err != nil {
 		logging.Error("Error processing stream: %v", err)
-	}
-
-	// Send final cost event if we tracked usage
-	if h.costTracker != nil && finalInputTokens > 0 && finalOutputTokens > 0 {
-		requestCost := h.costTracker.CalculateRequestCost(targetModel, finalInputTokens, finalOutputTokens)
-		fmt.Fprintf(w, "event: cost\ndata: {\"cost_usd\": %.6f, \"input_tokens\": %d, \"output_tokens\": %d}\n\n", requestCost, finalInputTokens, finalOutputTokens)
-		if fw.flusher != nil {
-			fw.flusher.Flush()
-		}
 	}
 }
 
@@ -1290,7 +1179,7 @@ func (h *Handler) handleNonStreamingResponse(w http.ResponseWriter, resp *http.R
 		logging.LogDebugRequestRaw("RESPONSE", "/v1/messages (transformed)", maskedJSON)
 	}
 
-	// Track costs and calculate per-request cost
+	// Track costs
 	if h.costTracker != nil && anthropicResp.Usage != nil {
 		h.costTracker.RecordUsage(
 			h.provider.Name(),
@@ -1298,14 +1187,6 @@ func (h *Handler) handleNonStreamingResponse(w http.ResponseWriter, resp *http.R
 			anthropicResp.Usage.InputTokens,
 			anthropicResp.Usage.OutputTokens,
 		)
-
-		// Calculate per-request cost for response header
-		requestCost := h.costTracker.CalculateRequestCost(
-			targetModel,
-			anthropicResp.Usage.InputTokens,
-			anthropicResp.Usage.OutputTokens,
-		)
-		w.Header().Set("X-CLASP-Cost", fmt.Sprintf("%.6f", requestCost))
 	}
 
 	// Store in cache if cacheable
@@ -1349,11 +1230,8 @@ func (h *Handler) handleResponsesStreamingResponse(w http.ResponseWriter, resp *
 	processor := translator.NewResponsesStreamProcessor(fw, messageID, targetModel)
 
 	// Set up cost tracking callback if cost tracker is available
-	var finalInputTokens, finalOutputTokens int
 	if h.costTracker != nil {
 		processor.SetUsageCallback(func(inputTokens, outputTokens int) {
-			finalInputTokens = inputTokens
-			finalOutputTokens = outputTokens
 			h.costTracker.RecordUsage(
 				h.provider.Name(),
 				targetModel,
@@ -1374,15 +1252,6 @@ func (h *Handler) handleResponsesStreamingResponse(w http.ResponseWriter, resp *
 		if h.sessionTracker != nil && sessionKey != "" {
 			h.sessionTracker.Set(sessionKey, responseID, messageCount)
 			logging.Info("Compaction: stored session %s... (messages=%d)", sessionKey[:8], messageCount)
-		}
-	}
-
-	// Send final cost event if we tracked usage
-	if h.costTracker != nil && finalInputTokens > 0 && finalOutputTokens > 0 {
-		requestCost := h.costTracker.CalculateRequestCost(targetModel, finalInputTokens, finalOutputTokens)
-		fmt.Fprintf(w, "event: cost\ndata: {\"cost_usd\": %.6f, \"input_tokens\": %d, \"output_tokens\": %d}\n\n", requestCost, finalInputTokens, finalOutputTokens)
-		if fw.flusher != nil {
-			fw.flusher.Flush()
 		}
 	}
 }
@@ -1531,7 +1400,7 @@ func (h *Handler) handleResponsesNonStreamingResponse(w http.ResponseWriter, res
 		logging.LogDebugRequestRaw("RESPONSE", "/v1/messages (from responses)", maskedJSON)
 	}
 
-	// Track costs and calculate per-request cost
+	// Track costs
 	if h.costTracker != nil && anthropicResp.Usage != nil {
 		h.costTracker.RecordUsage(
 			h.provider.Name(),
@@ -1539,14 +1408,6 @@ func (h *Handler) handleResponsesNonStreamingResponse(w http.ResponseWriter, res
 			anthropicResp.Usage.InputTokens,
 			anthropicResp.Usage.OutputTokens,
 		)
-
-		// Calculate per-request cost for response header
-		requestCost := h.costTracker.CalculateRequestCost(
-			targetModel,
-			anthropicResp.Usage.InputTokens,
-			anthropicResp.Usage.OutputTokens,
-		)
-		w.Header().Set("X-CLASP-Cost", fmt.Sprintf("%.6f", requestCost))
 	}
 
 	// Store in cache if cacheable
@@ -1652,11 +1513,11 @@ func (h *Handler) HandleMetrics(w http.ResponseWriter, r *http.Request) {
 			compRate = float64(compHits) / float64(total) * 100
 		}
 		response["compaction"] = map[string]interface{}{
-			"enabled":           true,
-			"hits":              compHits,
-			"misses":            compMisses,
-			"hit_rate":          fmt.Sprintf("%.2f%%", compRate),
-			"active_sessions":   h.sessionTracker.Len(),
+			"enabled":          true,
+			"hits":             compHits,
+			"misses":           compMisses,
+			"hit_rate":         fmt.Sprintf("%.2f%%", compRate),
+			"active_sessions":  h.sessionTracker.Len(),
 			"session_timeout_s": h.cfg.SessionTimeoutSec,
 		}
 	}
@@ -1691,13 +1552,13 @@ func (h *Handler) HandleMetrics(w http.ResponseWriter, r *http.Request) {
 	if h.promptCache != nil {
 		pcStats := h.promptCache.Stats()
 		response["prompt_cache"] = map[string]interface{}{
-			"enabled":        true,
-			"size":           pcStats.Size,
-			"max_size":       pcStats.MaxSize,
-			"hits":           pcStats.Hits,
-			"misses":         pcStats.Misses,
-			"hit_rate":       fmt.Sprintf("%.2f%%", pcStats.HitRate),
-			"savings_tokens": pcStats.SavingsTokens,
+			"enabled":          true,
+			"size":             pcStats.Size,
+			"max_size":         pcStats.MaxSize,
+			"hits":             pcStats.Hits,
+			"misses":           pcStats.Misses,
+			"hit_rate":         fmt.Sprintf("%.2f%%", pcStats.HitRate),
+			"savings_tokens":   pcStats.SavingsTokens,
 		}
 	}
 
@@ -2049,12 +1910,12 @@ func (h *Handler) HandleRoot(w http.ResponseWriter, r *http.Request) {
 		"provider": h.provider.Name(),
 		"status":   "running",
 		"endpoints": map[string]string{
-			"messages":         "/v1/messages",
-			"health":           "/health",
+			"messages":        "/v1/messages",
+			"health":          "/health",
 			"providers_health": "/providers/health",
-			"metrics":          "/metrics",
-			"prometheus":       "/metrics/prometheus",
-			"costs":            "/costs",
+			"metrics":         "/metrics",
+			"prometheus":      "/metrics/prometheus",
+			"costs":           "/costs",
 		},
 	}
 
