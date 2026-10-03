@@ -522,6 +522,9 @@ func TestStreamProcessor_HandleFinishReason_StopReasons(t *testing.T) {
 			if err != nil {
 				t.Fatalf("handleFinishReason failed: %v", err)
 			}
+			if err := sp.finalize(); err != nil {
+				t.Fatalf("finalize failed: %v", err)
+			}
 
 			output := buf.String()
 			expected := "\"stop_reason\":\"" + tt.expectedStop + "\""
