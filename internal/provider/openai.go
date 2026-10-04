@@ -87,6 +87,15 @@ func (p *OpenAIProvider) SetTargetModel(model string) {
 	p.endpointType = translator.GetEndpointType(model)
 }
 
+// ForModel returns a request-scoped provider with the endpoint selected for
+// model. The handler may serve concurrent requests through one configured
+// provider, so request routing must not mutate that shared provider.
+func (p *OpenAIProvider) ForModel(model string) *OpenAIProvider {
+	requestProvider := *p
+	requestProvider.SetTargetModel(model)
+	return &requestProvider
+}
+
 // GetEndpointType returns the current endpoint type.
 func (p *OpenAIProvider) GetEndpointType() translator.EndpointType {
 	return p.endpointType

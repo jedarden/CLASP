@@ -728,9 +728,12 @@ func (h *Handler) transformAndExecute(ctx context.Context, req *models.Anthropic
 	endpointType := translator.GetEndpointType(targetModel)
 	useResponsesAPI := endpointType == translator.EndpointResponses
 
-	// Set target model on provider for endpoint URL selection
+	// Select the endpoint on a request-scoped OpenAI provider. The configured
+	// provider is shared by concurrent requests and must remain immutable while
+	// each request is in flight.
+	requestProvider := selectedProvider
 	if openaiProvider, ok := selectedProvider.(*provider.OpenAIProvider); ok {
-		openaiProvider.SetTargetModel(targetModel)
+		requestProvider = openaiProvider.ForModel(targetModel)
 	}
 
 	// Transform request
@@ -740,7 +743,7 @@ func (h *Handler) transformAndExecute(ctx context.Context, req *models.Anthropic
 	}
 
 	// Execute request
-	resp, err := h.doRequestWithRetryPolicy(ctx, reqBody, selectedProvider, !req.Stream)
+	resp, err := h.doRequestWithRetryPolicy(ctx, reqBody, requestProvider, !req.Stream)
 	usedFallback := false
 
 	// Check if we should try fallback
@@ -833,10 +836,10 @@ func (h *Handler) tryFallback(ctx context.Context, req *models.AnthropicRequest,
 		targetModel = fallbackModel
 		fallbackEndpointType := translator.GetEndpointType(fallbackModel)
 		useResponsesAPI = fallbackEndpointType == translator.EndpointResponses
-
-		if openaiProvider, ok := fallbackProvider.(*provider.OpenAIProvider); ok {
-			openaiProvider.SetTargetModel(targetModel)
-		}
+	}
+	requestProvider := fallbackProvider
+	if openaiProvider, ok := fallbackProvider.(*provider.OpenAIProvider); ok {
+		requestProvider = openaiProvider.ForModel(targetModel)
 	}
 
 	var err error
@@ -847,7 +850,7 @@ func (h *Handler) tryFallback(ctx context.Context, req *models.AnthropicRequest,
 	}
 
 	// Try fallback provider
-	resp, err = h.doRequestWithRetryPolicy(ctx, reqBody, fallbackProvider, !req.Stream)
+	resp, err = h.doRequestWithRetryPolicy(ctx, reqBody, requestProvider, !req.Stream)
 	if err == nil && resp.StatusCode < 500 {
 		atomic.AddInt64(&h.metrics.FallbackSuccesses, 1)
 		logging.Info("Fallback to %s succeeded", fallbackProvider.Name())
