@@ -50,11 +50,16 @@ func (t *Tracker) Get(key string) (*Entry, bool) {
 	if !ok {
 		return nil, false
 	}
-	if t.ttl > 0 && time.Since(entry.LastSeen) > t.ttl {
+	now := time.Now()
+	if t.ttl > 0 && now.Sub(entry.LastSeen) > t.ttl {
 		delete(t.entries, key)
 		return nil, false
 	}
-	return entry, true
+	// SessionTimeout is an idle timeout: an actively continued conversation
+	// remains usable. Return a copy so callers cannot race with bookkeeping.
+	entry.LastSeen = now
+	entryCopy := *entry
+	return &entryCopy, true
 }
 
 // Set stores the response ID and message count for a session key, refreshing LastSeen.
@@ -64,6 +69,11 @@ func (t *Tracker) Set(key, responseID string, messageCount int) {
 	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	if existing, ok := t.entries[key]; ok && messageCount < existing.MessageCount {
+		// Concurrent requests can complete out of order. Never let an older
+		// request move the continuation point backwards.
+		return
+	}
 	t.entries[key] = &Entry{
 		ResponseID:   responseID,
 		MessageCount: messageCount,

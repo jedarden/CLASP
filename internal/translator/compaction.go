@@ -49,9 +49,19 @@ func sessionKey(req *models.AnthropicRequest, explicitID string) string {
 			if err != nil {
 				return ""
 			}
-			// Include model so different model conversations don't collide.
+			// Include model and system instructions so different model or
+			// instruction contexts cannot share a continuation chain.
 			h := sha256.New()
 			h.Write([]byte(req.Model))
+			if req.System != nil {
+				h.Write([]byte{0})
+				systemJSON, err := json.Marshal(req.System)
+				if err != nil {
+					return ""
+				}
+				h.Write(systemJSON)
+			}
+			h.Write([]byte{0})
 			h.Write(contentJSON)
 			sum := h.Sum(nil)
 			return hex.EncodeToString(sum[:16])

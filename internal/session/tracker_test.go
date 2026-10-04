@@ -68,6 +68,46 @@ func TestTrackerExpiry(t *testing.T) {
 	}
 }
 
+func TestTrackerGetRefreshesIdleExpiry(t *testing.T) {
+	ttl := 80 * time.Millisecond
+	tr := NewTracker(ttl)
+	defer tr.Stop()
+
+	tr.Set("session1", "resp_abc", 1)
+	time.Sleep(30 * time.Millisecond)
+	if _, ok := tr.Get("session1"); !ok {
+		t.Fatal("expected active session before refreshed expiry")
+	}
+
+	// The first Get refreshed LastSeen, so this access remains within the
+	// idle timeout even though it is now more than one TTL from Set.
+	time.Sleep(60 * time.Millisecond)
+	if _, ok := tr.Get("session1"); !ok {
+		t.Fatal("expected Get to refresh the idle timeout")
+	}
+
+	time.Sleep(ttl + 10*time.Millisecond)
+	if _, ok := tr.Get("session1"); ok {
+		t.Error("expected inactive session to expire")
+	}
+}
+
+func TestTrackerDoesNotRewindConcurrentChain(t *testing.T) {
+	tr := NewTracker(time.Minute)
+	defer tr.Stop()
+
+	tr.Set("session1", "resp_new", 5)
+	tr.Set("session1", "resp_old", 3)
+
+	entry, ok := tr.Get("session1")
+	if !ok {
+		t.Fatal("expected session entry")
+	}
+	if entry.ResponseID != "resp_new" || entry.MessageCount != 5 {
+		t.Fatalf("stale response rewound chain: %#v", entry)
+	}
+}
+
 func TestTrackerDelete(t *testing.T) {
 	tr := NewTracker(time.Minute)
 	defer tr.Stop()

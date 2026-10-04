@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -385,7 +386,7 @@ func (h *Handler) HandleMessages(w http.ResponseWriter, r *http.Request) {
 	var newMessagesOffset int
 	if h.sessionTracker != nil && selectedProvider.RequiresTransformation() {
 		if translator.GetEndpointType(targetModel) == translator.EndpointResponses {
-			sessionKey = responsesSessionKey(anthropicReq, r.Header.Get(responsesSessionIDHeader))
+			sessionKey = responsesSessionKey(anthropicReq, r.Header.Get(responsesSessionIDHeader), selectedProvider.Name(), targetModel)
 			if entry, ok := h.sessionTracker.Get(sessionKey); ok && entry.MessageCount < len(anthropicReq.Messages) {
 				previousResponseID = entry.ResponseID
 				newMessagesOffset = entry.MessageCount
@@ -415,6 +416,14 @@ func (h *Handler) HandleMessages(w http.ResponseWriter, r *http.Request) {
 
 	// Transform and execute request
 	resp, targetModel, useResponsesAPI, usedFallback, execErr := h.transformAndExecute(r.Context(), anthropicReq, selectedProvider, targetModel, previousResponseID, newMessagesOffset)
+	if usedFallback && h.sessionTracker != nil && sessionKey != "" {
+		// Fallback requests are sent with full history and may use a different
+		// provider/model, so their response ID cannot extend the primary chain.
+		// The next stateless request must establish a fresh chain from its full
+		// Anthropic history.
+		h.sessionTracker.Delete(sessionKey)
+		sessionKey = ""
+	}
 	// A Responses API response can expire independently of CLASP's in-memory
 	// TTL. Once the provider rejects previous_response_id, discard that pointer
 	// and replay the complete Anthropic conversation once. The caller supplied
@@ -470,11 +479,23 @@ func (h *Handler) HandleMessages(w http.ResponseWriter, r *http.Request) {
 	h.handleResponse(w, resp, anthropicReq.Stream, useResponsesAPI, targetModel, cacheKey, cacheable, sessionKey, len(anthropicReq.Messages))
 }
 
-func responsesSessionKey(req *models.AnthropicRequest, explicitID string) string {
+func responsesSessionKey(req *models.AnthropicRequest, explicitID, providerName, targetModel string) string {
+	baseKey := ""
 	if strings.TrimSpace(explicitID) != "" {
-		return translator.SessionKeyForID(req, explicitID)
+		baseKey = translator.SessionKeyForID(req, explicitID)
+	} else {
+		baseKey = translator.SessionKey(req)
 	}
-	return translator.SessionKey(req)
+	if baseKey == "" {
+		return ""
+	}
+	h := sha256.New()
+	h.Write([]byte(providerName))
+	h.Write([]byte{0})
+	h.Write([]byte(targetModel))
+	h.Write([]byte{0})
+	h.Write([]byte(baseKey))
+	return hex.EncodeToString(h.Sum(nil))[:16]
 }
 
 // isExpiredResponsesState reads and restores an error body so normal error

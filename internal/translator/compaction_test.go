@@ -67,6 +67,16 @@ func TestSessionKeyDifferentModels(t *testing.T) {
 	}
 }
 
+func TestSessionKeyDifferentSystemPrompts(t *testing.T) {
+	msg := []models.AnthropicMessage{{Role: "user", Content: "same opening"}}
+
+	keyA := SessionKey(&models.AnthropicRequest{Model: "gpt-5", System: "be concise", Messages: msg})
+	keyB := SessionKey(&models.AnthropicRequest{Model: "gpt-5", System: "be detailed", Messages: msg})
+	if keyA == keyB {
+		t.Fatalf("different system prompts must not share a session key: %q", keyA)
+	}
+}
+
 func TestExtractResponseID(t *testing.T) {
 	body := []byte(`{"id":"resp_abc123","object":"response","status":"completed"}`)
 	id := ExtractResponseID(body)

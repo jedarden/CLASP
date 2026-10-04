@@ -219,6 +219,77 @@ func TestResponsesStateExpirationRetriesWithoutStaleID(t *testing.T) {
 	}
 }
 
+func TestResponsesStateTrackerTTLRequiresFullHistoryAfterIdleExpiry(t *testing.T) {
+	mock := &responsesStateMock{respond: func(number int, _ models.ResponsesRequest) (int, string) {
+		return http.StatusOK, completedResponsesStateResponse(fmt.Sprintf("resp_%d", number))
+	}}
+	upstream := httptest.NewServer(mock)
+	defer upstream.Close()
+	handler := newResponsesStateHandler(t, upstream.URL, 40*time.Millisecond)
+
+	first := models.AnthropicMessage{Role: "user", Content: "start"}
+	if status, _ := responsesStateRequest(t, handler, "ttl-conversation", models.AnthropicRequest{
+		Model: "gpt-5", MaxTokens: 32, Messages: []models.AnthropicMessage{first},
+	}); status != http.StatusOK {
+		t.Fatalf("initial request status = %d", status)
+	}
+
+	// Let the in-memory continuation pointer become idle. The next request
+	// must be replayed from the stateless Anthropic history.
+	time.Sleep(100 * time.Millisecond)
+	continued := []models.AnthropicMessage{first, {Role: "assistant", Content: "old answer"}, {Role: "user", Content: "continue"}}
+	if status, _ := responsesStateRequest(t, handler, "ttl-conversation", models.AnthropicRequest{
+		Model: "gpt-5", MaxTokens: 32, Messages: continued,
+	}); status != http.StatusOK {
+		t.Fatalf("expired-session request status = %d", status)
+	}
+
+	requests := mock.requestsSnapshot()
+	if len(requests) != 2 {
+		t.Fatalf("upstream request count = %d, want 2", len(requests))
+	}
+	if requests[1].PreviousResponseID != "" || len(requests[1].Input) != 3 {
+		t.Fatalf("expired session request = %#v, want full history without previous_response_id", requests[1])
+	}
+}
+
+func TestResponsesStateFailedStreamDoesNotAdvanceChain(t *testing.T) {
+	mock := &responsesStateMock{respond: func(number int, _ models.ResponsesRequest) (int, string) {
+		if number == 1 {
+			return http.StatusOK, "data: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_failed_stream\"}}\n\n" +
+				"data: {\"type\":\"response.failed\",\"error\":{\"code\":\"server_error\",\"message\":\"temporary failure\"}}\n\n" +
+				"data: [DONE]\n\n"
+		}
+		return http.StatusOK, "data: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_recovered_stream\"}}\n\n" +
+			"data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_recovered_stream\",\"status\":\"completed\"}}\n\n" +
+			"data: [DONE]\n\n"
+	}}
+	upstream := httptest.NewServer(mock)
+	defer upstream.Close()
+	handler := newResponsesStateHandler(t, upstream.URL, time.Hour)
+
+	first := models.AnthropicMessage{Role: "user", Content: "start"}
+	if status, _ := responsesStateRequest(t, handler, "failed-stream-conversation", models.AnthropicRequest{
+		Model: "gpt-5", MaxTokens: 32, Stream: true, Messages: []models.AnthropicMessage{first},
+	}); status != http.StatusOK {
+		t.Fatalf("failed stream status = %d", status)
+	}
+	continued := []models.AnthropicMessage{first, {Role: "assistant", Content: "failure"}, {Role: "user", Content: "retry"}}
+	if status, _ := responsesStateRequest(t, handler, "failed-stream-conversation", models.AnthropicRequest{
+		Model: "gpt-5", MaxTokens: 32, Stream: true, Messages: continued,
+	}); status != http.StatusOK {
+		t.Fatalf("recovery stream status = %d", status)
+	}
+
+	requests := mock.requestsSnapshot()
+	if len(requests) != 2 {
+		t.Fatalf("upstream request count = %d, want 2", len(requests))
+	}
+	if requests[1].PreviousResponseID != "" || len(requests[1].Input) != 3 {
+		t.Fatalf("failed stream advanced state: recovery request = %#v", requests[1])
+	}
+}
+
 func TestResponsesStateExplicitIDsIsolateConcurrentConversations(t *testing.T) {
 	mock := &responsesStateMock{respond: func(number int, _ models.ResponsesRequest) (int, string) {
 		return http.StatusOK, completedResponsesStateResponse(fmt.Sprintf("resp_%d", number))

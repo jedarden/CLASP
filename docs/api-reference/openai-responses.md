@@ -18,19 +18,22 @@ CLASP uses the Responses API for:
 ## Conversation State
 
 Anthropic Messages requests are stateless, so CLASP keeps the last completed
-Responses API ID in an in-memory session tracker. The tracker uses the resolved
-model and the first user message as a fallback conversation fingerprint. Clients
-that may run parallel conversations with the same opening message should send a
-stable `X-CLASP-Session-ID` header; the header is hashed together with the model
-and is never forwarded to the provider.
+Responses API ID in an in-memory session tracker. The tracker scopes state to
+the provider, target model, system instructions, and first user message as a
+fallback conversation fingerprint. Clients that may run parallel conversations
+with the same opening message should send a stable `X-CLASP-Session-ID` header;
+the header is hashed together with the provider and model and is never forwarded
+to the provider.
 
 On continuation, CLASP sends `previous_response_id` and only the new input. The
 prior assistant message is already represented by the previous response. A
 `tool_result` is sent as a `function_call_output` item with the translated `fc_`
 call ID. Only `completed` responses advance the stored state; failures,
 cancellations, incomplete responses, and failed streams do not. Entries expire
-according to the configured session TTL. If the provider reports that a stored
-response has expired or disappeared, CLASP drops that pointer and retries once
+Fallback responses invalidate the primary chain because they may come from a
+different provider or model. Entries expire after the configured idle session
+TTL. If the provider reports that a stored response has expired or disappeared,
+CLASP drops that pointer and retries once
 with the complete Anthropic message history.
 
 ## Request Format
