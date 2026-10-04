@@ -505,6 +505,9 @@ Debug output includes:
 
 Secure your CLASP proxy with API key authentication to control access:
 
+See the [API-key authentication reference](docs/api-reference/authentication.md)
+for the complete configuration, header, endpoint, and error-response contract.
+
 ```bash
 # Enable authentication with CLI flags
 clasp -auth -auth-api-key "my-secret-key"

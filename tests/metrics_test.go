@@ -116,26 +116,41 @@ func TestMetricsIntegrationAuthentication(t *testing.T) {
 		}
 	}
 
+	for _, path := range []string{"/metrics", "/metrics/prometheus"} {
+		request, err := http.NewRequest(http.MethodGet, server.URL+path, http.NoBody)
+		if err != nil {
+			t.Fatalf("create invalid-key request for %s: %v", path, err)
+		}
+		request.Header.Set("x-api-key", "wrong-key")
+		response, err := client.Do(request)
+		if err != nil {
+			t.Fatalf("invalid-key GET %s: %v", path, err)
+		}
+		assertAuthFailure(t, response, "Invalid API key")
+	}
+
 	for name, authorization := range map[string]string{
 		"x-api-key": "metrics-test-key",
 		"bearer":    "Bearer metrics-test-key",
 	} {
-		request, err := http.NewRequest(http.MethodGet, server.URL+"/metrics", http.NoBody)
-		if err != nil {
-			t.Fatalf("create %s request: %v", name, err)
-		}
-		if name == "x-api-key" {
-			request.Header.Set("x-api-key", authorization)
-		} else {
-			request.Header.Set("Authorization", authorization)
-		}
-		response, err := client.Do(request)
-		if err != nil {
-			t.Fatalf("authenticated %s request: %v", name, err)
-		}
-		response.Body.Close()
-		if response.StatusCode != http.StatusOK {
-			t.Errorf("authenticated %s status = %d, want %d", name, response.StatusCode, http.StatusOK)
+		for _, path := range []string{"/metrics", "/metrics/prometheus"} {
+			request, err := http.NewRequest(http.MethodGet, server.URL+path, http.NoBody)
+			if err != nil {
+				t.Fatalf("create %s request for %s: %v", name, path, err)
+			}
+			if name == "x-api-key" {
+				request.Header.Set("x-api-key", authorization)
+			} else {
+				request.Header.Set("Authorization", authorization)
+			}
+			response, err := client.Do(request)
+			if err != nil {
+				t.Fatalf("authenticated %s request for %s: %v", name, path, err)
+			}
+			response.Body.Close()
+			if response.StatusCode != http.StatusOK {
+				t.Errorf("authenticated %s request for %s status = %d, want %d", name, path, response.StatusCode, http.StatusOK)
+			}
 		}
 	}
 
