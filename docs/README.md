@@ -8,6 +8,7 @@ This documentation provides a comprehensive reference for the different LLM prov
 - [Anthropic Messages API](./api-reference/anthropic-messages.md) - Claude's native API format
 - [OpenAI Chat Completions API](./api-reference/openai-chat-completions.md) - Standard OpenAI format
 - [OpenAI Responses API](./api-reference/openai-responses.md) - New stateful conversation API
+- [Metrics endpoint](./api-reference/metrics.md) - JSON/Prometheus metrics contract and authentication
 
 ### Translation Guides
 - [Request Translation](./translation-guides/request-translation.md) - How requests are transformed

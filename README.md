@@ -391,6 +391,9 @@ CLASP_CACHE=true CLASP_CACHE_MAX_SIZE=500 clasp
 
 ## Metrics
 
+See the [metrics endpoint contract](docs/api-reference/metrics.md) for paths,
+formats, aggregation, reset semantics, metric names, and authentication.
+
 Access `/metrics` for request statistics:
 
 ```json
@@ -418,6 +421,9 @@ Access `/metrics` for request statistics:
   "uptime": "5m30s"
 }
 ```
+
+Use `/metrics/prometheus` for a Prometheus scrape. Request metrics reset when
+the CLASP process restarts; `POST /costs?action=reset` resets only cost data.
 
 ## Docker
 
