@@ -415,6 +415,9 @@ func (s *Server) Shutdown() error {
 	if err := s.server.Shutdown(ctx); err != nil {
 		return fmt.Errorf("shutdown error: %w", err)
 	}
+	if s.handler != nil && s.handler.client != nil {
+		s.handler.client.CloseIdleConnections()
+	}
 
 	logging.Info("Server stopped")
 	return nil

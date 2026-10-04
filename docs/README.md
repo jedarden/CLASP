@@ -10,6 +10,7 @@ This documentation provides a comprehensive reference for the different LLM prov
 - [OpenAI Responses API](./api-reference/openai-responses.md) - New stateful conversation API
 - [API-key authentication](./api-reference/authentication.md) - Proxy credential configuration and error responses
 - [Metrics endpoint](./api-reference/metrics.md) - JSON/Prometheus metrics contract and authentication
+- [Upstream transport](./api-reference/transport.md) - Connection pooling, timeouts, retries, cancellation, and streaming behavior
 
 ### Translation Guides
 - [Request Translation](./translation-guides/request-translation.md) - How requests are transformed

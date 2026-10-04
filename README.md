@@ -15,8 +15,7 @@ No patches to Claude Code. No forks. Just point `ANTHROPIC_BASE_URL` at the prox
 - **Full Protocol Translation**: Anthropic Messages API ↔ OpenAI Chat Completions API
 - **SSE Streaming**: Real-time token streaming with state machine processing
 - **Tool Calls**: Complete translation of tool_use/tool_result between formats
-- **Connection Pooling**: Optimized HTTP transport with persistent connections
-- **Retry Logic**: Exponential backoff for transient failures
+- **Connection Pooling and Retry Policy**: Shared persistent connections and bounded retries for replayable transient failures ([transport details](docs/api-reference/transport.md))
 - **Metrics Endpoint**: Request statistics and performance monitoring
 - **API Key Authentication**: Secure the proxy with optional API key validation
 

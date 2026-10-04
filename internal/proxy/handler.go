@@ -2,14 +2,12 @@
 package proxy
 
 import (
-	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"strings"
 	"sync"
@@ -92,29 +90,7 @@ func NewHandler(cfg *config.Config) (*Handler, error) {
 		return nil, err
 	}
 
-	// Create optimized HTTP transport with connection pooling
-	transport := &http.Transport{
-		DialContext: (&net.Dialer{
-			Timeout:   30 * time.Second,
-			KeepAlive: 30 * time.Second,
-		}).DialContext,
-		MaxIdleConns:        100,
-		MaxIdleConnsPerHost: 100,
-		IdleConnTimeout:     90 * time.Second,
-		TLSHandshakeTimeout: 10 * time.Second,
-		DisableCompression:  false,
-	}
-
-	// Use configurable timeout (default 5 minutes for reasoning models)
-	httpTimeout := time.Duration(cfg.HTTPClientTimeoutSec) * time.Second
-	if httpTimeout == 0 {
-		httpTimeout = 300 * time.Second // Fallback default
-	}
-
-	client := &http.Client{
-		Transport: transport,
-		Timeout:   httpTimeout,
-	}
+	client := newUpstreamHTTPClient(cfg.HTTPClientTimeoutSec)
 
 	handler := &Handler{
 		cfg:           cfg,
@@ -674,7 +650,7 @@ func (h *Handler) transformAndExecute(ctx context.Context, req *models.Anthropic
 	}
 
 	// Execute request
-	resp, err := h.doRequestWithRetry(ctx, reqBody, selectedProvider)
+	resp, err := h.doRequestWithRetryPolicy(ctx, reqBody, selectedProvider, !req.Stream)
 	usedFallback := false
 
 	// Check if we should try fallback
@@ -781,7 +757,7 @@ func (h *Handler) tryFallback(ctx context.Context, req *models.AnthropicRequest,
 	}
 
 	// Try fallback provider
-	resp, err = h.doRequestWithRetry(ctx, reqBody, fallbackProvider)
+	resp, err = h.doRequestWithRetryPolicy(ctx, reqBody, fallbackProvider, !req.Stream)
 	if err == nil && resp.StatusCode < 500 {
 		atomic.AddInt64(&h.metrics.FallbackSuccesses, 1)
 		logging.Info("Fallback to %s succeeded", fallbackProvider.Name())
@@ -877,7 +853,7 @@ func (h *Handler) handlePassthroughRequest(w http.ResponseWriter, r *http.Reques
 	}
 
 	// Execute request with retry logic
-	resp, err := h.doRequestWithRetry(r.Context(), reqBody, p)
+	resp, err := h.doRequestWithRetryPolicy(r.Context(), reqBody, p, !anthropicReq.Stream)
 	if err != nil {
 		atomic.AddInt64(&h.metrics.ErrorRequests, 1)
 		if h.circuitBreaker != nil {
@@ -1022,55 +998,6 @@ func (h *Handler) handlePassthroughNonStreaming(w http.ResponseWriter, resp *htt
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("X-CLASP-Cache", "MISS")
 	_, _ = w.Write(body)
-}
-
-// doRequestWithRetry executes the upstream request with exponential backoff retry.
-func (h *Handler) doRequestWithRetry(ctx context.Context, reqBody []byte, p provider.Provider) (*http.Response, error) {
-	maxRetries := 3
-	baseDelay := 500 * time.Millisecond
-
-	var lastErr error
-	for attempt := 0; attempt < maxRetries; attempt++ {
-		// Create fresh request for each attempt with context
-		upstreamReq, err := http.NewRequestWithContext(ctx, http.MethodPost, p.GetEndpointURL(), bytes.NewReader(reqBody))
-		if err != nil {
-			return nil, fmt.Errorf("creating request: %w", err)
-		}
-
-		// Set headers (API key may be embedded in provider for tier routing)
-		for key, values := range p.GetHeaders(h.cfg.GetAPIKey()) {
-			for _, v := range values {
-				upstreamReq.Header.Add(key, v)
-			}
-		}
-
-		resp, err := h.client.Do(upstreamReq)
-		if err == nil {
-			// Check if we should retry based on status code
-			if resp.StatusCode < 500 || resp.StatusCode == 529 { // Don't retry 5xx except overload
-				return resp, nil
-			}
-			// Close response for retry
-			resp.Body.Close()
-			lastErr = fmt.Errorf("upstream returned %d", resp.StatusCode)
-		} else {
-			lastErr = err
-		}
-
-		// Don't retry on last attempt
-		if attempt < maxRetries-1 {
-			delay := baseDelay * time.Duration(1<<attempt) // Exponential backoff
-			logging.Warn("Retry %d/%d after %v: %v", attempt+1, maxRetries, delay, lastErr)
-
-			select {
-			case <-ctx.Done():
-				return nil, ctx.Err()
-			case <-time.After(delay):
-			}
-		}
-	}
-
-	return nil, fmt.Errorf("max retries exceeded: %w", lastErr)
 }
 
 // getFallbackProvider returns the appropriate fallback provider and model for the given request model.
