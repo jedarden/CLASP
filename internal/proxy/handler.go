@@ -1002,6 +1002,10 @@ func (h *Handler) handlePassthroughStreaming(w http.ResponseWriter, resp *http.R
 		if err != nil {
 			if err != io.EOF {
 				logging.Error("Error reading passthrough stream: %v", err)
+				normalized := streamFailureError(err)
+				if writeErr := writeAnthropicStreamError(w, normalized.errType, normalized.message); writeErr != nil {
+					logging.Error("Error writing normalized passthrough stream error: %v", writeErr)
+				}
 			}
 			if h.costTracker != nil && usage.complete() {
 				h.costTracker.RecordUsage("anthropic", model, usage.inputTokens, usage.outputTokens)

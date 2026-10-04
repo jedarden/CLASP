@@ -22,6 +22,7 @@ Every non-streaming error is JSON with this shape:
 | Situation | HTTP status | `error.type` | Message |
 | --- | ---: | --- | --- |
 | Invalid client request or upstream validation failure | 400 | `invalid_request_error` | `The upstream provider rejected the request.` |
+| Invalid HTTP method | 405 | `invalid_request_error` | `Method not allowed` |
 | Missing or invalid CLASP/upstream credentials | 401 | `authentication_error` | A credential-specific message is returned. |
 | Upstream permission failure | 403 | `permission_error` | `The upstream provider denied access to this request.` |
 | Unknown model or upstream resource | 404 | `not_found_error` | `The requested model or upstream resource was not found.` |

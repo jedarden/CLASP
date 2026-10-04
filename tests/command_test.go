@@ -71,7 +71,9 @@ func TestCommandProfileList(t *testing.T) {
 // TestBuildAndRun tests that the binary builds and runs
 func TestBuildAndRun(t *testing.T) {
 	// Build the binary
-	buildCmd := exec.Command("go", "build", "-o", "/tmp/clasp-test-binary", "../cmd/clasp")
+	// Archives used by CI do not contain .git metadata. Disable VCS stamping so
+	// this subprocess remains runnable from those clean extractions.
+	buildCmd := exec.Command("go", "build", "-buildvcs=false", "-o", "/tmp/clasp-test-binary", "../cmd/clasp")
 	if output, err := buildCmd.CombinedOutput(); err != nil {
 		t.Fatalf("failed to build binary: %v, output: %s", err, output)
 	}

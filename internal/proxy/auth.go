@@ -3,7 +3,6 @@ package proxy
 
 import (
 	"crypto/subtle"
-	"encoding/json"
 	"net/http"
 	"strings"
 )
@@ -94,14 +93,6 @@ func extractAPIKey(r *http.Request) string {
 
 // writeAuthError writes an Anthropic-formatted authentication error response.
 func writeAuthError(w http.ResponseWriter, status int, errType, message string) {
-	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("WWW-Authenticate", "Bearer")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{
-		"type": "error",
-		"error": map[string]string{
-			"type":    errType,
-			"message": message,
-		},
-	})
+	writeAnthropicError(w, status, errType, message)
 }

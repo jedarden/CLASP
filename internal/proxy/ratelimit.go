@@ -2,7 +2,6 @@
 package proxy
 
 import (
-	"encoding/json"
 	"net/http"
 	"sync"
 	"time"
@@ -110,14 +109,7 @@ func RateLimitMiddleware(limiter *RateLimiter) func(http.Handler) http.Handler {
 
 // writeRateLimitError writes an Anthropic-formatted rate limit error.
 func writeRateLimitError(w http.ResponseWriter, retryAfter time.Duration) {
-	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Retry-After", retryAfter.String())
-	w.WriteHeader(http.StatusTooManyRequests)
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{
-		"type": "error",
-		"error": map[string]string{
-			"type":    "rate_limit_error",
-			"message": "Request rate limit exceeded. Please slow down your requests.",
-		},
-	})
+	writeAnthropicError(w, http.StatusTooManyRequests, rateLimitError,
+		"Request rate limit exceeded. Please slow down your requests.")
 }

@@ -68,6 +68,65 @@ func TestWriteAnthropicError(t *testing.T) {
 	}
 }
 
+func TestInvalidRequestUsesAnthropicErrorEnvelope(t *testing.T) {
+	handler, err := NewHandler(config.DefaultConfig())
+	if err != nil {
+		t.Fatalf("NewHandler: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(`{"messages":[]}`))
+	recorder := httptest.NewRecorder()
+	handler.HandleMessages(recorder, req)
+
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", recorder.Code)
+	}
+	response := decodeAnthropicError(t, recorder.Body.Bytes())
+	if response.Error.Type != invalidRequestError || response.Error.Message != "Missing required field: 'model'" {
+		t.Fatalf("error = %+v", response.Error)
+	}
+}
+
+func TestLocalAuthenticationAndRateLimitErrorsUseAnthropicEnvelope(t *testing.T) {
+	tests := []struct {
+		name       string
+		write      func(http.ResponseWriter)
+		wantStatus int
+		wantType   string
+	}{
+		{
+			name: "authentication",
+			write: func(w http.ResponseWriter) {
+				writeAuthError(w, http.StatusUnauthorized, authenticationError, "Invalid API key")
+			},
+			wantStatus: http.StatusUnauthorized,
+			wantType:   authenticationError,
+		},
+		{
+			name: "rate limit",
+			write: func(w http.ResponseWriter) {
+				writeRateLimitError(w, time.Second)
+			},
+			wantStatus: http.StatusTooManyRequests,
+			wantType:   rateLimitError,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			tt.write(recorder)
+			if recorder.Code != tt.wantStatus {
+				t.Fatalf("status = %d, want %d", recorder.Code, tt.wantStatus)
+			}
+			response := decodeAnthropicError(t, recorder.Body.Bytes())
+			if response.Error.Type != tt.wantType {
+				t.Fatalf("error type = %q, want %q", response.Error.Type, tt.wantType)
+			}
+		})
+	}
+}
+
 func TestHandleUpstreamErrorNormalizesProviderPayload(t *testing.T) {
 	handler := &Handler{metrics: &Metrics{}}
 	upstream := &http.Response{
@@ -150,6 +209,43 @@ func TestResponsesMalformedProviderResponseIsNormalized(t *testing.T) {
 	}
 }
 
+func TestResponsesProviderHTTPErrorIsNormalized(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/responses" {
+			t.Fatalf("upstream path = %q, want /responses", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusTooManyRequests)
+		_, _ = io.WriteString(w, `{"error":{"message":"provider-specific quota details"}}`)
+	}))
+	defer upstream.Close()
+
+	cfg := config.DefaultConfig()
+	cfg.Provider = config.ProviderOpenAI
+	cfg.OpenAIBaseURL = upstream.URL
+	cfg.OpenAIAPIKey = "test-key"
+	cfg.DefaultModel = "gpt-5"
+	handler, err := NewHandler(cfg)
+	if err != nil {
+		t.Fatalf("NewHandler: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(`{"model":"gpt-5","messages":[{"role":"user","content":"hello"}]}`))
+	recorder := httptest.NewRecorder()
+	handler.HandleMessages(recorder, req)
+
+	if recorder.Code != http.StatusTooManyRequests {
+		t.Fatalf("status = %d, want 429", recorder.Code)
+	}
+	response := decodeAnthropicError(t, recorder.Body.Bytes())
+	if response.Error.Type != rateLimitError {
+		t.Fatalf("error type = %q, want %q", response.Error.Type, rateLimitError)
+	}
+	if strings.Contains(recorder.Body.String(), "provider-specific") {
+		t.Fatal("provider-specific message leaked into normalized response")
+	}
+}
+
 func TestUpstreamTimeoutIsNormalized(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		time.Sleep(100 * time.Millisecond)
@@ -201,6 +297,33 @@ func TestStreamingMalformedResponsesResponseEmitsAnthropicErrorEvent(t *testing.
 	upstream := &http.Response{Body: io.NopCloser(strings.NewReader("data: {not-json}\n\n"))}
 	recorder := httptest.NewRecorder()
 	handler.handleResponsesStreamingResponse(recorder, upstream, "gpt-5", "", 0)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 after stream starts", recorder.Code)
+	}
+	if !strings.Contains(recorder.Body.String(), `event: error`) || !strings.Contains(recorder.Body.String(), `"type":"api_error"`) {
+		t.Fatalf("stream did not contain Anthropic error event: %q", recorder.Body.String())
+	}
+}
+
+type failingStreamBody struct {
+	sent bool
+}
+
+func (b *failingStreamBody) Read(p []byte) (int, error) {
+	if b.sent {
+		return 0, io.ErrUnexpectedEOF
+	}
+	b.sent = true
+	return copy(p, "event: message_start\ndata: {}\n\n"), nil
+}
+
+func (b *failingStreamBody) Close() error { return nil }
+
+func TestPassthroughStreamingReadErrorEmitsAnthropicErrorEvent(t *testing.T) {
+	handler := &Handler{}
+	recorder := httptest.NewRecorder()
+	handler.handlePassthroughStreaming(recorder, &http.Response{Body: &failingStreamBody{}}, "claude")
 
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200 after stream starts", recorder.Code)
