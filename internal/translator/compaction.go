@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"strings"
 
 	"github.com/jedarden/clasp/pkg/models"
 )
@@ -17,6 +18,31 @@ import (
 // Returns an empty string if no user message is present, which disables
 // compaction for that request.
 func SessionKey(req *models.AnthropicRequest) string {
+	return sessionKey(req, "")
+}
+
+// SessionKeyForID derives a stable, model-scoped key from an explicit client
+// session ID. A client-provided ID is necessary when two conversations have
+// the same opening message (a common pattern for parallel coding sessions).
+// The ID is hashed so it is never written to logs or used as a map key in raw
+// form.
+func SessionKeyForID(req *models.AnthropicRequest, id string) string {
+	return sessionKey(req, strings.TrimSpace(id))
+}
+
+func sessionKey(req *models.AnthropicRequest, explicitID string) string {
+	if req == nil {
+		return ""
+	}
+	if explicitID != "" {
+		h := sha256.New()
+		h.Write([]byte(req.Model))
+		h.Write([]byte{0})
+		h.Write([]byte(explicitID))
+		sum := h.Sum(nil)
+		return hex.EncodeToString(sum[:16])
+	}
+
 	for _, msg := range req.Messages {
 		if msg.Role == "user" {
 			contentJSON, err := json.Marshal(msg.Content)
@@ -58,4 +84,21 @@ func TrimMessagesForCompaction(messages []models.AnthropicMessage, messageCount 
 		return nil
 	}
 	return messages[messageCount:]
+}
+
+// TrimMessagesForContinuation removes the messages already represented by a
+// previous Responses API response. Anthropic clients resend the prior
+// assistant message on every stateless request; previous_response_id already
+// contains that output, so forwarding it again would duplicate assistant
+// output and tool calls. The remaining user message may contain a tool_result,
+// which is translated to function_call_output by the Responses translator.
+func TrimMessagesForContinuation(messages []models.AnthropicMessage, messageCount int) []models.AnthropicMessage {
+	trimmed := TrimMessagesForCompaction(messages, messageCount)
+	if trimmed == nil {
+		return nil
+	}
+	for len(trimmed) > 0 && trimmed[0].Role == "assistant" {
+		trimmed = trimmed[1:]
+	}
+	return trimmed
 }

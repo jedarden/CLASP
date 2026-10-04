@@ -2,6 +2,7 @@
 package proxy
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -24,6 +25,8 @@ import (
 	"github.com/jedarden/clasp/internal/translator"
 	"github.com/jedarden/clasp/pkg/models"
 )
+
+const responsesSessionIDHeader = "X-CLASP-Session-ID"
 
 // Handler handles incoming Anthropic API requests.
 type Handler struct {
@@ -382,7 +385,7 @@ func (h *Handler) HandleMessages(w http.ResponseWriter, r *http.Request) {
 	var newMessagesOffset int
 	if h.sessionTracker != nil && selectedProvider.RequiresTransformation() {
 		if translator.GetEndpointType(targetModel) == translator.EndpointResponses {
-			sessionKey = translator.SessionKey(anthropicReq)
+			sessionKey = responsesSessionKey(anthropicReq, r.Header.Get(responsesSessionIDHeader))
 			if entry, ok := h.sessionTracker.Get(sessionKey); ok && entry.MessageCount < len(anthropicReq.Messages) {
 				previousResponseID = entry.ResponseID
 				newMessagesOffset = entry.MessageCount
@@ -412,6 +415,24 @@ func (h *Handler) HandleMessages(w http.ResponseWriter, r *http.Request) {
 
 	// Transform and execute request
 	resp, targetModel, useResponsesAPI, usedFallback, execErr := h.transformAndExecute(r.Context(), anthropicReq, selectedProvider, targetModel, previousResponseID, newMessagesOffset)
+	// A Responses API response can expire independently of CLASP's in-memory
+	// TTL. Once the provider rejects previous_response_id, discard that pointer
+	// and replay the complete Anthropic conversation once. The caller supplied
+	// the full stateless history, so this recovery does not lose context.
+	if execErr == nil && resp != nil && resp.StatusCode >= 400 && useResponsesAPI && previousResponseID != "" && isExpiredResponsesState(resp) {
+		if h.sessionTracker != nil && sessionKey != "" {
+			h.sessionTracker.Delete(sessionKey)
+		}
+		if resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+		reqBody, err := h.transformRequest(anthropicReq, targetModel, true, "", 0)
+		if err != nil {
+			execErr = err
+		} else {
+			resp, execErr = h.doRequestWithRetryPolicy(r.Context(), reqBody, selectedProvider, !anthropicReq.Stream)
+		}
+	}
 	if execErr != nil {
 		atomic.AddInt64(&h.metrics.ErrorRequests, 1)
 		if h.circuitBreaker != nil {
@@ -447,6 +468,54 @@ func (h *Handler) HandleMessages(w http.ResponseWriter, r *http.Request) {
 
 	// Handle streaming vs non-streaming response
 	h.handleResponse(w, resp, anthropicReq.Stream, useResponsesAPI, targetModel, cacheKey, cacheable, sessionKey, len(anthropicReq.Messages))
+}
+
+func responsesSessionKey(req *models.AnthropicRequest, explicitID string) string {
+	if strings.TrimSpace(explicitID) != "" {
+		return translator.SessionKeyForID(req, explicitID)
+	}
+	return translator.SessionKey(req)
+}
+
+// isExpiredResponsesState reads and restores an error body so normal error
+// handling can still inspect it. Responses providers use several error codes
+// for an expired/deleted previous response, so match the stable state-related
+// parts of the payload rather than relying on one provider-specific code.
+func isExpiredResponsesState(resp *http.Response) bool {
+	if resp == nil || resp.Body == nil {
+		return false
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return false
+	}
+	_ = resp.Body.Close()
+	resp.Body = io.NopCloser(bytes.NewReader(body))
+
+	var payload struct {
+		Error struct {
+			Code    string `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+		Code    string `json:"code"`
+		Message string `json:"message"`
+	}
+	_ = json.Unmarshal(body, &payload)
+	code := strings.ToLower(strings.TrimSpace(payload.Error.Code))
+	message := strings.ToLower(strings.TrimSpace(payload.Error.Message))
+	if code == "" {
+		code = strings.ToLower(strings.TrimSpace(payload.Code))
+	}
+	if message == "" {
+		message = strings.ToLower(strings.TrimSpace(payload.Message))
+	}
+
+	switch code {
+	case "response_not_found", "response_expired", "invalid_previous_response_id", "previous_response_not_found":
+		return true
+	}
+	return strings.Contains(message, "previous_response_id") &&
+		(strings.Contains(message, "expired") || strings.Contains(message, "not found") || strings.Contains(message, "does not exist") || strings.Contains(message, "invalid"))
 }
 
 // requestError represents a request validation error with HTTP status info.
@@ -670,7 +739,7 @@ func (h *Handler) transformRequest(req *models.AnthropicRequest, targetModel str
 		// Apply compaction: trim messages to only the new ones when continuing a session.
 		reqToTransform := req
 		if previousResponseID != "" {
-			if newMessages := translator.TrimMessagesForCompaction(req.Messages, newMessagesOffset); newMessages != nil {
+			if newMessages := translator.TrimMessagesForContinuation(req.Messages, newMessagesOffset); newMessages != nil {
 				trimmed := *req
 				trimmed.Messages = newMessages
 				reqToTransform = &trimmed
@@ -1260,7 +1329,7 @@ func (h *Handler) handleResponsesStreamingResponse(w http.ResponseWriter, resp *
 	}
 
 	// Store response ID in session tracker for compaction.
-	if responseID := processor.GetResponseID(); responseID != "" {
+	if responseID := processor.GetCompletedResponseID(); responseID != "" {
 		logging.Info("Responses API response ID: %s", responseID)
 		if h.sessionTracker != nil && sessionKey != "" {
 			h.sessionTracker.Set(sessionKey, responseID, messageCount)
@@ -1305,7 +1374,10 @@ func (h *Handler) handleResponsesNonStreamingResponse(w http.ResponseWriter, res
 	}
 
 	// Store response ID in session tracker for compaction.
-	if h.sessionTracker != nil && sessionKey != "" && responsesResp.ID != "" {
+	// Only completed responses can be used as previous_response_id. Failed,
+	// canceled, and incomplete responses may expose an ID but cannot safely
+	// serve as the head of a continuation chain.
+	if h.sessionTracker != nil && sessionKey != "" && responsesResp.ID != "" && responsesResp.Status == "completed" {
 		h.sessionTracker.Set(sessionKey, responsesResp.ID, messageCount)
 		logging.Info("Compaction: stored session %s... response_id=%s (messages=%d)",
 			sessionKey[:8], responsesResp.ID, messageCount)

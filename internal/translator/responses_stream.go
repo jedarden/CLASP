@@ -23,6 +23,7 @@ type ResponsesStreamProcessor struct {
 	messageID   string
 	targetModel string
 	responseID  string // Tracks the Responses API response ID
+	completed   bool   // True only after response.completed; failed streams are not reusable.
 
 	// Thinking/reasoning tracking
 	thinkingStarted    bool
@@ -81,6 +82,19 @@ func NewResponsesStreamProcessor(writer io.Writer, messageID, targetModel string
 func (sp *ResponsesStreamProcessor) GetResponseID() string {
 	sp.mu.Lock()
 	defer sp.mu.Unlock()
+	return sp.responseID
+}
+
+// GetCompletedResponseID returns a response ID only when the stream reached a
+// response.completed event. An ID from response.created is not sufficient for
+// previous_response_id because the provider may subsequently fail or expire
+// that response before it becomes a valid continuation point.
+func (sp *ResponsesStreamProcessor) GetCompletedResponseID() string {
+	sp.mu.Lock()
+	defer sp.mu.Unlock()
+	if !sp.completed {
+		return ""
+	}
 	return sp.responseID
 }
 
@@ -175,6 +189,9 @@ func (sp *ResponsesStreamProcessor) processEvent(event *models.ResponsesStreamEv
 		return sp.handleResponseFailed(event)
 	case models.EventResponseIncomplete:
 		return sp.handleResponseIncomplete(event)
+	case models.EventResponseCancelled:
+		sp.completed = false
+		return sp.emitMessageDelta("end_turn")
 
 	// Output item events
 	case models.EventOutputItemAdded:
@@ -498,6 +515,10 @@ func (sp *ResponsesStreamProcessor) handleOutputItemDone(event *models.Responses
 
 // handleResponseCompleted handles the response.completed event.
 func (sp *ResponsesStreamProcessor) handleResponseCompleted(event *models.ResponsesStreamEvent) error {
+	if event.Response != nil && event.Response.ID != "" {
+		sp.responseID = event.Response.ID
+	}
+	sp.completed = true
 	if event.Response != nil && event.Response.Usage != nil {
 		sp.usage = event.Response.Usage
 	}
@@ -574,6 +595,7 @@ func (sp *ResponsesStreamProcessor) formatCitationsAsText() string {
 
 // handleResponseFailed handles the response.failed event.
 func (sp *ResponsesStreamProcessor) handleResponseFailed(event *models.ResponsesStreamEvent) error {
+	sp.completed = false
 	// Emit error as text if possible
 	if event.Error != nil {
 		errorText := fmt.Sprintf("Error: %s - %s", event.Error.Code, event.Error.Message)
@@ -588,6 +610,7 @@ func (sp *ResponsesStreamProcessor) handleResponseFailed(event *models.Responses
 // handleResponseIncomplete handles the response.incomplete event.
 // This occurs when the response is cut short (max tokens, content filter, etc.)
 func (sp *ResponsesStreamProcessor) handleResponseIncomplete(event *models.ResponsesStreamEvent) error {
+	sp.completed = false
 	// Close any open blocks before emitting the incomplete status
 	if sp.textStarted && sp.state == StateTextContent {
 		if err := sp.emitContentBlockStop(sp.textBlockIndex); err != nil {

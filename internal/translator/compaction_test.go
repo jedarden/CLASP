@@ -114,3 +114,25 @@ func TestTrimMessagesForCompaction(t *testing.T) {
 		t.Error("expected nil when messageCount exceeds length")
 	}
 }
+
+func TestSessionKeyForIDIsModelScoped(t *testing.T) {
+	message := []models.AnthropicMessage{{Role: "user", Content: "same opening"}}
+	keyA := SessionKeyForID(&models.AnthropicRequest{Model: "gpt-5", Messages: message}, "conversation-a")
+	keyB := SessionKeyForID(&models.AnthropicRequest{Model: "gpt-5", Messages: message}, "conversation-b")
+	otherModel := SessionKeyForID(&models.AnthropicRequest{Model: "gpt-5.1", Messages: message}, "conversation-a")
+	if keyA == "" || keyA == keyB || keyA == otherModel {
+		t.Fatalf("explicit session IDs should be isolated: %q %q %q", keyA, keyB, otherModel)
+	}
+}
+
+func TestTrimMessagesForContinuationSkipsPriorAssistantOutput(t *testing.T) {
+	messages := []models.AnthropicMessage{
+		{Role: "user", Content: "start"},
+		{Role: "assistant", Content: []models.ContentBlock{{Type: "tool_use", ID: "toolu_1"}}},
+		{Role: "user", Content: []models.ContentBlock{{Type: "tool_result", ToolUseID: "toolu_1", Content: "done"}}},
+	}
+	trimmed := TrimMessagesForContinuation(messages, 1)
+	if len(trimmed) != 1 || trimmed[0].Role != "user" {
+		t.Fatalf("continuation should contain only new user/tool-result input, got %#v", trimmed)
+	}
+}
