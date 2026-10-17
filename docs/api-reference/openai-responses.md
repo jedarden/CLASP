@@ -30,10 +30,18 @@ prior assistant message is already represented by the previous response. A
 `tool_result` is sent as a `function_call_output` item with the translated `fc_`
 call ID. Only `completed` responses advance the stored state; failures,
 cancellations, incomplete responses, and failed streams do not. Entries expire
+after the configured idle session TTL (`CLASP_SESSION_TIMEOUT`, default one
+hour). The TTL is idle-based: every tracker hit refreshes the entry, so an
+actively continued conversation never expires, and an expired entry is simply
+discarded — the next request starts a new chain from its complete history.
+
 Fallback responses invalidate the primary chain because they may come from a
-different provider or model. Entries expire after the configured idle session
-TTL. If the provider reports that a stored response has expired or disappeared,
-CLASP drops that pointer and retries once
+different provider or model. A fallback request is always re-transformed with
+the complete Anthropic history and no `previous_response_id`; when it succeeds,
+CLASP deletes the stored entry instead of recording the fallback response's ID,
+so the next request for that session misses the tracker, replays the complete
+history, and establishes a new chain. If the provider reports that a stored
+response has expired or disappeared, CLASP drops that pointer and retries once
 with the complete Anthropic message history.
 
 ## Request Format
