@@ -12,3 +12,16 @@
 
 # Journals
 *.journal
+
+# Runtime state (doctor runtime_dir_ignore_coverage) - never commit
+traces/
+diagnostics/
+receipts/
+.br_recovery/
+.br_history/
+.bf_history/
+recovery/
+events.jsonl
+heartbeats.jsonl
+last-touched
+beads.db*
